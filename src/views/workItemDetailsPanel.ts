@@ -145,8 +145,10 @@ export class WorkItemDetailsPanel {
             ? `<span class="badge priority-${priority}">P${priority}</span>`
             : '';
 
-        const descriptionHtml = description
-            ? `<pre class="description-text">${this._htmlToText(description)}</pre>`
+        // Description is rendered client-side via the nonce-protected script to
+        // preserve ADO HTML formatting while safely stripping dangerous content.
+        const descriptionPlaceholder = description
+            ? '<div id="description-content"></div>'
             : '<em class="empty">No description provided.</em>';
 
         const commentsHtml = comments.length === 0
@@ -167,12 +169,16 @@ export class WorkItemDetailsPanel {
             .map(([label, value]) => `<tr><td class="meta-label">${label}</td><td>${value}</td></tr>`)
             .join('');
 
+        // Embed raw description as JSON so the nonce-protected script can
+        // sanitize and render it without any server-side regex manipulation.
+        const descriptionJson = JSON.stringify(description);
+
         return /* html */`<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src https: data:;">
 <title>${wiType} #${id}</title>
 <style>
   body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); background: var(--vscode-editor-background); padding: 16px; margin: 0; }
@@ -192,7 +198,16 @@ export class WorkItemDetailsPanel {
   .meta-label { color: var(--vscode-descriptionForeground); font-size: 0.9em; white-space: nowrap; min-width: 110px; }
   .section { margin-bottom: 20px; }
   .description { background: var(--vscode-textBlockQuote-background); border-left: 3px solid var(--vscode-textBlockQuote-border); padding: 10px 14px; border-radius: 0 4px 4px 0; line-height: 1.6; }
-  .description-text { white-space: pre-wrap; word-break: break-word; margin: 0; font-family: inherit; font-size: inherit; }
+  #description-content { word-break: break-word; }
+  #description-content p { margin: 0 0 8px; }
+  #description-content ul, #description-content ol { padding-left: 24px; margin: 0 0 8px; }
+  #description-content table { border-collapse: collapse; margin-bottom: 8px; }
+  #description-content td, #description-content th { border: 1px solid var(--vscode-panel-border); padding: 4px 8px; }
+  #description-content a { color: var(--vscode-textLink-foreground); }
+  #description-content a:hover { color: var(--vscode-textLink-activeForeground); }
+  #description-content img { max-width: 100%; }
+  #description-content pre, #description-content code { background: var(--vscode-textCodeBlock-background); padding: 2px 4px; border-radius: 3px; font-family: var(--vscode-editor-font-family); }
+  #description-content pre { padding: 8px; overflow-x: auto; }
   .comment { border: 1px solid var(--vscode-panel-border); border-radius: 4px; margin-bottom: 10px; padding: 10px; }
   .comment-header { display: flex; justify-content: space-between; margin-bottom: 6px; }
   .comment-author { font-weight: bold; font-size: 0.9em; }
@@ -228,7 +243,7 @@ export class WorkItemDetailsPanel {
 
 <div class="section">
   <h2>Description</h2>
-  <div class="description">${descriptionHtml}</div>
+  <div class="description">${descriptionPlaceholder}</div>
 </div>
 
 <div class="section">
@@ -258,6 +273,114 @@ document.querySelector('[data-action="add-comment"]')?.addEventListener('click',
     vscode.postMessage({ type: 'addComment', content });
     input.value = '';
 });
+
+// ---------------------------------------------------------------------------
+// Render the work item description.
+// The raw HTML from ADO is sanitized using an allowlist-based DOM walker so
+// that formatting is preserved while scripts and event handlers are removed.
+// The CSP (script-src 'nonce-...') provides an additional layer: even if a
+// script tag somehow survived sanitization it would be blocked by the CSP.
+// ---------------------------------------------------------------------------
+(function renderDescription() {
+    const rawHtml = ${descriptionJson};
+    if (!rawHtml) { return; }
+
+    const ALLOWED_TAGS = new Set([
+        'p', 'br', 'div', 'span',
+        'b', 'strong', 'i', 'em', 'u', 's', 'strike', 'sub', 'sup',
+        'ul', 'ol', 'li',
+        'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+        'a', 'code', 'pre', 'blockquote',
+        'table', 'thead', 'tbody', 'tr', 'td', 'th',
+        'img', 'figure', 'figcaption'
+    ]);
+
+    /** Attributes allowed on any element. */
+    const GLOBAL_ATTRS = new Set(['class', 'style']);
+
+    /** Extra per-tag allowed attributes. */
+    const TAG_ATTRS = {
+        a:   new Set(['href', 'title', 'target', 'rel']),
+        img: new Set(['src', 'alt', 'width', 'height']),
+        td:  new Set(['colspan', 'rowspan', 'align']),
+        th:  new Set(['colspan', 'rowspan', 'scope', 'align']),
+        ol:  new Set(['type', 'start']),
+    };
+
+    /** Returns true if the URL scheme is safe for href / src attributes. */
+    function isSafeUrl(url) {
+        const lower = url.trim().toLowerCase();
+        return lower.startsWith('https://') ||
+               lower.startsWith('http://')  ||
+               lower.startsWith('#')         ||
+               lower.startsWith('/')         ||
+               lower.startsWith('data:image/');
+    }
+
+    /**
+     * Recursively clean a DOM node.
+     * Returns a safe clone of the node, a DocumentFragment (when an
+     * unsupported element is unwrapped), or null to discard the node.
+     */
+    function cleanNode(node) {
+        if (node.nodeType === Node.TEXT_NODE) {
+            return document.createTextNode(node.textContent || '');
+        }
+        if (node.nodeType !== Node.ELEMENT_NODE) {
+            return null;
+        }
+
+        const tag = node.tagName.toLowerCase();
+
+        if (!ALLOWED_TAGS.has(tag)) {
+            // Unwrap: keep children, drop the element itself
+            const frag = document.createDocumentFragment();
+            node.childNodes.forEach(child => {
+                const cleaned = cleanNode(child);
+                if (cleaned) { frag.appendChild(cleaned); }
+            });
+            return frag;
+        }
+
+        const el = document.createElement(tag);
+
+        // Copy only allowed attributes
+        Array.from(node.attributes).forEach(attr => {
+            const name = attr.name.toLowerCase();
+            const tagAttrs = TAG_ATTRS[tag];
+            if (!GLOBAL_ATTRS.has(name) && !(tagAttrs && tagAttrs.has(name))) {
+                return; // strip disallowed attribute
+            }
+            if ((name === 'href' || name === 'src') && !isSafeUrl(attr.value)) {
+                return; // strip unsafe URL
+            }
+            el.setAttribute(attr.name, attr.value);
+        });
+
+        // Force external links to open in the browser
+        if (tag === 'a') {
+            el.setAttribute('target', '_blank');
+            el.setAttribute('rel', 'noopener noreferrer');
+        }
+
+        node.childNodes.forEach(child => {
+            const cleaned = cleanNode(child);
+            if (cleaned) { el.appendChild(cleaned); }
+        });
+
+        return el;
+    }
+
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(rawHtml, 'text/html');
+    const container = document.getElementById('description-content');
+    if (!container) { return; }
+
+    doc.body.childNodes.forEach(child => {
+        const cleaned = cleanNode(child);
+        if (cleaned) { container.appendChild(cleaned); }
+    });
+}());
 </script>
 </body>
 </html>`;
@@ -296,34 +419,6 @@ document.querySelector('[data-action="add-comment"]')?.addEventListener('click',
         } catch {
             return '';
         }
-    }
-
-    /**
-     * Convert HTML (from ADO work item description) to safe text for direct
-     * insertion into a webview `<pre>` element.
-     *
-     * The input is HTML-escaped first (the primary security boundary), then
-     * escaped block-level elements are converted to newlines for basic
-     * readability, and remaining escaped tags are removed.  Because `_esc()`
-     * runs before any further processing, no HTML injection is possible.
-     */
-    private _htmlToText(html: string): string {
-        // Step 1: Escape the entire input.  All '<', '>', and '&' become HTML
-        // entities.  This is the security boundary — no further step can
-        // reintroduce executable HTML.
-        const escaped = this._esc(html);
-
-        // Step 2: For readability, convert escaped block-level elements to
-        // newlines and strip the remaining escaped tag patterns.  These are
-        // plain-text patterns at this point, not executable HTML.
-        return escaped
-            .replace(/&lt;\/?(p|div|li|tr|h[1-6])(?:\s[^&>]*)? *&gt;/gi, '\n')
-            .replace(/&lt;br\s*\/?&gt;/gi, '\n')
-            .replace(/&lt;[^&>]*&gt;/g, '')
-            .replace(/&nbsp;/g, ' ')
-            .replace(/[ \t]+/g, ' ')
-            .replace(/\n{3,}/g, '\n\n')
-            .trim();
     }
 
     private _esc(text: string): string {
