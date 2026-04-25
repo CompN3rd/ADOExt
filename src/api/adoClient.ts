@@ -2,7 +2,7 @@ import * as azdev from 'azure-devops-node-api';
 import type { IWorkItemTrackingApi } from 'azure-devops-node-api/WorkItemTrackingApi';
 import type { IGitApi } from 'azure-devops-node-api/GitApi';
 import type { ICoreApi } from 'azure-devops-node-api/CoreApi';
-import type { WorkItem, WorkItemType } from 'azure-devops-node-api/interfaces/WorkItemTrackingInterfaces';
+import type { WorkItem, WorkItemType, Comment as WorkItemComment, CommentCreate } from 'azure-devops-node-api/interfaces/WorkItemTrackingInterfaces';
 import type {
     GitPullRequest,
     GitPullRequestCommentThread,
@@ -15,6 +15,7 @@ import type { TeamProject } from 'azure-devops-node-api/interfaces/CoreInterface
 export type {
     WorkItem,
     WorkItemType,
+    WorkItemComment,
     GitPullRequest,
     GitPullRequestCommentThread,
     Comment,
@@ -291,6 +292,33 @@ export class AdoClient {
             status: 1 // active
         };
         return gitApi.createThread(thread, repositoryId, pullRequestId, project);
+    }
+
+    /**
+     * Fetch a single work item with all fields and links.
+     */
+    async getWorkItemById(project: string, id: number): Promise<WorkItem | undefined> {
+        const witApi: IWorkItemTrackingApi = await this.connection.getWorkItemTrackingApi();
+        const item = await witApi.getWorkItem(id, undefined, undefined, 4 /* WorkItemExpand.All */, project);
+        return item ?? undefined;
+    }
+
+    /**
+     * Fetch the discussion comments for a work item.
+     */
+    async getWorkItemComments(project: string, workItemId: number): Promise<WorkItemComment[]> {
+        const witApi: IWorkItemTrackingApi = await this.connection.getWorkItemTrackingApi();
+        const result = await witApi.getComments(project, workItemId);
+        return (result?.comments ?? []).filter((c): c is WorkItemComment => !c.isDeleted);
+    }
+
+    /**
+     * Add a discussion comment to a work item.
+     */
+    async addWorkItemComment(project: string, workItemId: number, text: string): Promise<WorkItemComment> {
+        const witApi: IWorkItemTrackingApi = await this.connection.getWorkItemTrackingApi();
+        const request: CommentCreate = { text };
+        return witApi.addComment(request, project, workItemId);
     }
 
     /**

@@ -85,6 +85,12 @@
         "icon": "$(link-external)"
       },
       {
+        "command": "adoext.viewWorkItemDetails",
+        "title": "View Work Item Details",
+        "category": "ADOExt",
+        "icon": "$(eye)"
+      },
+      {
         "command": "adoext.refreshPullRequests",
         "title": "Refresh Pull Requests",
         "category": "ADOExt",
@@ -158,9 +164,14 @@
       ],
       "view/item/context": [
         {
-          "command": "adoext.openWorkItem",
+          "command": "adoext.viewWorkItemDetails",
           "when": "viewItem == workItem",
           "group": "inline"
+        },
+        {
+          "command": "adoext.openWorkItem",
+          "when": "viewItem == workItem",
+          "group": "navigation"
         },
         {
           "command": "adoext.viewPullRequestDetails",
@@ -175,7 +186,7 @@
         {
           "command": "adoext.openPullRequest",
           "when": "viewItem == pullRequest",
-          "group": "inline"
+          "group": "navigation"
         },
         {
           "command": "adoext.replyToComment",

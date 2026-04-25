@@ -31,6 +31,11 @@ export class PullRequestNode extends vscode.TreeItem {
         this.tooltip = `PR #${id}: ${title}\n${sourceBranch} → ${targetBranch}`;
         this.contextValue = 'pullRequest';
         this.iconPath = prIcon(pr);
+        this.command = {
+            command: 'adoext.viewPullRequestDetails',
+            title: 'View Pull Request Details',
+            arguments: [this]
+        };
     }
 }
 

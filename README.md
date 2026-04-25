@@ -8,14 +8,20 @@ ADOExt is a full-featured Azure DevOps integration for Visual Studio Code, provi
 ### Work Items
 - Browse work items assigned to you, created by you, or all active items
 - Items are grouped by state (Active, New, Resolved, etc.)
-- One-click to open a work item in the browser
+- **One-click to view full work item details in a dedicated webview panel** — no browser needed
+  - See title, type, state, priority, assignee, description, area path, iteration, and tags
+  - View and add discussion comments directly from the panel
+  - Open in browser available as a secondary action
 
 ### Pull Requests
 - View active pull requests (yours, created, assigned to you, or all)
 - Expand pull requests to see all comment threads inline
 - Reply to comment threads directly from the tree view
 - Resolve or reopen comment threads without leaving VS Code
-- View full PR details (description, reviewers, all comments) in a dedicated webview panel
+- **One-click to view full PR details in a dedicated webview panel** — no browser needed
+  - See title, description, reviewers, source/target branches, and all comment threads
+  - Reply to threads, resolve/reopen, and add new comments from the panel
+  - Open in browser available as a secondary action
 - **Checkout a PR branch** with a single click using the built-in Git extension
 
 ### Multi-Account & Multi-Organization Support
