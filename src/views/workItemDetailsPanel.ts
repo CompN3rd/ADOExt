@@ -310,11 +310,19 @@ document.querySelector('[data-action="add-comment"]')?.addEventListener('click',
     /** Returns true if the URL scheme is safe for href / src attributes. */
     function isSafeUrl(url) {
         const lower = url.trim().toLowerCase();
-        return lower.startsWith('https://') ||
-               lower.startsWith('http://')  ||
-               lower.startsWith('#')         ||
-               lower.startsWith('/')         ||
-               lower.startsWith('data:image/');
+        if (lower.startsWith('https://') ||
+            lower.startsWith('http://')  ||
+            lower.startsWith('#')         ||
+            lower.startsWith('/')) {
+            return true;
+        }
+        // Allow raster image data URIs only; exclude SVG which can embed JS.
+        if (lower.startsWith('data:image/')) {
+            const mimeEnd = lower.indexOf(';');
+            const mime = mimeEnd > 0 ? lower.slice(0, mimeEnd) : lower;
+            return mime !== 'data:image/svg+xml';
+        }
+        return false;
     }
 
     /**
@@ -335,7 +343,7 @@ document.querySelector('[data-action="add-comment"]')?.addEventListener('click',
         if (!ALLOWED_TAGS.has(tag)) {
             // Unwrap: keep children, drop the element itself
             const frag = document.createDocumentFragment();
-            node.childNodes.forEach(child => {
+            Array.from(node.childNodes).forEach(child => {
                 const cleaned = cleanNode(child);
                 if (cleaned) { frag.appendChild(cleaned); }
             });
@@ -363,7 +371,7 @@ document.querySelector('[data-action="add-comment"]')?.addEventListener('click',
             el.setAttribute('rel', 'noopener noreferrer');
         }
 
-        node.childNodes.forEach(child => {
+        Array.from(node.childNodes).forEach(child => {
             const cleaned = cleanNode(child);
             if (cleaned) { el.appendChild(cleaned); }
         });
@@ -376,7 +384,7 @@ document.querySelector('[data-action="add-comment"]')?.addEventListener('click',
     const container = document.getElementById('description-content');
     if (!container) { return; }
 
-    doc.body.childNodes.forEach(child => {
+    Array.from(doc.body.childNodes).forEach(child => {
         const cleaned = cleanNode(child);
         if (cleaned) { container.appendChild(cleaned); }
     });
