@@ -1,5 +1,5 @@
 # ADOExt
-Azure Devops Extension for VS Code
+Azure DevOps Extension for VS Code
 
 ## Features
 

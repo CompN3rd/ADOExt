@@ -122,6 +122,19 @@ export class WorkItemProvider
         this._loading = true;
 
         try {
+            if (!this.client.isConnected) {
+                const node = new vscode.TreeItem(
+                    'Sign in to Azure DevOps…',
+                    vscode.TreeItemCollapsibleState.None
+                );
+                node.command = {
+                    command: 'adoext.signIn',
+                    title: 'Sign In'
+                };
+                node.iconPath = new vscode.ThemeIcon('sign-in');
+                return [node];
+            }
+
             if (!this.config.isConfigured) {
                 const node = new vscode.TreeItem(
                     'Configure organization and project…',

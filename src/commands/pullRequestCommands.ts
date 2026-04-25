@@ -65,7 +65,10 @@ export async function checkoutPullRequest(
         return;
     }
 
-    const gitApi = gitExtension.exports.getAPI(1);
+    const git = gitExtension.isActive
+        ? gitExtension.exports
+        : await gitExtension.activate();
+    const gitApi = git.getAPI(1);
     if (!gitApi) {
         vscode.window.showWarningMessage('Git API is not available.');
         return;

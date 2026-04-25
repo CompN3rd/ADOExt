@@ -30,6 +30,7 @@ export type {
 export class AdoClient {
     private _connection: azdev.WebApi | undefined;
     private _organization: string | undefined;
+    private _currentUserId: string | undefined;
 
     constructor(private _accessToken: string) {}
 
@@ -38,6 +39,13 @@ export class AdoClient {
      */
     updateToken(token: string): void {
         this._accessToken = token;
+        this._currentUserId = undefined;
+
+        if (!token.trim()) {
+            this.disconnect();
+            return;
+        }
+
         if (this._organization) {
             this.connect(this._organization);
         }
@@ -50,9 +58,20 @@ export class AdoClient {
      */
     connect(organization: string): void {
         this._organization = organization;
+
+        if (!this._accessToken.trim()) {
+            this._connection = undefined;
+            return;
+        }
+
         const orgUrl = `https://dev.azure.com/${organization}`;
         const authHandler = azdev.getBearerHandler(this._accessToken);
         this._connection = new azdev.WebApi(orgUrl, authHandler);
+    }
+
+    disconnect(): void {
+        this._connection = undefined;
+        this._currentUserId = undefined;
     }
 
     private get connection(): azdev.WebApi {
@@ -135,8 +154,7 @@ export class AdoClient {
 
         const ids = result.workItems
             .slice(0, 200)
-            .map(wi => wi.id!)
-            .filter(id => id !== undefined);
+            .flatMap(wi => wi.id !== undefined ? [wi.id] : []);
 
         if (ids.length === 0) {
             return [];
@@ -169,6 +187,14 @@ export class AdoClient {
         currentUserDescriptor?: string
     ): Promise<GitPullRequest[]> {
         const gitApi: IGitApi = await this.connection.getGitApi();
+
+        if (filter !== 'all' && !currentUserDescriptor) {
+            currentUserDescriptor = await this.getCurrentUserId();
+        }
+
+        if (filter !== 'all' && !currentUserDescriptor) {
+            return [];
+        }
 
         const searchCriteria: GitPullRequestSearchCriteria = {
             status: 1 // active
@@ -281,5 +307,36 @@ export class AdoClient {
 
     get organization(): string | undefined {
         return this._organization;
+    }
+
+    get isConnected(): boolean {
+        return this._connection !== undefined && this._accessToken.trim() !== '';
+    }
+
+    private async getCurrentUserId(): Promise<string | undefined> {
+        if (this._currentUserId) {
+            return this._currentUserId;
+        }
+
+        try {
+            const connectionData = await this.connection.connect();
+            this._currentUserId =
+                connectionData.authenticatedUser?.id ??
+                connectionData.authorizedUser?.id;
+        } catch {
+            // Fall back to the profile API if connection data is unavailable.
+        }
+
+        if (!this._currentUserId) {
+            try {
+                const profileApi = await this.connection.getProfileApi();
+                const profile = await profileApi.getUserDefaults();
+                this._currentUserId = profile.id;
+            } catch {
+                // Leave undefined and let callers handle the missing identity.
+            }
+        }
+
+        return this._currentUserId;
     }
 }

@@ -94,6 +94,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(
         vscode.commands.registerCommand('adoext.signOut', () => {
             auth.signOut();
+            client.updateToken('');
             updateSignedInContext();
             vscode.window.showInformationMessage('Signed out from Azure DevOps.');
             workItemProvider.refresh();

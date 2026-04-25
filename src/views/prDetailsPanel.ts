@@ -118,9 +118,18 @@ export class PrDetailsPanel {
                 vscode.window.showInformationMessage('Comment added.');
                 await this._refresh(this._client, this._config, this._pr);
             } else if (msg.type === 'openInBrowser') {
-                const org = this._client.organization ?? '';
+                const org = this._client.organization;
                 const projectName = this._config.project;
-                const url = `https://dev.azure.com/${org}/${projectName}/_git/${repoId}/pullrequest/${prId}`;
+                const repoName = this._pr.repository?.name;
+
+                if (!org || !projectName || !repoName) {
+                    vscode.window.showWarningMessage(
+                        'Unable to open pull request in browser because organization, project, or repository name is missing.'
+                    );
+                    return;
+                }
+
+                const url = `https://dev.azure.com/${encodeURIComponent(org)}/${encodeURIComponent(projectName)}/_git/${encodeURIComponent(repoName)}/pullrequest/${prId}`;
                 void vscode.env.openExternal(vscode.Uri.parse(url));
             }
         } catch (err) {
@@ -132,6 +141,8 @@ export class PrDetailsPanel {
         pr: GitPullRequest,
         threads: GitPullRequestCommentThread[]
     ): string {
+        const webview = this._panel.webview;
+        const nonce = this._createNonce();
         const prId = pr.pullRequestId ?? 0;
         const title = this._esc(pr.title ?? '');
         const description = this._esc(pr.description ?? '*(no description)*');
@@ -168,7 +179,7 @@ export class PrDetailsPanel {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
 <title>PR #${prId}</title>
 <style>
   body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); background: var(--vscode-editor-background); padding: 16px; margin: 0; }
@@ -202,7 +213,7 @@ export class PrDetailsPanel {
 </head>
 <body>
 <div class="toolbar">
-  <button class="btn btn-secondary" onclick="openInBrowser()">🔗 Open in Browser</button>
+    <button class="btn btn-secondary" data-action="open-browser">Open in Browser</button>
 </div>
 <h1>PR #${prId}: ${title}${isDraft}</h1>
 <div class="meta">
@@ -226,36 +237,49 @@ ${reviewersHtml ? `<div class="section"><h2>Reviewers</h2><ul class="reviewers">
   <h2>Add Comment</h2>
   <div class="new-comment-form">
     <textarea id="newCommentInput" class="reply-input" rows="3" placeholder="Write a comment…"></textarea>
-    <div><button class="btn btn-primary" onclick="addComment()">Add Comment</button></div>
+        <div><button class="btn btn-primary" data-action="add-comment">Add Comment</button></div>
   </div>
 </div>
 
-<script>
+<script nonce="${nonce}">
 const vscode = acquireVsCodeApi();
 
-function openInBrowser() {
-  vscode.postMessage({ type: 'openInBrowser' });
-}
+document.querySelector('[data-action="open-browser"]')?.addEventListener('click', () => {
+    vscode.postMessage({ type: 'openInBrowser' });
+});
 
-function addComment() {
-  const input = document.getElementById('newCommentInput');
-  const content = input.value.trim();
-  if (!content) return;
-  vscode.postMessage({ type: 'addComment', content });
-  input.value = '';
-}
+document.querySelector('[data-action="add-comment"]')?.addEventListener('click', () => {
+    const input = document.getElementById('newCommentInput');
+    const content = input.value.trim();
+    if (!content) {
+        return;
+    }
 
-function reply(threadId) {
-  const input = document.getElementById('reply_' + threadId);
-  const content = input.value.trim();
-  if (!content) return;
-  vscode.postMessage({ type: 'reply', threadId, content });
-  input.value = '';
-}
+    vscode.postMessage({ type: 'addComment', content });
+    input.value = '';
+});
 
-function setStatus(threadId, status) {
-  vscode.postMessage({ type: 'setStatus', threadId, status });
-}
+document.querySelectorAll('[data-action="reply"]').forEach(button => {
+    button.addEventListener('click', () => {
+        const threadId = Number(button.getAttribute('data-thread-id'));
+        const input = document.getElementById('reply_' + threadId);
+        const content = input.value.trim();
+        if (!content) {
+            return;
+        }
+
+        vscode.postMessage({ type: 'reply', threadId, content });
+        input.value = '';
+    });
+});
+
+document.querySelectorAll('[data-action="set-status"]').forEach(button => {
+    button.addEventListener('click', () => {
+        const threadId = Number(button.getAttribute('data-thread-id'));
+        const status = Number(button.getAttribute('data-status'));
+        vscode.postMessage({ type: 'setStatus', threadId, status });
+    });
+});
 </script>
 </body>
 </html>`;
@@ -276,8 +300,8 @@ function setStatus(threadId, status) {
             .join('');
 
         const statusBtn = isResolved
-            ? `<button class="btn btn-secondary" onclick="setStatus(${threadId}, 1)">Reopen</button>`
-            : `<button class="btn btn-secondary" onclick="setStatus(${threadId}, 2)">Resolve</button>`;
+            ? `<button class="btn btn-secondary" data-action="set-status" data-thread-id="${threadId}" data-status="1">Reopen</button>`
+            : `<button class="btn btn-secondary" data-action="set-status" data-thread-id="${threadId}" data-status="2">Resolve</button>`;
 
         return `
 <div class="thread ${isResolved ? 'resolved' : ''}">
@@ -288,7 +312,7 @@ function setStatus(threadId, status) {
   ${commentsHtml}
   <div class="reply-form">
     <textarea id="reply_${threadId}" class="reply-input" rows="2" placeholder="Reply…"></textarea>
-    <button class="btn btn-primary" onclick="reply(${threadId})">Reply</button>
+        <button class="btn btn-primary" data-action="reply" data-thread-id="${threadId}">Reply</button>
   </div>
 </div>`;
     }
@@ -303,10 +327,13 @@ function setStatus(threadId, status) {
 
     private _dispose(): void {
         PrDetailsPanel._panels.delete(this._pr.pullRequestId!);
-        this._panel.dispose();
         for (const d of this._disposables) {
             d.dispose();
         }
         this._disposables = [];
+    }
+
+    private _createNonce(): string {
+        return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     }
 }
