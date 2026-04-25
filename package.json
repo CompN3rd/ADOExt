@@ -1,0 +1,264 @@
+{
+  "name": "adoext",
+  "displayName": "ADOExt - Azure DevOps Integration",
+  "description": "Full-featured Azure DevOps integration for VS Code: work items, pull requests, comments, and multi-account/org support.",
+  "version": "0.1.0",
+  "publisher": "CompN3rd",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "azure devops",
+    "ado",
+    "work items",
+    "pull requests",
+    "git"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "adoext",
+          "title": "Azure DevOps",
+          "icon": "media/icons/ado.svg"
+        }
+      ]
+    },
+    "views": {
+      "adoext": [
+        {
+          "id": "adoext.workItems",
+          "name": "Work Items",
+          "icon": "media/icons/ado.svg",
+          "contextualTitle": "Azure DevOps Work Items"
+        },
+        {
+          "id": "adoext.pullRequests",
+          "name": "Pull Requests",
+          "icon": "media/icons/ado.svg",
+          "contextualTitle": "Azure DevOps Pull Requests"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "adoext.signIn",
+        "title": "Sign In to Azure DevOps",
+        "category": "ADOExt",
+        "icon": "$(sign-in)"
+      },
+      {
+        "command": "adoext.signOut",
+        "title": "Sign Out from Azure DevOps",
+        "category": "ADOExt",
+        "icon": "$(sign-out)"
+      },
+      {
+        "command": "adoext.selectOrganization",
+        "title": "Select Organization",
+        "category": "ADOExt",
+        "icon": "$(organization)"
+      },
+      {
+        "command": "adoext.selectProject",
+        "title": "Select Project",
+        "category": "ADOExt",
+        "icon": "$(folder)"
+      },
+      {
+        "command": "adoext.refreshWorkItems",
+        "title": "Refresh Work Items",
+        "category": "ADOExt",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "adoext.openWorkItem",
+        "title": "Open Work Item in Browser",
+        "category": "ADOExt",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "adoext.refreshPullRequests",
+        "title": "Refresh Pull Requests",
+        "category": "ADOExt",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "adoext.openPullRequest",
+        "title": "Open Pull Request in Browser",
+        "category": "ADOExt",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "adoext.viewPullRequestDetails",
+        "title": "View Pull Request Details",
+        "category": "ADOExt",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "adoext.checkoutPullRequest",
+        "title": "Checkout Pull Request Branch",
+        "category": "ADOExt",
+        "icon": "$(git-branch)"
+      },
+      {
+        "command": "adoext.replyToComment",
+        "title": "Reply to Comment",
+        "category": "ADOExt",
+        "icon": "$(comment)"
+      },
+      {
+        "command": "adoext.resolveThread",
+        "title": "Resolve Comment Thread",
+        "category": "ADOExt",
+        "icon": "$(check)"
+      },
+      {
+        "command": "adoext.reopenThread",
+        "title": "Reopen Comment Thread",
+        "category": "ADOExt",
+        "icon": "$(issues)"
+      },
+      {
+        "command": "adoext.addPullRequestComment",
+        "title": "Add Comment to Pull Request",
+        "category": "ADOExt",
+        "icon": "$(add)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "adoext.refreshWorkItems",
+          "when": "view == adoext.workItems",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.selectOrganization",
+          "when": "view == adoext.workItems || view == adoext.pullRequests",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.signIn",
+          "when": "view == adoext.workItems && !adoext.isSignedIn",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.refreshPullRequests",
+          "when": "view == adoext.pullRequests",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "adoext.openWorkItem",
+          "when": "viewItem == workItem",
+          "group": "inline"
+        },
+        {
+          "command": "adoext.viewPullRequestDetails",
+          "when": "viewItem == pullRequest",
+          "group": "inline"
+        },
+        {
+          "command": "adoext.checkoutPullRequest",
+          "when": "viewItem == pullRequest",
+          "group": "inline"
+        },
+        {
+          "command": "adoext.openPullRequest",
+          "when": "viewItem == pullRequest",
+          "group": "inline"
+        },
+        {
+          "command": "adoext.replyToComment",
+          "when": "viewItem == prComment",
+          "group": "inline"
+        },
+        {
+          "command": "adoext.resolveThread",
+          "when": "viewItem == prCommentThreadActive",
+          "group": "inline"
+        },
+        {
+          "command": "adoext.reopenThread",
+          "when": "viewItem == prCommentThreadResolved",
+          "group": "inline"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "ADOExt",
+      "properties": {
+        "adoext.organization": {
+          "type": "string",
+          "default": "",
+          "description": "Azure DevOps organization name (e.g. 'mycompany' for https://dev.azure.com/mycompany)"
+        },
+        "adoext.project": {
+          "type": "string",
+          "default": "",
+          "description": "Azure DevOps project name"
+        },
+        "adoext.workItemQuery": {
+          "type": "string",
+          "default": "assigned",
+          "enum": [
+            "assigned",
+            "created",
+            "mentioned",
+            "all"
+          ],
+          "enumDescriptions": [
+            "Work items assigned to me",
+            "Work items created by me",
+            "Work items where I was mentioned",
+            "All active work items"
+          ],
+          "description": "Which work items to show"
+        },
+        "adoext.pullRequestFilter": {
+          "type": "string",
+          "default": "mine",
+          "enum": [
+            "mine",
+            "created",
+            "assigned",
+            "all"
+          ],
+          "enumDescriptions": [
+            "PRs I created or am reviewing",
+            "PRs I created",
+            "PRs assigned to me for review",
+            "All active PRs"
+          ],
+          "description": "Which pull requests to show"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^8.56.0",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "azure-devops-node-api": "^15.1.2"
+  }
+}
