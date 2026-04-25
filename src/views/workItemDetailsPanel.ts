@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as crypto from 'crypto';
 import type { WorkItem, WorkItemComment } from '../api/adoClient';
 import type { AdoClient } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
@@ -145,7 +146,7 @@ export class WorkItemDetailsPanel {
             : '';
 
         const descriptionHtml = description
-            ? `<pre class="description-text">${this._esc(this._htmlToText(description))}</pre>`
+            ? `<pre class="description-text">${this._htmlToText(description)}</pre>`
             : '<em class="empty">No description provided.</em>';
 
         const commentsHtml = comments.length === 0
@@ -298,24 +299,28 @@ document.querySelector('[data-action="add-comment"]')?.addEventListener('click',
     }
 
     /**
-     * Convert HTML (from ADO work item description) to plain text.
-     * This strips all tags safely to prevent any XSS in the webview.
+     * Convert HTML (from ADO work item description) to safe text for direct
+     * insertion into a webview `<pre>` element.
+     *
+     * The input is HTML-escaped first (the primary security boundary), then
+     * escaped block-level elements are converted to newlines for basic
+     * readability, and remaining escaped tags are removed.  Because `_esc()`
+     * runs before any further processing, no HTML injection is possible.
      */
     private _htmlToText(html: string): string {
-        return html
-            // Convert block-level elements to newlines
-            .replace(/<\/?(p|div|li|tr|h[1-6])[^>]*>/gi, '\n')
-            .replace(/<br\s*\/?>/gi, '\n')
-            // Strip all remaining tags
-            .replace(/<[^>]*>/g, '')
-            // Decode common HTML entities
+        // Step 1: Escape the entire input.  All '<', '>', and '&' become HTML
+        // entities.  This is the security boundary — no further step can
+        // reintroduce executable HTML.
+        const escaped = this._esc(html);
+
+        // Step 2: For readability, convert escaped block-level elements to
+        // newlines and strip the remaining escaped tag patterns.  These are
+        // plain-text patterns at this point, not executable HTML.
+        return escaped
+            .replace(/&lt;\/?(p|div|li|tr|h[1-6])(?:\s[^&>]*)? *&gt;/gi, '\n')
+            .replace(/&lt;br\s*\/?&gt;/gi, '\n')
+            .replace(/&lt;[^&>]*&gt;/g, '')
             .replace(/&nbsp;/g, ' ')
-            .replace(/&amp;/g, '&')
-            .replace(/&lt;/g, '<')
-            .replace(/&gt;/g, '>')
-            .replace(/&quot;/g, '"')
-            .replace(/&#39;/g, "'")
-            // Collapse excess whitespace
             .replace(/[ \t]+/g, ' ')
             .replace(/\n{3,}/g, '\n\n')
             .trim();
@@ -357,6 +362,6 @@ document.querySelector('[data-action="add-comment"]')?.addEventListener('click',
     }
 
     private _createNonce(): string {
-        return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        return crypto.randomBytes(16).toString('hex');
     }
 }
