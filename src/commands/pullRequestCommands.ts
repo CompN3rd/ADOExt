@@ -7,6 +7,7 @@ import type {
 import type { AdoClient } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
 import { PrDetailsPanel } from '../views/prDetailsPanel';
+import { PrDiffPanel } from '../views/prDiffPanel';
 
 /**
  * Open a pull request in the browser.
@@ -35,6 +36,25 @@ export async function viewPullRequestDetails(
     config: ConfigManager
 ): Promise<void> {
     await PrDetailsPanel.show(context, client, config, node.pr, {
+        organization: node.organization,
+        project: node.project
+    });
+}
+
+/**
+ * Show the PR diff webview panel.
+ */
+export async function viewPullRequestDiff(
+    node: PullRequestNode | undefined,
+    client: AdoClient,
+    config: ConfigManager
+): Promise<void> {
+    if (!node) {
+        vscode.window.showInformationMessage('Select a pull request first, then run "View Pull Request Diff".');
+        return;
+    }
+
+    await PrDiffPanel.show(client, config, node.pr, {
         organization: node.organization,
         project: node.project
     });

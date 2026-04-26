@@ -136,13 +136,16 @@ export class WorkItemDetailsPanel {
     private async _handleMessage(msg: {
         type: string;
         content?: string;
+        state?: string;
     }): Promise<void> {
         const id = this._workItemId;
         const project = this._project ?? this._config.project;
         const org = this._organization ?? this._client.organization ?? this._config.organization;
         const action = msg.type === 'addComment'
             ? 'Failed to add work item comment'
-            : 'Failed to open work item in browser';
+            : msg.type === 'setState'
+                ? 'Failed to update work item state'
+                : 'Failed to open work item in browser';
 
         try {
             if (msg.type === 'addComment' && msg.content) {
@@ -164,6 +167,20 @@ export class WorkItemDetailsPanel {
                 }
                 const url = `https://dev.azure.com/${encodeURIComponent(org)}/${encodeURIComponent(project)}/_workitems/edit/${id}`;
                 void vscode.env.openExternal(vscode.Uri.parse(url));
+            } else if (msg.type === 'setState' && msg.state) {
+                if (!org || !project) {
+                    vscode.window.showWarningMessage(
+                        'Unable to update state because organization or project is missing.'
+                    );
+                    return;
+                }
+                await this._client.updateWorkItemState(project, id, msg.state, org);
+                vscode.window.showInformationMessage(`Work item #${id} moved to ${msg.state}.`);
+                void vscode.commands.executeCommand('adoext.refreshWorkItems');
+                void vscode.commands.executeCommand('adoext.refreshBacklog');
+                void vscode.commands.executeCommand('adoext.refreshSprints');
+                void vscode.commands.executeCommand('adoext.refreshBoards');
+                await this._refresh(this._client, this._config, this._workItem);
             }
         } catch (err) {
             vscode.window.showErrorMessage(`${action}: ${this._formatError(err)}`);
@@ -178,7 +195,8 @@ export class WorkItemDetailsPanel {
 
         const title = this._esc((f['System.Title'] as string | undefined) ?? '');
         const wiType = this._esc((f['System.WorkItemType'] as string | undefined) ?? 'Work Item');
-        const state = this._esc((f['System.State'] as string | undefined) ?? '');
+        const rawState = (f['System.State'] as string | undefined) ?? '';
+        const state = this._esc(rawState);
         const assignedTo = this._esc(this._identityName(f['System.AssignedTo']) ?? 'Unassigned');
         const createdBy = this._esc(this._identityName(f['System.CreatedBy']) ?? 'Unknown');
         const createdDate = this._formatDate(f['System.CreatedDate'] as string | Date | undefined);
@@ -190,6 +208,7 @@ export class WorkItemDetailsPanel {
         const description = (f['System.Description'] as string | undefined) ?? '';
 
         const stateColor = this._stateColor(state);
+        const stateOptions = this._stateOptions(rawState);
         const priorityHtml = priority !== undefined
             ? `<span class="badge priority-${priority}">P${priority}</span>`
             : '';
@@ -233,7 +252,9 @@ export class WorkItemDetailsPanel {
   body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); background: var(--vscode-editor-background); padding: 16px; margin: 0; }
   h1 { font-size: 1.3em; margin-bottom: 4px; }
   h2 { font-size: 1em; border-bottom: 1px solid var(--vscode-panel-border); padding-bottom: 4px; margin-bottom: 8px; }
-  .toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
+    .toolbar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+    .state-edit { display: flex; gap: 6px; align-items: center; }
+    select { background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground); border: 1px solid var(--vscode-dropdown-border); border-radius: 3px; padding: 3px 22px 3px 6px; }
   .meta { margin-bottom: 16px; }
   .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.8em; font-weight: 600; margin-right: 6px; }
   .badge-type { background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
@@ -275,6 +296,10 @@ export class WorkItemDetailsPanel {
 <body>
 <div class="toolbar">
   <button class="btn btn-secondary" data-action="open-browser">Open in Browser</button>
+    <div class="state-edit">
+        <select id="stateSelect" aria-label="Work item state">${stateOptions}</select>
+        <button class="btn btn-primary" data-action="set-state">Update State</button>
+    </div>
 </div>
 
 <h1>
@@ -321,6 +346,12 @@ document.querySelector('[data-action="add-comment"]')?.addEventListener('click',
     if (!content) { return; }
     vscode.postMessage({ type: 'addComment', content });
     input.value = '';
+});
+
+document.querySelector('[data-action="set-state"]')?.addEventListener('click', () => {
+    const select = /** @type {HTMLSelectElement} */ (document.getElementById('stateSelect'));
+    if (!select.value) { return; }
+    vscode.postMessage({ type: 'setState', state: select.value });
 });
 
 // ---------------------------------------------------------------------------
@@ -507,6 +538,26 @@ document.querySelector('[data-action="add-comment"]')?.addEventListener('click',
             default:
                 return 'var(--vscode-foreground)';
         }
+    }
+
+    private _stateOptions(currentState: string): string {
+        const states = [
+            'New',
+            'Proposed',
+            'Active',
+            'Committed',
+            'In Progress',
+            'Resolved',
+            'Closed',
+            'Done',
+            'Removed'
+        ];
+        const options = states.includes(currentState) || !currentState
+            ? states
+            : [currentState, ...states];
+        return options
+            .map(state => `<option value="${this._esc(state)}"${state === currentState ? ' selected' : ''}>${this._esc(state)}</option>`)
+            .join('');
     }
 
     private _dispose(): void {

@@ -11,6 +11,7 @@ ADOExt is a full-featured Azure DevOps integration for Visual Studio Code, provi
 - Work item type icons use custom ADO-style icons for bugs, tasks, epics, features, stories, PBIs, and issues
 - **One-click to view full work item details in a dedicated webview panel** — no browser needed
   - See title, type, state, priority, assignee, description, area path, iteration, and tags
+  - Change work item state directly from VS Code
   - View and add discussion comments directly from the panel
   - Open in browser available as a secondary action
 
@@ -18,6 +19,8 @@ ADOExt is a full-featured Azure DevOps integration for Visual Studio Code, provi
 - View a hierarchical backlog using Azure DevOps parent/child work item links
 - Browse sprint work grouped by iteration path
 - Browse board work grouped by state columns
+- Open Backlog and Board editor views for wider nested planning layouts
+- Change work item state from the editor planning views and refresh the sidebar views automatically
 - Open any work item from these planning views in the same details panel used by the Work Items view
 
 ### Pull Requests
@@ -28,6 +31,7 @@ ADOExt is a full-featured Azure DevOps integration for Visual Studio Code, provi
 - **One-click to view full PR details in a dedicated webview panel** — no browser needed
   - See title, description, reviewers, source/target branches, and all comment threads
   - Reply to threads, resolve/reopen, and add new comments from the panel
+  - Open a pull request diff view with changed files, line hunks, and line comments
   - Open in browser available as a secondary action
 - **Checkout a PR branch** with a single click using the built-in Git extension
 

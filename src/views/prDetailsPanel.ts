@@ -3,6 +3,7 @@ import * as crypto from 'crypto';
 import type { GitPullRequest, GitPullRequestCommentThread, Comment } from '../api/adoClient';
 import type { AdoClient } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
+import { PrDiffPanel } from './prDiffPanel';
 
 interface PrPanelScope {
     organization?: string;
@@ -157,6 +158,11 @@ export class PrDetailsPanel {
 
                 const url = `https://dev.azure.com/${encodeURIComponent(org)}/${encodeURIComponent(projectName)}/_git/${encodeURIComponent(repoName)}/pullrequest/${prId}`;
                 void vscode.env.openExternal(vscode.Uri.parse(url));
+            } else if (msg.type === 'openDiff') {
+                await PrDiffPanel.show(this._client, this._config, this._pr, {
+                    organization,
+                    project
+                });
             }
         } catch (err) {
             vscode.window.showErrorMessage(`Error: ${err}`);
@@ -192,8 +198,8 @@ export class PrDetailsPanel {
             })
             .join('');
 
-        const meaningfulThreads = threads.filter(
-            t => t.comments && t.comments.length > 0 && !t.isDeleted
+        const meaningfulThreads = (threads ?? []).filter(
+            t => (t.comments ?? []).some(comment => !!comment.content) && !t.isDeleted
         );
 
         const threadsHtml = meaningfulThreads.length === 0
@@ -239,6 +245,7 @@ export class PrDetailsPanel {
 </head>
 <body>
 <div class="toolbar">
+    <button class="btn btn-primary" data-action="open-diff">View Diff</button>
     <button class="btn btn-secondary" data-action="open-browser">Open in Browser</button>
 </div>
 <h1>PR #${prId}: ${title}${isDraft}</h1>
@@ -272,6 +279,10 @@ const vscode = acquireVsCodeApi();
 
 document.querySelector('[data-action="open-browser"]')?.addEventListener('click', () => {
     vscode.postMessage({ type: 'openInBrowser' });
+});
+
+document.querySelector('[data-action="open-diff"]')?.addEventListener('click', () => {
+    vscode.postMessage({ type: 'openDiff' });
 });
 
 document.querySelector('[data-action="add-comment"]')?.addEventListener('click', () => {

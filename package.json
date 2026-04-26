@@ -103,6 +103,12 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "adoext.openBacklogView",
+        "title": "Open Backlog in Editor",
+        "category": "ADOExt",
+        "icon": "$(open-preview)"
+      },
+      {
         "command": "adoext.refreshSprints",
         "title": "Refresh Sprints",
         "category": "ADOExt",
@@ -115,6 +121,12 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "adoext.openBoardView",
+        "title": "Open Board in Editor",
+        "category": "ADOExt",
+        "icon": "$(open-preview)"
+      },
+      {
         "command": "adoext.openWorkItem",
         "title": "Open Work Item in Browser",
         "category": "ADOExt",
@@ -125,6 +137,12 @@
         "title": "View Work Item Details",
         "category": "ADOExt",
         "icon": "$(eye)"
+      },
+      {
+        "command": "adoext.changeWorkItemState",
+        "title": "Change Work Item State",
+        "category": "ADOExt",
+        "icon": "$(edit)"
       },
       {
         "command": "adoext.refreshPullRequests",
@@ -143,6 +161,12 @@
         "title": "View Pull Request Details",
         "category": "ADOExt",
         "icon": "$(eye)"
+      },
+      {
+        "command": "adoext.viewPullRequestDiff",
+        "title": "View Pull Request Diff",
+        "category": "ADOExt",
+        "icon": "$(diff)"
       },
       {
         "command": "adoext.checkoutPullRequest",
@@ -183,6 +207,11 @@
           "group": "navigation"
         },
         {
+          "command": "adoext.openBacklogView",
+          "when": "view == adoext.backlog",
+          "group": "navigation"
+        },
+        {
           "command": "adoext.refreshBacklog",
           "when": "view == adoext.backlog",
           "group": "navigation"
@@ -190,6 +219,11 @@
         {
           "command": "adoext.refreshSprints",
           "when": "view == adoext.sprints",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.openBoardView",
+          "when": "view == adoext.boards",
           "group": "navigation"
         },
         {
@@ -225,7 +259,17 @@
           "group": "navigation"
         },
         {
+          "command": "adoext.changeWorkItemState",
+          "when": "viewItem == workItem",
+          "group": "inline"
+        },
+        {
           "command": "adoext.viewPullRequestDetails",
+          "when": "viewItem == pullRequest",
+          "group": "inline"
+        },
+        {
+          "command": "adoext.viewPullRequestDiff",
           "when": "viewItem == pullRequest",
           "group": "inline"
         },

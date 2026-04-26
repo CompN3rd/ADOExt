@@ -10,14 +10,16 @@ import {
     PullRequestThreadNode
 } from './providers/pullRequestProvider';
 import { BacklogProvider, SprintProvider, BoardProvider } from './providers/planningProviders';
+import { PlanningPanel } from './views/planningPanel';
 import {
     selectOrganization,
     selectProject
 } from './commands/accountCommands';
-import { openWorkItem, viewWorkItemDetails } from './commands/workItemCommands';
+import { changeWorkItemState, openWorkItem, viewWorkItemDetails } from './commands/workItemCommands';
 import {
     openPullRequest,
     viewPullRequestDetails,
+    viewPullRequestDiff,
     checkoutPullRequest,
     replyToComment,
     resolveThread,
@@ -170,6 +172,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         })
     );
 
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adoext.openBacklogView', async () => {
+            if (!(await ensureSignedIn())) { return; }
+            await PlanningPanel.show('backlog', client, config, refreshAllViews);
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adoext.openBoardView', async () => {
+            if (!(await ensureSignedIn())) { return; }
+            await PlanningPanel.show('board', client, config, refreshAllViews);
+        })
+    );
+
     // View work item details in webview
     context.subscriptions.push(
         vscode.commands.registerCommand(
@@ -183,6 +199,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand(
             'adoext.openWorkItem',
             (node: WorkItemNode) => openWorkItem(node, client, config)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.changeWorkItemState',
+            async (node?: WorkItemNode) => {
+                const updated = await changeWorkItemState(node, client, config);
+                if (updated) {
+                    refreshAllViews();
+                }
+            }
         )
     );
 
@@ -208,6 +236,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             'adoext.viewPullRequestDetails',
             (node: PullRequestNode) =>
                 viewPullRequestDetails(node, context, client, config)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.viewPullRequestDiff',
+            async (node: PullRequestNode) => {
+                if (!(await ensureSignedIn())) { return; }
+                await viewPullRequestDiff(node, client, config);
+            }
         )
     );
 

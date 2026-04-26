@@ -3,6 +3,8 @@ import type { IWorkItemTrackingApi } from 'azure-devops-node-api/WorkItemTrackin
 import type { IGitApi } from 'azure-devops-node-api/GitApi';
 import type { ICoreApi } from 'azure-devops-node-api/CoreApi';
 import { WorkItemExpand } from 'azure-devops-node-api/interfaces/WorkItemTrackingInterfaces';
+import { GitVersionType, VersionControlChangeType } from 'azure-devops-node-api/interfaces/GitInterfaces';
+import { Operation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
 import type {
     WorkItem,
     WorkItemType,
@@ -12,11 +14,14 @@ import type {
 import type {
     GitPullRequest,
     GitPullRequestCommentThread,
+    GitPullRequestChange,
+    FileDiff,
     GitPullRequestSearchCriteria,
     Comment,
     CommentThreadStatus
 } from 'azure-devops-node-api/interfaces/GitInterfaces';
 import type { TeamProject } from 'azure-devops-node-api/interfaces/CoreInterfaces';
+import type { JsonPatchDocument, JsonPatchOperation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
 
 export type {
     WorkItem,
@@ -28,6 +33,24 @@ export type {
     CommentThreadStatus,
     TeamProject
 };
+
+export interface PullRequestFileDiff {
+    path: string;
+    originalPath?: string;
+    changeType: string;
+    changeTrackingId?: number;
+    originalContent: string;
+    modifiedContent: string;
+    lineDiffBlocks: FileDiff['lineDiffBlocks'];
+}
+
+export interface PullRequestDiffModel {
+    iterationId: number;
+    baseIterationId: number;
+    baseCommit?: string;
+    targetCommit?: string;
+    files: PullRequestFileDiff[];
+}
 
 /**
  * Thin wrapper around the azure-devops-node-api package.
@@ -202,7 +225,7 @@ export class AdoClient {
             undefined,
             project
         );
-        return workItems.filter((wi): wi is WorkItem => wi !== null);
+        return (workItems ?? []).filter((wi): wi is WorkItem => wi !== null);
     }
 
     /**
@@ -244,7 +267,33 @@ export class AdoClient {
             undefined,
             project
         );
-        return workItems.filter((wi): wi is WorkItem => wi !== null);
+        return (workItems ?? []).filter((wi): wi is WorkItem => wi !== null);
+    }
+
+    async updateWorkItemState(
+        project: string,
+        workItemId: number,
+        state: string,
+        organization?: string
+    ): Promise<WorkItem> {
+        const witApi: IWorkItemTrackingApi = await this.getConnectionFor(organization).getWorkItemTrackingApi();
+        const patch: JsonPatchOperation[] = [
+            {
+                op: Operation.Add,
+                path: '/fields/System.State',
+                value: state
+            }
+        ];
+        return witApi.updateWorkItem(
+            { 'Content-Type': 'application/json-patch+json' },
+            patch as unknown as JsonPatchDocument,
+            workItemId,
+            project,
+            undefined,
+            undefined,
+            undefined,
+            WorkItemExpand.All
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -317,6 +366,122 @@ export class AdoClient {
         const gitApi: IGitApi = await this.getConnectionFor(organization).getGitApi();
         const threads = await gitApi.getThreads(repositoryId, pullRequestId, project);
         return threads ?? [];
+    }
+
+    async getPullRequestDiff(
+        project: string,
+        repositoryId: string,
+        pullRequest: GitPullRequest,
+        organization?: string
+    ): Promise<PullRequestDiffModel> {
+        const gitApi: IGitApi = await this.getConnectionFor(organization).getGitApi();
+        const pullRequestId = pullRequest.pullRequestId ?? 0;
+        const iterations = await gitApi.getPullRequestIterations(repositoryId, pullRequestId, project, true);
+        const latestIteration = [...(iterations ?? [])]
+            .filter(iteration => typeof iteration.id === 'number')
+            .sort((left, right) => (right.id ?? 0) - (left.id ?? 0))[0];
+
+        const iterationId = latestIteration?.id ?? 1;
+        const baseIterationId = 0;
+        const iterationChanges = await gitApi.getPullRequestIterationChanges(
+            repositoryId,
+            pullRequestId,
+            iterationId,
+            project,
+            2000,
+            0,
+            baseIterationId
+        );
+        const changeEntries = iterationChanges?.changeEntries ?? [];
+
+        const baseCommit =
+            latestIteration?.commonRefCommit?.commitId ??
+            latestIteration?.targetRefCommit?.commitId ??
+            pullRequest.lastMergeTargetCommit?.commitId;
+        const targetCommit =
+            latestIteration?.sourceRefCommit?.commitId ??
+            pullRequest.lastMergeSourceCommit?.commitId;
+
+        const fileDiffs = baseCommit && targetCommit
+            ? await this.getFileDiffs(gitApi, project, repositoryId, baseCommit, targetCommit, changeEntries)
+            : [];
+
+        const fileDiffByPath = new Map<string, FileDiff>();
+        for (const fileDiff of fileDiffs) {
+            if (fileDiff.path) {
+                fileDiffByPath.set(fileDiff.path, fileDiff);
+            }
+        }
+
+        const files = await Promise.all(changeEntries
+            .filter(change => change.item?.path && !change.item?.isFolder)
+            .slice(0, 100)
+            .map(async change => {
+                const path = change.item?.path ?? '';
+                const originalPath = change.originalPath ?? path;
+                const changeType = this.formatChangeType(change.changeType);
+                const isAdd = change.changeType === VersionControlChangeType.Add;
+                const isDelete = change.changeType === VersionControlChangeType.Delete;
+                const [originalContent, modifiedContent] = await Promise.all([
+                    !isAdd && baseCommit
+                        ? this.getItemText(gitApi, project, repositoryId, originalPath, baseCommit)
+                        : Promise.resolve(''),
+                    !isDelete && targetCommit
+                        ? this.getItemText(gitApi, project, repositoryId, path, targetCommit)
+                        : Promise.resolve('')
+                ]);
+
+                const fileDiff = fileDiffByPath.get(path);
+                return {
+                    path,
+                    originalPath: originalPath !== path ? originalPath : undefined,
+                    changeType,
+                    changeTrackingId: change.changeTrackingId,
+                    originalContent,
+                    modifiedContent,
+                    lineDiffBlocks: fileDiff?.lineDiffBlocks ?? []
+                };
+            }));
+
+        return {
+            iterationId,
+            baseIterationId,
+            baseCommit,
+            targetCommit,
+            files
+        };
+    }
+
+    async addPullRequestLineComment(
+        project: string,
+        repositoryId: string,
+        pullRequestId: number,
+        filePath: string,
+        line: number,
+        content: string,
+        iterationId: number,
+        baseIterationId: number,
+        changeTrackingId?: number,
+        organization?: string
+    ): Promise<GitPullRequestCommentThread> {
+        const gitApi: IGitApi = await this.getConnectionFor(organization).getGitApi();
+        const thread: GitPullRequestCommentThread = {
+            comments: [{ content }],
+            status: 1,
+            threadContext: {
+                filePath,
+                rightFileStart: { line, offset: 1 },
+                rightFileEnd: { line, offset: 1 }
+            },
+            pullRequestThreadContext: {
+                changeTrackingId,
+                iterationContext: {
+                    firstComparingIteration: baseIterationId,
+                    secondComparingIteration: iterationId
+                }
+            }
+        };
+        return gitApi.createThread(thread, repositoryId, pullRequestId, project);
     }
 
     /**
@@ -460,5 +625,97 @@ export class AdoClient {
 
     private escapeWiqlString(value: string): string {
         return value.replace(/'/g, "''");
+    }
+
+    private async getFileDiffs(
+        gitApi: IGitApi,
+        project: string,
+        repositoryId: string,
+        baseCommit: string,
+        targetCommit: string,
+        changeEntries: GitPullRequestChange[]
+    ): Promise<FileDiff[]> {
+        const fileDiffParams = changeEntries
+            .filter(change => change.item?.path && !change.item?.isFolder)
+            .slice(0, 100)
+            .map(change => ({
+                path: change.item?.path,
+                originalPath: change.originalPath ?? change.item?.path
+            }));
+
+        if (fileDiffParams.length === 0) {
+            return [];
+        }
+
+        try {
+            return await gitApi.getFileDiffs(
+                {
+                    baseVersionCommit: baseCommit,
+                    targetVersionCommit: targetCommit,
+                    fileDiffParams
+                },
+                project,
+                repositoryId
+            ) ?? [];
+        } catch {
+            return [];
+        }
+    }
+
+    private async getItemText(
+        gitApi: IGitApi,
+        project: string,
+        repositoryId: string,
+        itemPath: string,
+        commitId: string
+    ): Promise<string> {
+        try {
+            const stream = await gitApi.getItemContent(
+                repositoryId,
+                itemPath,
+                project,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                {
+                    version: commitId,
+                    versionType: GitVersionType.Commit
+                },
+                true
+            );
+            return this.streamToString(stream);
+        } catch {
+            return '';
+        }
+    }
+
+    private streamToString(stream: NodeJS.ReadableStream): Promise<string> {
+        return new Promise((resolve, reject) => {
+            const chunks: Buffer[] = [];
+            stream.on('data', chunk => {
+                chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+            });
+            stream.on('error', reject);
+            stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+        });
+    }
+
+    private formatChangeType(changeType: VersionControlChangeType | undefined): string {
+        if (changeType === undefined) {
+            return 'edit';
+        }
+
+        if ((changeType & VersionControlChangeType.Add) === VersionControlChangeType.Add) {
+            return 'add';
+        }
+        if ((changeType & VersionControlChangeType.Delete) === VersionControlChangeType.Delete) {
+            return 'delete';
+        }
+        if ((changeType & VersionControlChangeType.Rename) === VersionControlChangeType.Rename) {
+            return 'rename';
+        }
+        return 'edit';
     }
 }

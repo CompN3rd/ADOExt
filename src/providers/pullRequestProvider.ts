@@ -250,8 +250,8 @@ export class PullRequestProvider implements vscode.TreeDataProvider<PullRequestT
             const project = scope?.project ?? this.config.project;
             const organization = scope?.organization ?? this.config.organization;
             const threads = await this.client.getPullRequestThreads(project, repoId, prId, organization);
-            const meaningful = threads.filter(
-                thread => thread.comments && thread.comments.length > 0 && !thread.isDeleted
+            const meaningful = (threads ?? []).filter(
+                thread => (thread.comments ?? []).some(comment => !!comment.content) && !thread.isDeleted
             );
             if (meaningful.length === 0) {
                 const node = new vscode.TreeItem('No comments', vscode.TreeItemCollapsibleState.None);
