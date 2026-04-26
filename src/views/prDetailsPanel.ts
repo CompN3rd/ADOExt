@@ -3,6 +3,12 @@ import * as crypto from 'crypto';
 import type { GitPullRequest, GitPullRequestCommentThread, Comment } from '../api/adoClient';
 import type { AdoClient } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
+import { PrDiffPanel } from './prDiffPanel';
+
+interface PrPanelScope {
+    organization?: string;
+    project?: string;
+}
 
 /**
  * Renders a pull request's details (title, description, reviewers, comment
@@ -10,33 +16,47 @@ import type { ConfigManager } from '../config/configManager';
  * resolve/reopen them without leaving VS Code.
  */
 export class PrDetailsPanel {
-    private static _panels = new Map<number, PrDetailsPanel>();
+    private static _panels = new Map<string, PrDetailsPanel>();
 
     private readonly _panel: vscode.WebviewPanel;
+    private readonly _panelKey: string;
+    private readonly _organization?: string;
+    private readonly _project?: string;
     private _disposables: vscode.Disposable[] = [];
 
     static async show(
         context: vscode.ExtensionContext,
         client: AdoClient,
         config: ConfigManager,
-        pr: GitPullRequest
+        pr: GitPullRequest,
+        scope: PrPanelScope = {}
     ): Promise<void> {
         const prId = pr.pullRequestId!;
-        const existing = PrDetailsPanel._panels.get(prId);
+        const key = PrDetailsPanel.panelKey(
+            prId,
+            scope.organization ?? client.organization ?? config.organization,
+            scope.project ?? config.project
+        );
+        const existing = PrDetailsPanel._panels.get(key);
         if (existing) {
             existing._panel.reveal(vscode.ViewColumn.One);
             await existing._refresh(client, config, pr);
             return;
         }
-        new PrDetailsPanel(context, client, config, pr);
+        new PrDetailsPanel(context, client, config, pr, key, scope);
     }
 
     private constructor(
         private readonly _context: vscode.ExtensionContext,
         private readonly _client: AdoClient,
         private readonly _config: ConfigManager,
-        private _pr: GitPullRequest
+        private _pr: GitPullRequest,
+        panelKey: string,
+        scope: PrPanelScope
     ) {
+        this._panelKey = panelKey;
+        this._organization = scope.organization;
+        this._project = scope.project;
         const prId = _pr.pullRequestId!;
         this._panel = vscode.window.createWebviewPanel(
             'adoext.prDetails',
@@ -56,7 +76,7 @@ export class PrDetailsPanel {
             this._disposables
         );
 
-        PrDetailsPanel._panels.set(prId, this);
+        PrDetailsPanel._panels.set(panelKey, this);
         void this._refresh(_client, _config, _pr);
     }
 
@@ -68,9 +88,11 @@ export class PrDetailsPanel {
         this._pr = pr;
         const repoId = pr.repository?.id ?? '';
         const prId = pr.pullRequestId!;
+        const project = this._project ?? config.project;
+        const organization = this._organization ?? client.organization ?? config.organization;
         let threads: GitPullRequestCommentThread[] = [];
         try {
-            threads = await client.getPullRequestThreads(config.project, repoId, prId);
+            threads = await client.getPullRequestThreads(project, repoId, prId, organization);
         } catch {
             // show panel anyway, threads will just be empty
         }
@@ -85,7 +107,8 @@ export class PrDetailsPanel {
     }): Promise<void> {
         const repoId = this._pr.repository?.id ?? '';
         const prId = this._pr.pullRequestId!;
-        const project = this._config.project;
+        const project = this._project ?? this._config.project;
+        const organization = this._organization ?? this._client.organization ?? this._config.organization;
 
         try {
             if (msg.type === 'reply' && msg.threadId !== undefined && msg.content) {
@@ -94,7 +117,8 @@ export class PrDetailsPanel {
                     repoId,
                     prId,
                     msg.threadId,
-                    msg.content
+                    msg.content,
+                    organization
                 );
                 vscode.window.showInformationMessage('Reply posted.');
                 await this._refresh(this._client, this._config, this._pr);
@@ -104,7 +128,8 @@ export class PrDetailsPanel {
                     repoId,
                     prId,
                     msg.threadId,
-                    msg.status
+                    msg.status,
+                    organization
                 );
                 const label = msg.status === 2 ? 'resolved' : 'reopened';
                 vscode.window.showInformationMessage(`Thread ${label}.`);
@@ -114,13 +139,14 @@ export class PrDetailsPanel {
                     project,
                     repoId,
                     prId,
-                    msg.content
+                    msg.content,
+                    organization
                 );
                 vscode.window.showInformationMessage('Comment added.');
                 await this._refresh(this._client, this._config, this._pr);
             } else if (msg.type === 'openInBrowser') {
-                const org = this._client.organization;
-                const projectName = this._config.project;
+                const org = organization;
+                const projectName = project;
                 const repoName = this._pr.repository?.name;
 
                 if (!org || !projectName || !repoName) {
@@ -132,6 +158,11 @@ export class PrDetailsPanel {
 
                 const url = `https://dev.azure.com/${encodeURIComponent(org)}/${encodeURIComponent(projectName)}/_git/${encodeURIComponent(repoName)}/pullrequest/${prId}`;
                 void vscode.env.openExternal(vscode.Uri.parse(url));
+            } else if (msg.type === 'openDiff') {
+                await PrDiffPanel.show(this._client, this._config, this._pr, {
+                    organization,
+                    project
+                });
             }
         } catch (err) {
             vscode.window.showErrorMessage(`Error: ${err}`);
@@ -167,8 +198,8 @@ export class PrDetailsPanel {
             })
             .join('');
 
-        const meaningfulThreads = threads.filter(
-            t => t.comments && t.comments.length > 0 && !t.isDeleted
+        const meaningfulThreads = (threads ?? []).filter(
+            t => (t.comments ?? []).some(comment => !!comment.content) && !t.isDeleted
         );
 
         const threadsHtml = meaningfulThreads.length === 0
@@ -214,6 +245,7 @@ export class PrDetailsPanel {
 </head>
 <body>
 <div class="toolbar">
+    <button class="btn btn-primary" data-action="open-diff">View Diff</button>
     <button class="btn btn-secondary" data-action="open-browser">Open in Browser</button>
 </div>
 <h1>PR #${prId}: ${title}${isDraft}</h1>
@@ -247,6 +279,10 @@ const vscode = acquireVsCodeApi();
 
 document.querySelector('[data-action="open-browser"]')?.addEventListener('click', () => {
     vscode.postMessage({ type: 'openInBrowser' });
+});
+
+document.querySelector('[data-action="open-diff"]')?.addEventListener('click', () => {
+    vscode.postMessage({ type: 'openDiff' });
 });
 
 document.querySelector('[data-action="add-comment"]')?.addEventListener('click', () => {
@@ -327,7 +363,7 @@ document.querySelectorAll('[data-action="set-status"]').forEach(button => {
     }
 
     private _dispose(): void {
-        PrDetailsPanel._panels.delete(this._pr.pullRequestId!);
+        PrDetailsPanel._panels.delete(this._panelKey);
         for (const d of this._disposables) {
             d.dispose();
         }
@@ -336,5 +372,9 @@ document.querySelectorAll('[data-action="set-status"]').forEach(button => {
 
     private _createNonce(): string {
         return crypto.randomBytes(16).toString('hex');
+    }
+
+    private static panelKey(prId: number, organization?: string, project?: string): string {
+        return JSON.stringify([organization ?? null, project ?? null, prId]);
     }
 }

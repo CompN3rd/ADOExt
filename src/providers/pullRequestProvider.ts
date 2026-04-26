@@ -1,15 +1,37 @@
 import * as vscode from 'vscode';
 import type { AdoClient, GitPullRequest, GitPullRequestCommentThread, Comment } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
+import {
+    resolveProjectScopes,
+    scopeKey,
+    scopeLabel,
+    type ProjectScope
+} from './projectScopes';
+import { mapWithConcurrencyLimit } from '../utils/async';
 
-// ---------------------------------------------------------------------------
-// Tree node types
-// ---------------------------------------------------------------------------
+const MAX_CONCURRENT_SCOPE_REQUESTS = 4;
+
+interface ScopedPullRequest {
+    pr: GitPullRequest;
+    scope: ProjectScope;
+}
+
+export class PullRequestScopeGroup extends vscode.TreeItem {
+    constructor(
+        public readonly scope: ProjectScope,
+        public readonly prs: ScopedPullRequest[]
+    ) {
+        super(scopeLabel(scope), vscode.TreeItemCollapsibleState.Expanded);
+        this.description = `${prs.length} PR${prs.length !== 1 ? 's' : ''}`;
+        this.iconPath = new vscode.ThemeIcon('project');
+        this.contextValue = 'pullRequestScopeGroup';
+    }
+}
 
 export class PullRequestGroup extends vscode.TreeItem {
     constructor(
         public readonly label: string,
-        public readonly prs: GitPullRequest[]
+        public readonly prs: ScopedPullRequest[]
     ) {
         super(label, vscode.TreeItemCollapsibleState.Expanded);
         this.description = `${prs.length} PR${prs.length !== 1 ? 's' : ''}`;
@@ -19,16 +41,29 @@ export class PullRequestGroup extends vscode.TreeItem {
 }
 
 export class PullRequestNode extends vscode.TreeItem {
-    constructor(public readonly pr: GitPullRequest) {
+    public readonly organization?: string;
+    public readonly project?: string;
+
+    constructor(
+        public readonly pr: GitPullRequest,
+        public readonly scope?: ProjectScope
+    ) {
         const id = pr.pullRequestId ?? 0;
         const title = pr.title ?? '(no title)';
         super(`#${id} ${title}`, vscode.TreeItemCollapsibleState.Collapsed);
 
+        this.organization = scope?.organization;
+        this.project = scope?.project;
+
         const repo = pr.repository?.name ?? '';
         const sourceBranch = pr.sourceRefName?.replace('refs/heads/', '') ?? '';
         const targetBranch = pr.targetRefName?.replace('refs/heads/', '') ?? '';
-        this.description = `${repo}: ${sourceBranch} → ${targetBranch}`;
-        this.tooltip = `PR #${id}: ${title}\n${sourceBranch} → ${targetBranch}`;
+        this.description = `${repo}: ${sourceBranch} -> ${targetBranch}`;
+        this.tooltip = [
+            `PR #${id}: ${title}`,
+            `${sourceBranch} -> ${targetBranch}`,
+            scope ? `Project: ${scopeLabel(scope)}` : undefined
+        ].filter(Boolean).join('\n');
         this.contextValue = 'pullRequest';
         this.iconPath = prIcon(pr);
         this.command = {
@@ -40,21 +75,25 @@ export class PullRequestNode extends vscode.TreeItem {
 }
 
 export class PullRequestThreadNode extends vscode.TreeItem {
+    public readonly organization?: string;
+    public readonly project?: string;
+
     constructor(
         public readonly thread: GitPullRequestCommentThread,
-        public readonly pr: GitPullRequest
+        public readonly pr: GitPullRequest,
+        public readonly scope?: ProjectScope
     ) {
         const firstComment = thread.comments?.[0];
         const content = firstComment?.content ?? '(empty comment)';
-        const truncated =
-            content.length > 80 ? content.slice(0, 77) + '…' : content;
+        const truncated = content.length > 80 ? content.slice(0, 77) + '...' : content;
         super(truncated, vscode.TreeItemCollapsibleState.Collapsed);
+
+        this.organization = scope?.organization;
+        this.project = scope?.project;
 
         const isResolved = thread.status === 2 /* Fixed */ || thread.status === 4; /* ByDesign */
         this.description = isResolved ? 'Resolved' : 'Active';
-        this.contextValue = isResolved
-            ? 'prCommentThreadResolved'
-            : 'prCommentThreadActive';
+        this.contextValue = isResolved ? 'prCommentThreadResolved' : 'prCommentThreadActive';
         this.iconPath = isResolved
             ? new vscode.ThemeIcon('pass', new vscode.ThemeColor('charts.green'))
             : new vscode.ThemeIcon('comment');
@@ -63,16 +102,22 @@ export class PullRequestThreadNode extends vscode.TreeItem {
 }
 
 export class PullRequestCommentNode extends vscode.TreeItem {
+    public readonly organization?: string;
+    public readonly project?: string;
+
     constructor(
         public readonly comment: Comment,
         public readonly thread: GitPullRequestCommentThread,
-        public readonly pr: GitPullRequest
+        public readonly pr: GitPullRequest,
+        public readonly scope?: ProjectScope
     ) {
         const author = comment?.author?.displayName ?? 'Unknown';
         const content = comment?.content ?? '';
-        const truncated =
-            content.length > 72 ? content.slice(0, 69) + '…' : content;
+        const truncated = content.length > 72 ? content.slice(0, 69) + '...' : content;
         super(truncated, vscode.TreeItemCollapsibleState.None);
+
+        this.organization = scope?.organization;
+        this.project = scope?.project;
 
         this.description = author;
         this.tooltip = `${author}: ${content}`;
@@ -83,31 +128,20 @@ export class PullRequestCommentNode extends vscode.TreeItem {
 
 function prIcon(pr: GitPullRequest): vscode.ThemeIcon {
     if (pr.isDraft) {
-        return new vscode.ThemeIcon(
-            'git-pull-request-draft',
-            new vscode.ThemeColor('charts.gray')
-        );
+        return new vscode.ThemeIcon('git-pull-request-draft', new vscode.ThemeColor('charts.gray'));
     }
-    return new vscode.ThemeIcon(
-        'git-pull-request',
-        new vscode.ThemeColor('charts.blue')
-    );
+    return new vscode.ThemeIcon('git-pull-request', new vscode.ThemeColor('charts.blue'));
 }
 
-// ---------------------------------------------------------------------------
-// Tree Data Provider
-// ---------------------------------------------------------------------------
-
 type PullRequestTreeNode =
+    | PullRequestScopeGroup
     | PullRequestGroup
     | PullRequestNode
     | PullRequestThreadNode
     | PullRequestCommentNode
     | vscode.TreeItem;
 
-export class PullRequestProvider
-    implements vscode.TreeDataProvider<PullRequestTreeNode>
-{
+export class PullRequestProvider implements vscode.TreeDataProvider<PullRequestTreeNode> {
     private _onDidChangeTreeData =
         new vscode.EventEmitter<PullRequestTreeNode | undefined | null | void>();
     readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
@@ -127,79 +161,68 @@ export class PullRequestProvider
         return element;
     }
 
-    async getChildren(
-        element?: PullRequestTreeNode
-    ): Promise<PullRequestTreeNode[]> {
+    async getChildren(element?: PullRequestTreeNode): Promise<PullRequestTreeNode[]> {
+        if (element instanceof PullRequestScopeGroup) {
+            return [new PullRequestGroup(`Pull Requests (${element.prs.length})`, element.prs)];
+        }
+
         if (element instanceof PullRequestGroup) {
-            return element.prs.map(pr => new PullRequestNode(pr));
+            return element.prs.map(item => new PullRequestNode(item.pr, item.scope));
         }
 
         if (element instanceof PullRequestNode) {
-            // Load threads for this PR
-            return this._loadThreads(element.pr);
+            return this.loadThreads(element.pr, element.scope);
         }
 
         if (element instanceof PullRequestThreadNode) {
-            // Show individual comments within the thread
             return (element.thread.comments ?? []).map(
-                c => new PullRequestCommentNode(c, element.thread, element.pr)
+                comment => new PullRequestCommentNode(comment, element.thread, element.pr, element.scope)
             );
         }
 
-        // Root: load pull requests
         if (this._loading) {
             return [];
         }
         this._loading = true;
 
         try {
-            if (!this.client.isConnected) {
-                const node = new vscode.TreeItem(
-                    'Sign in to Azure DevOps…',
-                    vscode.TreeItemCollapsibleState.None
-                );
-                node.command = {
-                    command: 'adoext.signIn',
-                    title: 'Sign In'
-                };
-                node.iconPath = new vscode.ThemeIcon('sign-in');
-                return [node];
+            const setupNode = this.getSetupNode();
+            if (setupNode) {
+                return [setupNode];
             }
 
-            if (!this.config.isConfigured) {
-                const node = new vscode.TreeItem(
-                    'Configure organization and project…',
-                    vscode.TreeItemCollapsibleState.None
-                );
-                node.command = {
-                    command: 'adoext.selectOrganization',
-                    title: 'Select Organization'
-                };
-                node.iconPath = new vscode.ThemeIcon('settings-gear');
-                return [node];
+            const scopes = await resolveProjectScopes(this.client, this.config);
+            if (scopes.length === 0) {
+                return [this.createConfigureNode()];
             }
 
-            const prs = await this.client.getPullRequests(
-                this.config.project,
-                this.config.pullRequestFilter
-            );
-
+            const prs = await this.loadPullRequests(scopes);
             if (prs.length === 0) {
-                const node = new vscode.TreeItem(
-                    'No pull requests found',
-                    vscode.TreeItemCollapsibleState.None
-                );
+                const node = new vscode.TreeItem('No pull requests found', vscode.TreeItemCollapsibleState.None);
                 node.iconPath = new vscode.ThemeIcon('info');
                 return [node];
             }
 
-            const group = new PullRequestGroup(`Pull Requests (${prs.length})`, prs);
-            return [group];
+            if (scopes.length === 1) {
+                return [new PullRequestGroup(`Pull Requests (${prs.length})`, prs)];
+            }
+
+            const byScope = new Map<string, ScopedPullRequest[]>();
+            const scopeByKey = new Map<string, ProjectScope>();
+            for (const item of prs) {
+                const key = scopeKey(item.scope);
+                scopeByKey.set(key, item.scope);
+                if (!byScope.has(key)) {
+                    byScope.set(key, []);
+                }
+                byScope.get(key)!.push(item);
+            }
+
+            return [...byScope.entries()]
+                .map(([key, scopedPrs]) => new PullRequestScopeGroup(scopeByKey.get(key)!, scopedPrs))
+                .sort((left, right) => `${left.label}`.localeCompare(`${right.label}`));
         } catch (err) {
-            const node = new vscode.TreeItem(
-                `Error: ${err}`,
-                vscode.TreeItemCollapsibleState.None
-            );
+            const node = new vscode.TreeItem(`Error: ${err}`, vscode.TreeItemCollapsibleState.None);
             node.iconPath = new vscode.ThemeIcon('error');
             return [node];
         } finally {
@@ -207,38 +230,64 @@ export class PullRequestProvider
         }
     }
 
-    private async _loadThreads(
-        pr: GitPullRequest
+    private async loadPullRequests(scopes: ProjectScope[]): Promise<ScopedPullRequest[]> {
+        const results = await mapWithConcurrencyLimit(scopes, MAX_CONCURRENT_SCOPE_REQUESTS, async scope => {
+            const prs = await this.client.getPullRequests(
+                scope.project,
+                this.config.pullRequestFilter,
+                undefined,
+                scope.organization
+            );
+            return prs.map(pr => ({ pr, scope }));
+        });
+        return results.flat();
+    }
+
+    private async loadThreads(
+        pr: GitPullRequest,
+        scope?: ProjectScope
     ): Promise<PullRequestTreeNode[]> {
         try {
             const repoId = pr.repository?.id ?? '';
             const prId = pr.pullRequestId ?? 0;
-            const project = this.config.project;
-            const threads = await this.client.getPullRequestThreads(
-                project,
-                repoId,
-                prId
-            );
-            // Filter out system threads (no comments or system-only)
-            const meaningful = threads.filter(
-                t => t.comments && t.comments.length > 0 && !t.isDeleted
+            const project = scope?.project ?? this.config.project;
+            const organization = scope?.organization ?? this.config.organization;
+            const threads = await this.client.getPullRequestThreads(project, repoId, prId, organization);
+            const meaningful = (threads ?? []).filter(
+                thread => (thread.comments ?? []).some(comment => !!comment.content) && !thread.isDeleted
             );
             if (meaningful.length === 0) {
-                const node = new vscode.TreeItem(
-                    'No comments',
-                    vscode.TreeItemCollapsibleState.None
-                );
+                const node = new vscode.TreeItem('No comments', vscode.TreeItemCollapsibleState.None);
                 node.iconPath = new vscode.ThemeIcon('comment');
                 return [node];
             }
-            return meaningful.map(t => new PullRequestThreadNode(t, pr));
+            return meaningful.map(thread => new PullRequestThreadNode(thread, pr, scope));
         } catch (err) {
-            const node = new vscode.TreeItem(
-                `Error loading comments: ${err}`,
-                vscode.TreeItemCollapsibleState.None
-            );
+            const node = new vscode.TreeItem(`Error loading comments: ${err}`, vscode.TreeItemCollapsibleState.None);
             node.iconPath = new vscode.ThemeIcon('error');
             return [node];
         }
+    }
+
+    private getSetupNode(): vscode.TreeItem | undefined {
+        if (!this.client.isConnected) {
+            const node = new vscode.TreeItem('Sign in to Azure DevOps...', vscode.TreeItemCollapsibleState.None);
+            node.command = { command: 'adoext.signIn', title: 'Sign In' };
+            node.iconPath = new vscode.ThemeIcon('sign-in');
+            return node;
+        }
+
+        if (!this.config.isConfigured) {
+            return this.createConfigureNode();
+        }
+
+        return undefined;
+    }
+
+    private createConfigureNode(): vscode.TreeItem {
+        const node = new vscode.TreeItem('Configure organizations and projects...', vscode.TreeItemCollapsibleState.None);
+        node.command = { command: 'adoext.selectOrganization', title: 'Select Organizations' };
+        node.iconPath = new vscode.ThemeIcon('settings-gear');
+        return node;
     }
 }

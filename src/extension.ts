@@ -9,14 +9,17 @@ import {
     PullRequestCommentNode,
     PullRequestThreadNode
 } from './providers/pullRequestProvider';
+import { BacklogProvider, SprintProvider, BoardProvider } from './providers/planningProviders';
+import { PlanningPanel } from './views/planningPanel';
 import {
     selectOrganization,
     selectProject
 } from './commands/accountCommands';
-import { openWorkItem, viewWorkItemDetails } from './commands/workItemCommands';
+import { changeWorkItemState, openWorkItem, viewWorkItemDetails } from './commands/workItemCommands';
 import {
     openPullRequest,
     viewPullRequestDetails,
+    viewPullRequestDiff,
     checkoutPullRequest,
     replyToComment,
     resolveThread,
@@ -60,15 +63,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         );
     }
 
+    function refreshAllViews(): void {
+        workItemProvider.refresh();
+        pullRequestProvider.refresh();
+        backlogProvider.refresh();
+        sprintProvider.refresh();
+        boardProvider.refresh();
+    }
+
     // -------------------------------------------------------------------------
     // Tree providers
     // -------------------------------------------------------------------------
     const workItemProvider = new WorkItemProvider(client, config);
     const pullRequestProvider = new PullRequestProvider(client, config);
+    const backlogProvider = new BacklogProvider(client, config);
+    const sprintProvider = new SprintProvider(client, config);
+    const boardProvider = new BoardProvider(client, config);
 
     context.subscriptions.push(
         vscode.window.registerTreeDataProvider('adoext.workItems', workItemProvider),
-        vscode.window.registerTreeDataProvider('adoext.pullRequests', pullRequestProvider)
+        vscode.window.registerTreeDataProvider('adoext.pullRequests', pullRequestProvider),
+        vscode.window.registerTreeDataProvider('adoext.backlog', backlogProvider),
+        vscode.window.registerTreeDataProvider('adoext.sprints', sprintProvider),
+        vscode.window.registerTreeDataProvider('adoext.boards', boardProvider)
     );
 
     // -------------------------------------------------------------------------
@@ -84,8 +101,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 vscode.window.showInformationMessage(
                     `Signed in as ${auth.accountName}`
                 );
-                workItemProvider.refresh();
-                pullRequestProvider.refresh();
+                refreshAllViews();
             }
         })
     );
@@ -97,8 +113,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             client.updateToken('');
             updateSignedInContext();
             vscode.window.showInformationMessage('Signed out from Azure DevOps.');
-            workItemProvider.refresh();
-            pullRequestProvider.refresh();
+            refreshAllViews();
         })
     );
 
@@ -112,8 +127,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
             const ok = await selectOrganization(client, config, auth);
             if (ok) {
-                workItemProvider.refresh();
-                pullRequestProvider.refresh();
+                refreshAllViews();
             }
         })
     );
@@ -124,8 +138,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (!(await ensureSignedIn())) { return; }
             const ok = await selectProject(client, config);
             if (ok) {
-                workItemProvider.refresh();
-                pullRequestProvider.refresh();
+                refreshAllViews();
             }
         })
     );
@@ -135,6 +148,41 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('adoext.refreshWorkItems', async () => {
             await ensureSignedIn();
             workItemProvider.refresh();
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adoext.refreshBacklog', async () => {
+            await ensureSignedIn();
+            backlogProvider.refresh();
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adoext.refreshSprints', async () => {
+            await ensureSignedIn();
+            sprintProvider.refresh();
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adoext.refreshBoards', async () => {
+            await ensureSignedIn();
+            boardProvider.refresh();
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adoext.openBacklogView', async () => {
+            if (!(await ensureSignedIn())) { return; }
+            await PlanningPanel.show('backlog', client, config, refreshAllViews);
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adoext.openBoardView', async () => {
+            if (!(await ensureSignedIn())) { return; }
+            await PlanningPanel.show('board', client, config, refreshAllViews);
         })
     );
 
@@ -151,6 +199,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand(
             'adoext.openWorkItem',
             (node: WorkItemNode) => openWorkItem(node, client, config)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.changeWorkItemState',
+            async (node?: WorkItemNode) => {
+                const updated = await changeWorkItemState(node, client, config);
+                if (updated) {
+                    refreshAllViews();
+                }
+            }
         )
     );
 
@@ -176,6 +236,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             'adoext.viewPullRequestDetails',
             (node: PullRequestNode) =>
                 viewPullRequestDetails(node, context, client, config)
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.viewPullRequestDiff',
+            async (node: PullRequestNode) => {
+                if (!(await ensureSignedIn())) { return; }
+                await viewPullRequestDiff(node, client, config);
+            }
         )
     );
 
@@ -235,13 +305,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const pr = node.pr;
                 const repoId = pr.repository?.id ?? '';
                 const prId = pr.pullRequestId ?? 0;
+                const project = node.project ?? config.project;
+                const organization = node.organization ?? client.organization ?? config.organization;
 
                 try {
                     await client.addPullRequestComment(
-                        config.project,
+                        project,
                         repoId,
                         prId,
-                        content
+                        content,
+                        organization
                     );
                     vscode.window.showInformationMessage('Comment added.');
                     pullRequestProvider.refresh();
@@ -259,8 +332,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (restored) {
         rebuildClient();
         if (config.isConfigured) {
-            workItemProvider.refresh();
-            pullRequestProvider.refresh();
+            refreshAllViews();
         }
     }
     updateSignedInContext();
@@ -272,8 +344,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (config.organization && auth.isSignedIn) {
                     client.connect(config.organization);
                 }
-                workItemProvider.refresh();
-                pullRequestProvider.refresh();
+                refreshAllViews();
             }
         })
     );

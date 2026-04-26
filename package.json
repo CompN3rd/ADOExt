@@ -40,6 +40,24 @@
           "contextualTitle": "Azure DevOps Work Items"
         },
         {
+          "id": "adoext.backlog",
+          "name": "Backlog",
+          "icon": "media/icons/ado.svg",
+          "contextualTitle": "Azure DevOps Backlog"
+        },
+        {
+          "id": "adoext.sprints",
+          "name": "Sprints",
+          "icon": "media/icons/ado.svg",
+          "contextualTitle": "Azure DevOps Sprints"
+        },
+        {
+          "id": "adoext.boards",
+          "name": "Boards",
+          "icon": "media/icons/ado.svg",
+          "contextualTitle": "Azure DevOps Boards"
+        },
+        {
           "id": "adoext.pullRequests",
           "name": "Pull Requests",
           "icon": "media/icons/ado.svg",
@@ -79,6 +97,36 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "adoext.refreshBacklog",
+        "title": "Refresh Backlog",
+        "category": "ADOExt",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "adoext.openBacklogView",
+        "title": "Open Backlog in Editor",
+        "category": "ADOExt",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "adoext.refreshSprints",
+        "title": "Refresh Sprints",
+        "category": "ADOExt",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "adoext.refreshBoards",
+        "title": "Refresh Boards",
+        "category": "ADOExt",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "adoext.openBoardView",
+        "title": "Open Board in Editor",
+        "category": "ADOExt",
+        "icon": "$(open-preview)"
+      },
+      {
         "command": "adoext.openWorkItem",
         "title": "Open Work Item in Browser",
         "category": "ADOExt",
@@ -89,6 +137,12 @@
         "title": "View Work Item Details",
         "category": "ADOExt",
         "icon": "$(eye)"
+      },
+      {
+        "command": "adoext.changeWorkItemState",
+        "title": "Change Work Item State",
+        "category": "ADOExt",
+        "icon": "$(edit)"
       },
       {
         "command": "adoext.refreshPullRequests",
@@ -107,6 +161,12 @@
         "title": "View Pull Request Details",
         "category": "ADOExt",
         "icon": "$(eye)"
+      },
+      {
+        "command": "adoext.viewPullRequestDiff",
+        "title": "View Pull Request Diff",
+        "category": "ADOExt",
+        "icon": "$(diff)"
       },
       {
         "command": "adoext.checkoutPullRequest",
@@ -147,13 +207,38 @@
           "group": "navigation"
         },
         {
+          "command": "adoext.openBacklogView",
+          "when": "view == adoext.backlog",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.refreshBacklog",
+          "when": "view == adoext.backlog",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.refreshSprints",
+          "when": "view == adoext.sprints",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.openBoardView",
+          "when": "view == adoext.boards",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.refreshBoards",
+          "when": "view == adoext.boards",
+          "group": "navigation"
+        },
+        {
           "command": "adoext.selectOrganization",
-          "when": "view == adoext.workItems || view == adoext.pullRequests",
+          "when": "view == adoext.workItems || view == adoext.backlog || view == adoext.sprints || view == adoext.boards || view == adoext.pullRequests",
           "group": "navigation"
         },
         {
           "command": "adoext.signIn",
-          "when": "view == adoext.workItems && !adoext.isSignedIn",
+          "when": "(view == adoext.workItems || view == adoext.backlog || view == adoext.sprints || view == adoext.boards || view == adoext.pullRequests) && !adoext.isSignedIn",
           "group": "navigation"
         },
         {
@@ -174,7 +259,17 @@
           "group": "navigation"
         },
         {
+          "command": "adoext.changeWorkItemState",
+          "when": "viewItem == workItem",
+          "group": "inline"
+        },
+        {
           "command": "adoext.viewPullRequestDetails",
+          "when": "viewItem == pullRequest",
+          "group": "inline"
+        },
+        {
+          "command": "adoext.viewPullRequestDiff",
           "when": "viewItem == pullRequest",
           "group": "inline"
         },
@@ -216,7 +311,20 @@
         "adoext.project": {
           "type": "string",
           "default": "",
-          "description": "Azure DevOps project name"
+          "description": "Azure DevOps project name. Kept for compatibility; use organization/project selection commands for aggregation."
+        },
+        "adoext.organizations": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "description": "Azure DevOps organizations selected for aggregated views."
+        },
+        "adoext.projectsByOrganization": {
+          "type": "object",
+          "default": {},
+          "description": "Project selections by organization for aggregated views. Use [\"*\"] to include all projects in an organization."
         },
         "adoext.workItemQuery": {
           "type": "string",
