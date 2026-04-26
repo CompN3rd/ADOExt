@@ -12,7 +12,7 @@ export async function mapWithConcurrencyLimit<TInput, TOutput>(
     let nextIndex = 0;
 
     const workers = Array.from({ length: workerCount }, async () => {
-        while (true) {
+        for (;;) {
             const currentIndex = nextIndex++;
             if (currentIndex >= items.length) {
                 break;
