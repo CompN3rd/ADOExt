@@ -375,6 +375,6 @@ document.querySelectorAll('[data-action="set-status"]').forEach(button => {
     }
 
     private static panelKey(prId: number, organization?: string, project?: string): string {
-        return `${organization ?? ''}/${project ?? ''}/${prId}`;
+        return JSON.stringify([organization ?? null, project ?? null, prId]);
     }
 }

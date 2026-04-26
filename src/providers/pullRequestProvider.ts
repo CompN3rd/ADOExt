@@ -7,6 +7,9 @@ import {
     scopeLabel,
     type ProjectScope
 } from './projectScopes';
+import { mapWithConcurrencyLimit } from '../utils/async';
+
+const MAX_CONCURRENT_SCOPE_REQUESTS = 4;
 
 interface ScopedPullRequest {
     pr: GitPullRequest;
@@ -228,7 +231,7 @@ export class PullRequestProvider implements vscode.TreeDataProvider<PullRequestT
     }
 
     private async loadPullRequests(scopes: ProjectScope[]): Promise<ScopedPullRequest[]> {
-        const results = await Promise.all(scopes.map(async scope => {
+        const results = await mapWithConcurrencyLimit(scopes, MAX_CONCURRENT_SCOPE_REQUESTS, async scope => {
             const prs = await this.client.getPullRequests(
                 scope.project,
                 this.config.pullRequestFilter,
@@ -236,7 +239,7 @@ export class PullRequestProvider implements vscode.TreeDataProvider<PullRequestT
                 scope.organization
             );
             return prs.map(pr => ({ pr, scope }));
-        }));
+        });
         return results.flat();
     }
 

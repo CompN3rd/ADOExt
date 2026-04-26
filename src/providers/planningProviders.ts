@@ -9,6 +9,9 @@ import {
     scopeLabel,
     type ProjectScope
 } from './projectScopes';
+import { mapWithConcurrencyLimit } from '../utils/async';
+
+const MAX_CONCURRENT_SCOPE_REQUESTS = 4;
 
 interface ScopedWorkItem {
     workItem: WorkItem;
@@ -308,10 +311,10 @@ async function loadPlanningItems(
     config: ConfigManager
 ): Promise<{ scopes: ProjectScope[]; items: ScopedWorkItem[] }> {
     const scopes = await resolveProjectScopes(client, config);
-    const results = await Promise.all(scopes.map(async scope => {
+    const results = await mapWithConcurrencyLimit(scopes, MAX_CONCURRENT_SCOPE_REQUESTS, async scope => {
         const workItems = await client.getPlanningWorkItems(scope.project, scope.organization);
         return workItems.map(workItem => ({ workItem, scope }));
-    }));
+    });
     return { scopes, items: results.flat() };
 }
 

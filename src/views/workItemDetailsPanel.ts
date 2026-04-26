@@ -573,6 +573,6 @@ document.querySelector('[data-action="set-state"]')?.addEventListener('click', (
     }
 
     private static panelKey(id: number, organization?: string, project?: string): string {
-        return `${organization ?? ''}/${project ?? ''}/${id}`;
+        return JSON.stringify([organization ?? null, project ?? null, id]);
     }
 }

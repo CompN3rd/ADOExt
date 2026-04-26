@@ -54,6 +54,8 @@ export interface PullRequestDiffModel {
 
 const WORK_ITEM_QUERY_LIMIT = 200;
 const PLANNING_WORK_ITEM_QUERY_LIMIT = 500;
+const PLANNING_WORK_ITEM_TOTAL_LIMIT = 1000;
+const WORK_ITEM_BATCH_SIZE = 200;
 
 /**
  * Thin wrapper around the azure-devops-node-api package.
@@ -263,15 +265,32 @@ export class AdoClient {
             return [];
         }
 
-        const workItems = await witApi.getWorkItems(
-            ids,
-            undefined,
-            undefined,
-            WorkItemExpand.Relations,
-            undefined,
-            project
-        );
-        return (workItems ?? []).filter((wi): wi is WorkItem => wi !== null);
+        const workItemMap = new Map<number, WorkItem>();
+        await this.fetchWorkItemsIntoMap(witApi, project, ids, workItemMap, PLANNING_WORK_ITEM_TOTAL_LIMIT);
+
+        let missingParentIds = this.findMissingParentIds(workItemMap);
+        const requestedParentIds = new Set<number>();
+        while (missingParentIds.length > 0 && workItemMap.size < PLANNING_WORK_ITEM_TOTAL_LIMIT) {
+            const remainingCapacity = PLANNING_WORK_ITEM_TOTAL_LIMIT - workItemMap.size;
+            const parentBatchIds = missingParentIds
+                .filter(id => !requestedParentIds.has(id))
+                .slice(0, remainingCapacity);
+            if (parentBatchIds.length === 0) {
+                break;
+            }
+            parentBatchIds.forEach(id => requestedParentIds.add(id));
+
+            await this.fetchWorkItemsIntoMap(
+                witApi,
+                project,
+                parentBatchIds,
+                workItemMap,
+                PLANNING_WORK_ITEM_TOTAL_LIMIT
+            );
+            missingParentIds = this.findMissingParentIds(workItemMap);
+        }
+
+        return Array.from(workItemMap.values());
     }
 
     async updateWorkItemState(
@@ -629,6 +648,60 @@ export class AdoClient {
 
     private escapeWiqlString(value: string): string {
         return value.replace(/'/g, "''");
+    }
+
+    private async fetchWorkItemsIntoMap(
+        witApi: IWorkItemTrackingApi,
+        project: string,
+        ids: number[],
+        workItemMap: Map<number, WorkItem>,
+        totalLimit: number
+    ): Promise<void> {
+        const pendingIds = ids.filter(id => !workItemMap.has(id));
+        while (pendingIds.length > 0 && workItemMap.size < totalLimit) {
+            const remainingCapacity = totalLimit - workItemMap.size;
+            const batchIds = pendingIds.splice(0, Math.min(WORK_ITEM_BATCH_SIZE, remainingCapacity));
+            if (batchIds.length === 0) {
+                break;
+            }
+
+            const workItems = await witApi.getWorkItems(
+                batchIds,
+                undefined,
+                undefined,
+                WorkItemExpand.Relations,
+                undefined,
+                project
+            );
+
+            for (const workItem of workItems ?? []) {
+                if (workItem?.id !== undefined) {
+                    workItemMap.set(workItem.id, workItem);
+                }
+            }
+        }
+    }
+
+    private findMissingParentIds(workItemMap: Map<number, WorkItem>): number[] {
+        const missingParentIds = new Set<number>();
+        for (const workItem of workItemMap.values()) {
+            for (const relation of workItem.relations ?? []) {
+                if (relation.rel !== 'System.LinkTypes.Hierarchy-Reverse') {
+                    continue;
+                }
+
+                const parentId = this.extractWorkItemIdFromUrl(relation.url);
+                if (parentId !== undefined && !workItemMap.has(parentId)) {
+                    missingParentIds.add(parentId);
+                }
+            }
+        }
+        return [...missingParentIds];
+    }
+
+    private extractWorkItemIdFromUrl(url?: string): number | undefined {
+        const match = url?.match(/\/workItems\/(\d+)$/i);
+        return match ? Number.parseInt(match[1], 10) : undefined;
     }
 
     private async getFileDiffs(

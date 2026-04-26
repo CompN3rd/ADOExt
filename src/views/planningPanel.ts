@@ -10,8 +10,11 @@ import {
     scopeLabel,
     type ProjectScope
 } from '../providers/projectScopes';
+import { mapWithConcurrencyLimit } from '../utils/async';
 
 type PlanningPanelKind = 'backlog' | 'board';
+
+const MAX_CONCURRENT_SCOPE_REQUESTS = 4;
 
 interface ScopedWorkItem {
     workItem: WorkItem;
@@ -115,10 +118,10 @@ export class PlanningPanel {
     }
 
     private async loadItems(scopes: ProjectScope[]): Promise<ScopedWorkItem[]> {
-        const results = await Promise.all(scopes.map(async scope => {
+        const results = await mapWithConcurrencyLimit(scopes, MAX_CONCURRENT_SCOPE_REQUESTS, async scope => {
             const workItems = await this._client.getPlanningWorkItems(scope.project, scope.organization);
             return workItems.map(workItem => ({ workItem, scope }));
-        }));
+        });
         return results.flat();
     }
 

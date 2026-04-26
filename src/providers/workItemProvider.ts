@@ -9,6 +9,9 @@ import {
     scopeLabel,
     type ProjectScope
 } from './projectScopes';
+import { mapWithConcurrencyLimit } from '../utils/async';
+
+const MAX_CONCURRENT_SCOPE_REQUESTS = 4;
 
 interface ScopedWorkItem {
     workItem: WorkItem;
@@ -213,14 +216,14 @@ export class WorkItemProvider implements vscode.TreeDataProvider<WorkItemTreeNod
     }
 
     private async loadWorkItems(scopes: ProjectScope[]): Promise<ScopedWorkItem[]> {
-        const results = await Promise.all(scopes.map(async scope => {
+        const results = await mapWithConcurrencyLimit(scopes, MAX_CONCURRENT_SCOPE_REQUESTS, async scope => {
             const workItems = await this.client.getWorkItems(
                 scope.project,
                 this.config.workItemQuery,
                 scope.organization
             );
             return workItems.map(workItem => ({ workItem, scope }));
-        }));
+        });
         return results.flat();
     }
 
