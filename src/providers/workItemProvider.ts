@@ -34,8 +34,8 @@ export class WorkItemNode extends vscode.TreeItem {
         this.iconPath = typeIcon(wiType);
 
         this.command = {
-            command: 'adoext.openWorkItem',
-            title: 'Open Work Item',
+            command: 'adoext.viewWorkItemDetails',
+            title: 'View Work Item',
             arguments: [this]
         };
     }

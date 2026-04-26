@@ -13,7 +13,7 @@ import {
     selectOrganization,
     selectProject
 } from './commands/accountCommands';
-import { openWorkItem } from './commands/workItemCommands';
+import { openWorkItem, viewWorkItemDetails } from './commands/workItemCommands';
 import {
     openPullRequest,
     viewPullRequestDetails,
@@ -138,7 +138,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         })
     );
 
-    // Open work item in browser
+    // View work item details in webview
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.viewWorkItemDetails',
+            (node?: WorkItemNode) => viewWorkItemDetails(node, client, config)
+        )
+    );
+
+    // Open work item in browser (secondary action)
     context.subscriptions.push(
         vscode.commands.registerCommand(
             'adoext.openWorkItem',

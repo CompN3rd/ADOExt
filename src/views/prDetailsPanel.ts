@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as crypto from 'crypto';
 import type { GitPullRequest, GitPullRequestCommentThread, Comment } from '../api/adoClient';
 import type { AdoClient } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
@@ -334,6 +335,6 @@ document.querySelectorAll('[data-action="set-status"]').forEach(button => {
     }
 
     private _createNonce(): string {
-        return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        return crypto.randomBytes(16).toString('hex');
     }
 }
