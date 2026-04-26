@@ -142,7 +142,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(
         vscode.commands.registerCommand(
             'adoext.viewWorkItemDetails',
-            (node: WorkItemNode) => viewWorkItemDetails(node, context, client, config)
+            (node?: WorkItemNode) => viewWorkItemDetails(node, client, config)
         )
     );
 

@@ -8,12 +8,18 @@ import { WorkItemDetailsPanel } from '../views/workItemDetailsPanel';
  * Show the work item details webview panel.
  */
 export async function viewWorkItemDetails(
-    node: WorkItemNode,
-    context: vscode.ExtensionContext,
+    node: WorkItemNode | undefined,
     client: AdoClient,
     config: ConfigManager
 ): Promise<void> {
-    await WorkItemDetailsPanel.show(context, client, config, node.workItem);
+    if (!node) {
+        vscode.window.showInformationMessage(
+            'Select a work item first, then run "View Work Item Details".'
+        );
+        return;
+    }
+
+    await WorkItemDetailsPanel.show(client, config, node.workItem);
 }
 
 /**

@@ -2,7 +2,13 @@ import * as azdev from 'azure-devops-node-api';
 import type { IWorkItemTrackingApi } from 'azure-devops-node-api/WorkItemTrackingApi';
 import type { IGitApi } from 'azure-devops-node-api/GitApi';
 import type { ICoreApi } from 'azure-devops-node-api/CoreApi';
-import type { WorkItem, WorkItemType, Comment as WorkItemComment, CommentCreate } from 'azure-devops-node-api/interfaces/WorkItemTrackingInterfaces';
+import { WorkItemExpand } from 'azure-devops-node-api/interfaces/WorkItemTrackingInterfaces';
+import type {
+    WorkItem,
+    WorkItemType,
+    Comment as WorkItemComment,
+    CommentCreate
+} from 'azure-devops-node-api/interfaces/WorkItemTrackingInterfaces';
 import type {
     GitPullRequest,
     GitPullRequestCommentThread,
@@ -299,7 +305,7 @@ export class AdoClient {
      */
     async getWorkItemById(project: string, id: number): Promise<WorkItem | undefined> {
         const witApi: IWorkItemTrackingApi = await this.connection.getWorkItemTrackingApi();
-        const item = await witApi.getWorkItem(id, undefined, undefined, 4 /* WorkItemExpand.All */, project);
+        const item = await witApi.getWorkItem(id, undefined, undefined, WorkItemExpand.All, project);
         return item ?? undefined;
     }
 
