@@ -19,7 +19,10 @@ export async function viewWorkItemDetails(
         return;
     }
 
-    await WorkItemDetailsPanel.show(client, config, node.workItem);
+    await WorkItemDetailsPanel.show(client, config, node.workItem, {
+        organization: node.organization,
+        project: node.project
+    });
 }
 
 /**
@@ -31,8 +34,8 @@ export function openWorkItem(
     config: ConfigManager
 ): void {
     const id = node.workItem.id ?? 0;
-    const org = client.organization ?? config.organization;
-    const project = config.project;
+    const org = node.organization ?? client.organization ?? config.organization;
+    const project = node.project ?? config.project;
     if (!org || !project) {
         vscode.window.showWarningMessage(
             'Please configure your organization and project first.'

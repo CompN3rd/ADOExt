@@ -17,11 +17,11 @@ export function openPullRequest(
     config: ConfigManager
 ): void {
     const pr = node.pr;
-    const org = client.organization ?? config.organization;
-    const project = config.project;
+    const org = node.organization ?? client.organization ?? config.organization;
+    const project = node.project ?? config.project;
     const repoId = pr.repository?.name ?? pr.repository?.id ?? '';
     const prId = pr.pullRequestId ?? 0;
-    const url = `https://dev.azure.com/${org}/${project}/_git/${repoId}/pullrequest/${prId}`;
+    const url = `https://dev.azure.com/${encodeURIComponent(org)}/${encodeURIComponent(project)}/_git/${encodeURIComponent(repoId)}/pullrequest/${prId}`;
     void vscode.env.openExternal(vscode.Uri.parse(url));
 }
 
@@ -34,7 +34,10 @@ export async function viewPullRequestDetails(
     client: AdoClient,
     config: ConfigManager
 ): Promise<void> {
-    await PrDetailsPanel.show(context, client, config, node.pr);
+    await PrDetailsPanel.show(context, client, config, node.pr, {
+        organization: node.organization,
+        project: node.project
+    });
 }
 
 /**
@@ -165,14 +168,17 @@ export async function replyToComment(
     const repoId = pr.repository?.id ?? '';
     const prId = pr.pullRequestId ?? 0;
     const threadId = node.thread.id ?? 0;
+    const project = node.project ?? config.project;
+    const organization = node.organization ?? client.organization ?? config.organization;
 
     try {
         await client.replyToThread(
-            config.project,
+            project,
             repoId,
             prId,
             threadId,
-            content
+            content,
+            organization
         );
         vscode.window.showInformationMessage('Reply posted.');
     } catch (err) {
@@ -192,9 +198,11 @@ export async function resolveThread(
     const repoId = pr.repository?.id ?? '';
     const prId = pr.pullRequestId ?? 0;
     const threadId = node.thread.id ?? 0;
+    const project = node.project ?? config.project;
+    const organization = node.organization ?? client.organization ?? config.organization;
 
     try {
-        await client.updateThreadStatus(config.project, repoId, prId, threadId, 2 /* Fixed */);
+        await client.updateThreadStatus(project, repoId, prId, threadId, 2 /* Fixed */, organization);
         vscode.window.showInformationMessage('Thread resolved.');
     } catch (err) {
         vscode.window.showErrorMessage(`Failed to resolve thread: ${err}`);
@@ -213,9 +221,11 @@ export async function reopenThread(
     const repoId = pr.repository?.id ?? '';
     const prId = pr.pullRequestId ?? 0;
     const threadId = node.thread.id ?? 0;
+    const project = node.project ?? config.project;
+    const organization = node.organization ?? client.organization ?? config.organization;
 
     try {
-        await client.updateThreadStatus(config.project, repoId, prId, threadId, 1 /* Active */);
+        await client.updateThreadStatus(project, repoId, prId, threadId, 1 /* Active */, organization);
         vscode.window.showInformationMessage('Thread reopened.');
     } catch (err) {
         vscode.window.showErrorMessage(`Failed to reopen thread: ${err}`);

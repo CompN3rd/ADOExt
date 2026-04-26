@@ -4,22 +4,31 @@ import type { WorkItem, WorkItemComment } from '../api/adoClient';
 import type { AdoClient } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
 
+interface WorkItemPanelScope {
+    organization?: string;
+    project?: string;
+}
+
 /**
  * Renders a work item's details (title, description, fields, comment
  * discussion) in a VS Code webview panel.  The user can add comments
  * without leaving VS Code.
  */
 export class WorkItemDetailsPanel {
-    private static _panels = new Map<number, WorkItemDetailsPanel>();
+    private static _panels = new Map<string, WorkItemDetailsPanel>();
 
     private readonly _panel: vscode.WebviewPanel;
     private readonly _workItemId: number;
+    private readonly _panelKey: string;
+    private readonly _organization?: string;
+    private readonly _project?: string;
     private _disposables: vscode.Disposable[] = [];
 
     static async show(
         client: AdoClient,
         config: ConfigManager,
-        workItem: WorkItem
+        workItem: WorkItem,
+        scope: WorkItemPanelScope = {}
     ): Promise<void> {
         const id = workItem.id;
         if (typeof id !== 'number') {
@@ -29,22 +38,32 @@ export class WorkItemDetailsPanel {
             return;
         }
 
-        const existing = WorkItemDetailsPanel._panels.get(id);
+        const key = WorkItemDetailsPanel.panelKey(
+            id,
+            scope.organization ?? client.organization ?? config.organization,
+            scope.project ?? config.project
+        );
+        const existing = WorkItemDetailsPanel._panels.get(key);
         if (existing) {
             existing._panel.reveal(vscode.ViewColumn.One);
             await existing._refresh(client, config, workItem);
             return;
         }
-        new WorkItemDetailsPanel(client, config, workItem, id);
+        new WorkItemDetailsPanel(client, config, workItem, id, key, scope);
     }
 
     private constructor(
         private readonly _client: AdoClient,
         private readonly _config: ConfigManager,
         private _workItem: WorkItem,
-        workItemId: number
+        workItemId: number,
+        panelKey: string,
+        scope: WorkItemPanelScope
     ) {
         this._workItemId = workItemId;
+        this._panelKey = panelKey;
+        this._organization = scope.organization;
+        this._project = scope.project;
         const id = this._workItemId;
         const title = (_workItem.fields?.['System.Title'] as string | undefined) ?? '';
         const wiType = (_workItem.fields?.['System.WorkItemType'] as string | undefined) ?? 'Work Item';
@@ -67,7 +86,7 @@ export class WorkItemDetailsPanel {
             this._disposables
         );
 
-        WorkItemDetailsPanel._panels.set(id, this);
+        WorkItemDetailsPanel._panels.set(panelKey, this);
         void this._refresh(this._client, this._config, this._workItem);
     }
 
@@ -78,11 +97,12 @@ export class WorkItemDetailsPanel {
     ): Promise<void> {
         this._workItem = workItem;
         const id = this._workItemId;
-        const project = config.project;
+        const project = this._project ?? config.project;
+        const organization = this._organization ?? client.organization ?? config.organization;
 
-        if (!project) {
+        if (!organization || !project) {
             vscode.window.showWarningMessage(
-                'Unable to load work item details because the project is missing.'
+                'Unable to load work item details because the organization or project is missing.'
             );
             return;
         }
@@ -91,7 +111,7 @@ export class WorkItemDetailsPanel {
         let comments: WorkItemComment[] = [];
 
         try {
-            const fetched = await client.getWorkItemById(project, id);
+            const fetched = await client.getWorkItemById(project, id, organization);
             if (fetched) {
                 fullItem = fetched;
                 this._workItem = fullItem;
@@ -103,7 +123,7 @@ export class WorkItemDetailsPanel {
         }
 
         try {
-            comments = await client.getWorkItemComments(project, id);
+            comments = await client.getWorkItemComments(project, id, organization);
         } catch (err) {
             vscode.window.showWarningMessage(
                 `Failed to load work item comments: ${this._formatError(err)}`
@@ -118,25 +138,24 @@ export class WorkItemDetailsPanel {
         content?: string;
     }): Promise<void> {
         const id = this._workItemId;
-        const project = this._config.project;
+        const project = this._project ?? this._config.project;
+        const org = this._organization ?? this._client.organization ?? this._config.organization;
         const action = msg.type === 'addComment'
             ? 'Failed to add work item comment'
             : 'Failed to open work item in browser';
 
         try {
             if (msg.type === 'addComment' && msg.content) {
-                const org = this._client.organization ?? this._config.organization;
                 if (!org || !project) {
                     vscode.window.showWarningMessage(
                         'Unable to add comment because organization or project is missing.'
                     );
                     return;
                 }
-                await this._client.addWorkItemComment(project, id, msg.content);
+                await this._client.addWorkItemComment(project, id, msg.content, org);
                 vscode.window.showInformationMessage('Comment added.');
                 await this._refresh(this._client, this._config, this._workItem);
             } else if (msg.type === 'openInBrowser') {
-                const org = this._client.organization ?? this._config.organization;
                 if (!org || !project) {
                     vscode.window.showWarningMessage(
                         'Unable to open work item in browser because organization or project is missing.'
@@ -491,7 +510,7 @@ document.querySelector('[data-action="add-comment"]')?.addEventListener('click',
     }
 
     private _dispose(): void {
-        WorkItemDetailsPanel._panels.delete(this._workItemId);
+        WorkItemDetailsPanel._panels.delete(this._panelKey);
         for (const d of this._disposables) {
             d.dispose();
         }
@@ -500,5 +519,9 @@ document.querySelector('[data-action="add-comment"]')?.addEventListener('click',
 
     private _createNonce(): string {
         return crypto.randomBytes(16).toString('hex');
+    }
+
+    private static panelKey(id: number, organization?: string, project?: string): string {
+        return `${organization ?? ''}/${project ?? ''}/${id}`;
     }
 }

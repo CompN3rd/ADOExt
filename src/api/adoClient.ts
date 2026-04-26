@@ -36,8 +36,9 @@ export type {
  */
 export class AdoClient {
     private _connection: azdev.WebApi | undefined;
+    private _connectionsByOrganization = new Map<string, azdev.WebApi>();
     private _organization: string | undefined;
-    private _currentUserId: string | undefined;
+    private _currentUserIds = new Map<string, string>();
 
     constructor(private _accessToken: string) {}
 
@@ -46,7 +47,8 @@ export class AdoClient {
      */
     updateToken(token: string): void {
         this._accessToken = token;
-        this._currentUserId = undefined;
+        this._currentUserIds.clear();
+        this._connectionsByOrganization.clear();
 
         if (!token.trim()) {
             this.disconnect();
@@ -71,14 +73,14 @@ export class AdoClient {
             return;
         }
 
-        const orgUrl = `https://dev.azure.com/${organization}`;
-        const authHandler = azdev.getBearerHandler(this._accessToken);
-        this._connection = new azdev.WebApi(orgUrl, authHandler);
+        this._connection = this.createConnection(organization);
+        this._connectionsByOrganization.set(organization, this._connection);
     }
 
     disconnect(): void {
         this._connection = undefined;
-        this._currentUserId = undefined;
+        this._connectionsByOrganization.clear();
+        this._currentUserIds.clear();
     }
 
     private get connection(): azdev.WebApi {
@@ -86,6 +88,30 @@ export class AdoClient {
             throw new Error('Not connected. Call connect() first.');
         }
         return this._connection;
+    }
+
+    private getConnectionFor(organization?: string): azdev.WebApi {
+        if (!organization) {
+            return this.connection;
+        }
+
+        if (!this._accessToken.trim()) {
+            throw new Error('Not connected. Sign in first.');
+        }
+
+        let connection = this._connectionsByOrganization.get(organization);
+        if (!connection) {
+            connection = this.createConnection(organization);
+            this._connectionsByOrganization.set(organization, connection);
+        }
+
+        return connection;
+    }
+
+    private createConnection(organization: string): azdev.WebApi {
+        const orgUrl = `https://dev.azure.com/${organization}`;
+        const authHandler = azdev.getBearerHandler(this._accessToken);
+        return new azdev.WebApi(orgUrl, authHandler);
     }
 
     // -------------------------------------------------------------------------
@@ -109,8 +135,8 @@ export class AdoClient {
     /**
      * List all projects within the current organization.
      */
-    async listProjects(): Promise<TeamProject[]> {
-        const coreApi: ICoreApi = await this.connection.getCoreApi();
+    async listProjects(organization?: string): Promise<TeamProject[]> {
+        const coreApi: ICoreApi = await this.getConnectionFor(organization).getCoreApi();
         const projects = await coreApi.getProjects();
         return projects ?? [];
     }
@@ -126,9 +152,10 @@ export class AdoClient {
      */
     async getWorkItems(
         project: string,
-        filter: 'assigned' | 'created' | 'mentioned' | 'all' = 'assigned'
+        filter: 'assigned' | 'created' | 'mentioned' | 'all' = 'assigned',
+        organization?: string
     ): Promise<WorkItem[]> {
-        const witApi: IWorkItemTrackingApi = await this.connection.getWorkItemTrackingApi();
+        const witApi: IWorkItemTrackingApi = await this.getConnectionFor(organization).getWorkItemTrackingApi();
 
         let whereClause: string;
         switch (filter) {
@@ -139,7 +166,7 @@ export class AdoClient {
                 whereClause = `[System.CommentCount] > 0 AND [System.ChangedBy] = @me AND [System.State] <> 'Closed'`;
                 break;
             case 'all':
-                whereClause = `[System.TeamProject] = '${project}' AND [System.State] NOT IN ('Closed', 'Removed')`;
+                whereClause = `[System.TeamProject] = '${this.escapeWiqlString(project)}' AND [System.State] NOT IN ('Closed', 'Removed')`;
                 break;
             case 'assigned':
             default:
@@ -178,6 +205,48 @@ export class AdoClient {
         return workItems.filter((wi): wi is WorkItem => wi !== null);
     }
 
+    /**
+     * Fetch active work items with hierarchy/iteration metadata for backlog,
+     * sprint, and board views.
+     */
+    async getPlanningWorkItems(
+        project: string,
+        organization?: string
+    ): Promise<WorkItem[]> {
+        const witApi: IWorkItemTrackingApi = await this.getConnectionFor(organization).getWorkItemTrackingApi();
+        const wiql = {
+            query: `SELECT [System.Id], [System.Title], [System.State], [System.WorkItemType],
+                           [System.AssignedTo], [System.IterationPath], [System.AreaPath], [System.Tags]
+                    FROM WorkItems
+                    WHERE [System.TeamProject] = '${this.escapeWiqlString(project)}'
+                      AND [System.State] NOT IN ('Closed', 'Removed')
+                    ORDER BY [System.ChangedDate] DESC`
+        };
+
+        const result = await witApi.queryByWiql(wiql, { project });
+        if (!result.workItems || result.workItems.length === 0) {
+            return [];
+        }
+
+        const ids = result.workItems
+            .slice(0, 500)
+            .flatMap(wi => wi.id !== undefined ? [wi.id] : []);
+
+        if (ids.length === 0) {
+            return [];
+        }
+
+        const workItems = await witApi.getWorkItems(
+            ids,
+            undefined,
+            undefined,
+            WorkItemExpand.Relations,
+            undefined,
+            project
+        );
+        return workItems.filter((wi): wi is WorkItem => wi !== null);
+    }
+
     // -------------------------------------------------------------------------
     // Pull Requests
     // -------------------------------------------------------------------------
@@ -191,12 +260,13 @@ export class AdoClient {
     async getPullRequests(
         project: string,
         filter: 'mine' | 'created' | 'assigned' | 'all' = 'mine',
-        currentUserDescriptor?: string
+        currentUserDescriptor?: string,
+        organization?: string
     ): Promise<GitPullRequest[]> {
-        const gitApi: IGitApi = await this.connection.getGitApi();
+        const gitApi: IGitApi = await this.getConnectionFor(organization).getGitApi();
 
         if (filter !== 'all' && !currentUserDescriptor) {
-            currentUserDescriptor = await this.getCurrentUserId();
+            currentUserDescriptor = await this.getCurrentUserId(organization);
         }
 
         if (filter !== 'all' && !currentUserDescriptor) {
@@ -241,9 +311,10 @@ export class AdoClient {
     async getPullRequestThreads(
         project: string,
         repositoryId: string,
-        pullRequestId: number
+        pullRequestId: number,
+        organization?: string
     ): Promise<GitPullRequestCommentThread[]> {
-        const gitApi: IGitApi = await this.connection.getGitApi();
+        const gitApi: IGitApi = await this.getConnectionFor(organization).getGitApi();
         const threads = await gitApi.getThreads(repositoryId, pullRequestId, project);
         return threads ?? [];
     }
@@ -256,9 +327,10 @@ export class AdoClient {
         repositoryId: string,
         pullRequestId: number,
         threadId: number,
-        content: string
+        content: string,
+        organization?: string
     ): Promise<Comment> {
-        const gitApi: IGitApi = await this.connection.getGitApi();
+        const gitApi: IGitApi = await this.getConnectionFor(organization).getGitApi();
         const comment: Comment = { content };
         return gitApi.createComment(comment, repositoryId, pullRequestId, threadId, project);
     }
@@ -271,9 +343,10 @@ export class AdoClient {
         repositoryId: string,
         pullRequestId: number,
         threadId: number,
-        status: CommentThreadStatus
+        status: CommentThreadStatus,
+        organization?: string
     ): Promise<GitPullRequestCommentThread> {
-        const gitApi: IGitApi = await this.connection.getGitApi();
+        const gitApi: IGitApi = await this.getConnectionFor(organization).getGitApi();
         return gitApi.updateThread(
             { status },
             repositoryId,
@@ -290,9 +363,10 @@ export class AdoClient {
         project: string,
         repositoryId: string,
         pullRequestId: number,
-        content: string
+        content: string,
+        organization?: string
     ): Promise<GitPullRequestCommentThread> {
-        const gitApi: IGitApi = await this.connection.getGitApi();
+        const gitApi: IGitApi = await this.getConnectionFor(organization).getGitApi();
         const thread: GitPullRequestCommentThread = {
             comments: [{ content }],
             status: 1 // active
@@ -303,8 +377,8 @@ export class AdoClient {
     /**
      * Fetch a single work item with all fields and links.
      */
-    async getWorkItemById(project: string, id: number): Promise<WorkItem | undefined> {
-        const witApi: IWorkItemTrackingApi = await this.connection.getWorkItemTrackingApi();
+    async getWorkItemById(project: string, id: number, organization?: string): Promise<WorkItem | undefined> {
+        const witApi: IWorkItemTrackingApi = await this.getConnectionFor(organization).getWorkItemTrackingApi();
         const item = await witApi.getWorkItem(id, undefined, undefined, WorkItemExpand.All, project);
         return item ?? undefined;
     }
@@ -312,8 +386,8 @@ export class AdoClient {
     /**
      * Fetch the discussion comments for a work item.
      */
-    async getWorkItemComments(project: string, workItemId: number): Promise<WorkItemComment[]> {
-        const witApi: IWorkItemTrackingApi = await this.connection.getWorkItemTrackingApi();
+    async getWorkItemComments(project: string, workItemId: number, organization?: string): Promise<WorkItemComment[]> {
+        const witApi: IWorkItemTrackingApi = await this.getConnectionFor(organization).getWorkItemTrackingApi();
         const result = await witApi.getComments(project, workItemId);
         return (result?.comments ?? []).filter((c): c is WorkItemComment => !c.isDeleted);
     }
@@ -321,8 +395,8 @@ export class AdoClient {
     /**
      * Add a discussion comment to a work item.
      */
-    async addWorkItemComment(project: string, workItemId: number, text: string): Promise<WorkItemComment> {
-        const witApi: IWorkItemTrackingApi = await this.connection.getWorkItemTrackingApi();
+    async addWorkItemComment(project: string, workItemId: number, text: string, organization?: string): Promise<WorkItemComment> {
+        const witApi: IWorkItemTrackingApi = await this.getConnectionFor(organization).getWorkItemTrackingApi();
         const request: CommentCreate = { text };
         return witApi.addComment(request, project, workItemId);
     }
@@ -332,9 +406,10 @@ export class AdoClient {
      */
     async getRepositoryCloneUrl(
         project: string,
-        repositoryId: string
+        repositoryId: string,
+        organization?: string
     ): Promise<string | undefined> {
-        const gitApi: IGitApi = await this.connection.getGitApi();
+        const gitApi: IGitApi = await this.getConnectionFor(organization).getGitApi();
         const repo = await gitApi.getRepository(repositoryId, project);
         return repo?.remoteUrl;
     }
@@ -347,30 +422,43 @@ export class AdoClient {
         return this._connection !== undefined && this._accessToken.trim() !== '';
     }
 
-    private async getCurrentUserId(): Promise<string | undefined> {
-        if (this._currentUserId) {
-            return this._currentUserId;
+    private async getCurrentUserId(organization?: string): Promise<string | undefined> {
+        const cacheKey = organization ?? this._organization ?? '';
+        const cached = this._currentUserIds.get(cacheKey);
+        if (cached) {
+            return cached;
         }
 
+        const connection = this.getConnectionFor(organization);
+        let currentUserId: string | undefined;
+
         try {
-            const connectionData = await this.connection.connect();
-            this._currentUserId =
+            const connectionData = await connection.connect();
+            currentUserId =
                 connectionData.authenticatedUser?.id ??
                 connectionData.authorizedUser?.id;
         } catch {
             // Fall back to the profile API if connection data is unavailable.
         }
 
-        if (!this._currentUserId) {
+        if (!currentUserId) {
             try {
-                const profileApi = await this.connection.getProfileApi();
+                const profileApi = await connection.getProfileApi();
                 const profile = await profileApi.getUserDefaults();
-                this._currentUserId = profile.id;
+                currentUserId = profile.id;
             } catch {
                 // Leave undefined and let callers handle the missing identity.
             }
         }
 
-        return this._currentUserId;
+        if (currentUserId) {
+            this._currentUserIds.set(cacheKey, currentUserId);
+        }
+
+        return currentUserId;
+    }
+
+    private escapeWiqlString(value: string): string {
+        return value.replace(/'/g, "''");
     }
 }

@@ -4,39 +4,58 @@ import type { GitPullRequest, GitPullRequestCommentThread, Comment } from '../ap
 import type { AdoClient } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
 
+interface PrPanelScope {
+    organization?: string;
+    project?: string;
+}
+
 /**
  * Renders a pull request's details (title, description, reviewers, comment
  * threads) in a VS Code webview panel.  The user can reply to threads and
  * resolve/reopen them without leaving VS Code.
  */
 export class PrDetailsPanel {
-    private static _panels = new Map<number, PrDetailsPanel>();
+    private static _panels = new Map<string, PrDetailsPanel>();
 
     private readonly _panel: vscode.WebviewPanel;
+    private readonly _panelKey: string;
+    private readonly _organization?: string;
+    private readonly _project?: string;
     private _disposables: vscode.Disposable[] = [];
 
     static async show(
         context: vscode.ExtensionContext,
         client: AdoClient,
         config: ConfigManager,
-        pr: GitPullRequest
+        pr: GitPullRequest,
+        scope: PrPanelScope = {}
     ): Promise<void> {
         const prId = pr.pullRequestId!;
-        const existing = PrDetailsPanel._panels.get(prId);
+        const key = PrDetailsPanel.panelKey(
+            prId,
+            scope.organization ?? client.organization ?? config.organization,
+            scope.project ?? config.project
+        );
+        const existing = PrDetailsPanel._panels.get(key);
         if (existing) {
             existing._panel.reveal(vscode.ViewColumn.One);
             await existing._refresh(client, config, pr);
             return;
         }
-        new PrDetailsPanel(context, client, config, pr);
+        new PrDetailsPanel(context, client, config, pr, key, scope);
     }
 
     private constructor(
         private readonly _context: vscode.ExtensionContext,
         private readonly _client: AdoClient,
         private readonly _config: ConfigManager,
-        private _pr: GitPullRequest
+        private _pr: GitPullRequest,
+        panelKey: string,
+        scope: PrPanelScope
     ) {
+        this._panelKey = panelKey;
+        this._organization = scope.organization;
+        this._project = scope.project;
         const prId = _pr.pullRequestId!;
         this._panel = vscode.window.createWebviewPanel(
             'adoext.prDetails',
@@ -56,7 +75,7 @@ export class PrDetailsPanel {
             this._disposables
         );
 
-        PrDetailsPanel._panels.set(prId, this);
+        PrDetailsPanel._panels.set(panelKey, this);
         void this._refresh(_client, _config, _pr);
     }
 
@@ -68,9 +87,11 @@ export class PrDetailsPanel {
         this._pr = pr;
         const repoId = pr.repository?.id ?? '';
         const prId = pr.pullRequestId!;
+        const project = this._project ?? config.project;
+        const organization = this._organization ?? client.organization ?? config.organization;
         let threads: GitPullRequestCommentThread[] = [];
         try {
-            threads = await client.getPullRequestThreads(config.project, repoId, prId);
+            threads = await client.getPullRequestThreads(project, repoId, prId, organization);
         } catch {
             // show panel anyway, threads will just be empty
         }
@@ -85,7 +106,8 @@ export class PrDetailsPanel {
     }): Promise<void> {
         const repoId = this._pr.repository?.id ?? '';
         const prId = this._pr.pullRequestId!;
-        const project = this._config.project;
+        const project = this._project ?? this._config.project;
+        const organization = this._organization ?? this._client.organization ?? this._config.organization;
 
         try {
             if (msg.type === 'reply' && msg.threadId !== undefined && msg.content) {
@@ -94,7 +116,8 @@ export class PrDetailsPanel {
                     repoId,
                     prId,
                     msg.threadId,
-                    msg.content
+                    msg.content,
+                    organization
                 );
                 vscode.window.showInformationMessage('Reply posted.');
                 await this._refresh(this._client, this._config, this._pr);
@@ -104,7 +127,8 @@ export class PrDetailsPanel {
                     repoId,
                     prId,
                     msg.threadId,
-                    msg.status
+                    msg.status,
+                    organization
                 );
                 const label = msg.status === 2 ? 'resolved' : 'reopened';
                 vscode.window.showInformationMessage(`Thread ${label}.`);
@@ -114,13 +138,14 @@ export class PrDetailsPanel {
                     project,
                     repoId,
                     prId,
-                    msg.content
+                    msg.content,
+                    organization
                 );
                 vscode.window.showInformationMessage('Comment added.');
                 await this._refresh(this._client, this._config, this._pr);
             } else if (msg.type === 'openInBrowser') {
-                const org = this._client.organization;
-                const projectName = this._config.project;
+                const org = organization;
+                const projectName = project;
                 const repoName = this._pr.repository?.name;
 
                 if (!org || !projectName || !repoName) {
@@ -327,7 +352,7 @@ document.querySelectorAll('[data-action="set-status"]').forEach(button => {
     }
 
     private _dispose(): void {
-        PrDetailsPanel._panels.delete(this._pr.pullRequestId!);
+        PrDetailsPanel._panels.delete(this._panelKey);
         for (const d of this._disposables) {
             d.dispose();
         }
@@ -336,5 +361,9 @@ document.querySelectorAll('[data-action="set-status"]').forEach(button => {
 
     private _createNonce(): string {
         return crypto.randomBytes(16).toString('hex');
+    }
+
+    private static panelKey(prId: number, organization?: string, project?: string): string {
+        return `${organization ?? ''}/${project ?? ''}/${prId}`;
     }
 }
