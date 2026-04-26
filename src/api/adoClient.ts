@@ -52,6 +52,9 @@ export interface PullRequestDiffModel {
     files: PullRequestFileDiff[];
 }
 
+const WORK_ITEM_QUERY_LIMIT = 200;
+const PLANNING_WORK_ITEM_QUERY_LIMIT = 500;
+
 /**
  * Thin wrapper around the azure-devops-node-api package.
  * Handles connection setup and exposes high-level helpers used by the tree
@@ -180,37 +183,38 @@ export class AdoClient {
     ): Promise<WorkItem[]> {
         const witApi: IWorkItemTrackingApi = await this.getConnectionFor(organization).getWorkItemTrackingApi();
 
-        let whereClause: string;
+        const projectClause = `[System.TeamProject] = '${this.escapeWiqlString(project)}'`;
+        let filterClause: string;
         switch (filter) {
             case 'created':
-                whereClause = `[System.CreatedBy] = @me AND [System.State] <> 'Closed' AND [System.State] <> 'Resolved'`;
+                filterClause = `[System.CreatedBy] = @me AND [System.State] <> 'Closed' AND [System.State] <> 'Resolved'`;
                 break;
             case 'mentioned':
-                whereClause = `[System.CommentCount] > 0 AND [System.ChangedBy] = @me AND [System.State] <> 'Closed'`;
+                filterClause = `[System.CommentCount] > 0 AND [System.ChangedBy] = @me AND [System.State] <> 'Closed'`;
                 break;
             case 'all':
-                whereClause = `[System.TeamProject] = '${this.escapeWiqlString(project)}' AND [System.State] NOT IN ('Closed', 'Removed')`;
+                filterClause = `[System.State] NOT IN ('Closed', 'Removed')`;
                 break;
             case 'assigned':
             default:
-                whereClause = `[System.AssignedTo] = @me AND [System.State] <> 'Closed' AND [System.State] <> 'Resolved'`;
+                filterClause = `[System.AssignedTo] = @me AND [System.State] <> 'Closed' AND [System.State] <> 'Resolved'`;
                 break;
         }
 
         const wiql = {
             query: `SELECT [System.Id], [System.Title], [System.State], [System.WorkItemType], [System.AssignedTo]
                     FROM WorkItems
-                    WHERE ${whereClause}
+                    WHERE ${projectClause} AND ${filterClause}
                     ORDER BY [System.ChangedDate] DESC`
         };
 
-        const result = await witApi.queryByWiql(wiql, { project });
+        const result = await witApi.queryByWiql(wiql, { project }, false, WORK_ITEM_QUERY_LIMIT);
         if (!result.workItems || result.workItems.length === 0) {
             return [];
         }
 
         const ids = result.workItems
-            .slice(0, 200)
+            .slice(0, WORK_ITEM_QUERY_LIMIT)
             .flatMap(wi => wi.id !== undefined ? [wi.id] : []);
 
         if (ids.length === 0) {
@@ -246,13 +250,13 @@ export class AdoClient {
                     ORDER BY [System.ChangedDate] DESC`
         };
 
-        const result = await witApi.queryByWiql(wiql, { project });
+        const result = await witApi.queryByWiql(wiql, { project }, false, PLANNING_WORK_ITEM_QUERY_LIMIT);
         if (!result.workItems || result.workItems.length === 0) {
             return [];
         }
 
         const ids = result.workItems
-            .slice(0, 500)
+            .slice(0, PLANNING_WORK_ITEM_QUERY_LIMIT)
             .flatMap(wi => wi.id !== undefined ? [wi.id] : []);
 
         if (ids.length === 0) {
