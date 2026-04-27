@@ -403,6 +403,17 @@ export class AdoClient {
         return threads ?? [];
     }
 
+    async getPullRequest(
+        project: string,
+        repositoryId: string,
+        pullRequestId: number,
+        organization?: string
+    ): Promise<GitPullRequest | undefined> {
+        const gitApi: IGitApi = await this.getConnectionFor(organization).getGitApi();
+        const pullRequest = await gitApi.getPullRequest(repositoryId, pullRequestId, project);
+        return pullRequest ?? undefined;
+    }
+
     async getPullRequestDiff(
         project: string,
         repositoryId: string,

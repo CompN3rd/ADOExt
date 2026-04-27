@@ -181,11 +181,9 @@ export class PrDetailsPanel {
                     organization
                 );
                 vscode.window.showInformationMessage(`Review vote set to ${this._reviewVoteLabel(msg.vote)}.`);
-                void vscode.commands.executeCommand('adoext.refreshPullRequests');
 
                 try {
-                    const refreshedPr = (await this._client.getPullRequests(project, 'all', undefined, organization))
-                        .find(candidate => candidate.pullRequestId === prId);
+                    const refreshedPr = await this._client.getPullRequest(project, repoId, prId, organization);
                     if (refreshedPr) {
                         this._pr = refreshedPr;
                     }
@@ -194,6 +192,7 @@ export class PrDetailsPanel {
                 }
 
                 await this._refresh(this._client, this._config, this._pr);
+                void vscode.commands.executeCommand('adoext.refreshPullRequests');
             }
         } catch (err) {
             vscode.window.showErrorMessage(`Error: ${err}`);
@@ -279,7 +278,7 @@ export class PrDetailsPanel {
 <body>
 <div class="toolbar">
     <button class="btn btn-primary" data-action="open-diff">View Diff</button>
-        <div class="review-actions" aria-label="Review actions">
+        <div class="review-actions" role="group" aria-label="Review actions">
                 <button class="btn btn-secondary" data-action="set-vote" data-vote="${PullRequestReviewVotes.approved}">Approve</button>
                 <button class="btn btn-secondary" data-action="set-vote" data-vote="${PullRequestReviewVotes.approvedWithSuggestions}">Approve with Suggestions</button>
                 <button class="btn btn-secondary" data-action="set-vote" data-vote="${PullRequestReviewVotes.waitingForAuthor}">Wait for Author</button>
