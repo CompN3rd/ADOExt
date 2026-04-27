@@ -4,11 +4,22 @@ import type {
     PullRequestCommentNode,
     PullRequestThreadNode
 } from '../providers/pullRequestProvider';
-import type { AdoClient, PullRequestReviewVote } from '../api/adoClient';
+import type { AdoClient, GitPullRequest, PullRequestReviewVote } from '../api/adoClient';
 import { PullRequestReviewVotes } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
 import { PrDetailsPanel } from '../views/prDetailsPanel';
-import { PrDiffPanel } from '../views/prDiffPanel';
+import type { PrCommentController } from '../views/prCommentController';
+import type { PrDiffCache } from '../views/prContentProvider';
+
+export interface PrScope {
+    pr: GitPullRequest;
+    organization?: string;
+    project?: string;
+}
+
+function asPrScope(arg: PullRequestNode | PrScope): PrScope {
+    return { pr: arg.pr, organization: arg.organization, project: arg.project };
+}
 
 /**
  * Open a pull request in the browser.
@@ -43,22 +54,71 @@ export async function viewPullRequestDetails(
 }
 
 /**
- * Show the PR diff webview panel.
+ * Open the pull request diff using VS Code's native diff editor for each
+ * changed file. Hooks the inline `CommentController` so that ADO comment
+ * threads appear in the gutter (and new ones can be authored with the same
+ * UX as the built-in GitHub Pull Request extension).
  */
 export async function viewPullRequestDiff(
-    node: PullRequestNode | undefined,
+    nodeOrScope: PullRequestNode | PrScope | undefined,
     client: AdoClient,
-    config: ConfigManager
+    config: ConfigManager,
+    commentController: PrCommentController,
+    diffCache: PrDiffCache
 ): Promise<void> {
-    if (!node) {
+    if (!nodeOrScope) {
         vscode.window.showInformationMessage('Select a pull request first, then run "View Pull Request Diff".');
         return;
     }
+    const scope = asPrScope(nodeOrScope);
+    const pr = scope.pr;
+    const repoId = pr.repository?.id ?? '';
+    const prId = pr.pullRequestId ?? 0;
+    const project = scope.project ?? config.project;
+    const organization = scope.organization ?? client.organization ?? config.organization;
 
-    await PrDiffPanel.show(client, config, node.pr, {
-        organization: node.organization,
-        project: node.project
+    if (!repoId || !project || !organization || !prId) {
+        vscode.window.showWarningMessage(
+            'Unable to load diff because organization, project, repository, or pull request ID is missing.'
+        );
+        return;
+    }
+
+    const diff = await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: `Loading PR #${prId} diff…` },
+        () => client.getPullRequestDiff(project, repoId, pr, organization)
+    ).then(model => model, err => {
+        vscode.window.showErrorMessage(`Failed to load pull request diff: ${err instanceof Error ? err.message : String(err)}`);
+        return undefined;
     });
+    if (!diff) { return; }
+
+    diffCache.set(organization, project, prId, diff);
+    const fileEntries = await commentController.loadDiff(pr, diff, { organization, project });
+
+    if (fileEntries.length === 0) {
+        vscode.window.showInformationMessage(`Pull request #${prId} has no changed files to display.`);
+        return;
+    }
+
+    const picks = fileEntries.map(entry => ({
+        label: `$(diff) ${entry.filePath}`,
+        description: entry.changeType,
+        entry
+    }));
+    const picked = await vscode.window.showQuickPick(picks, {
+        placeHolder: `Pull Request #${prId} — ${fileEntries.length} changed file${fileEntries.length === 1 ? '' : 's'}. Pick a file to open the diff.`,
+        matchOnDescription: true
+    });
+    if (!picked) { return; }
+
+    await vscode.commands.executeCommand(
+        'vscode.diff',
+        picked.entry.baseUri,
+        picked.entry.targetUri,
+        `PR #${prId}: ${picked.entry.filePath}`,
+        { preview: false }
+    );
 }
 
 export async function setPullRequestReviewVote(
@@ -150,12 +210,15 @@ export function resetPullRequestVote(
 
 /**
  * Checkout the source branch of a pull request in the current workspace.
- * Uses the VS Code Git extension API.
+ * Uses the VS Code Git extension API. After a successful checkout, attaches
+ * the PR's existing comment threads inline on the affected workspace files
+ * via the supplied {@link PrCommentController}.
  */
 export async function checkoutPullRequest(
     node: PullRequestNode,
-    _client: AdoClient,
-    _config: ConfigManager
+    client: AdoClient,
+    config: ConfigManager,
+    commentController: PrCommentController
 ): Promise<void> {
     const pr = node.pr;
     const branchRef = pr.sourceRefName ?? '';
@@ -216,6 +279,7 @@ export async function checkoutPullRequest(
     }
 
     // Fetch the remote first so the branch ref is available
+    let checkoutSucceeded = false;
     await vscode.window.withProgress(
         {
             location: vscode.ProgressLocation.Notification,
@@ -234,6 +298,7 @@ export async function checkoutPullRequest(
 
                 // Use the VS Code Git API checkout command
                 await repo.checkout(branchName);
+                checkoutSucceeded = true;
                 vscode.window.showInformationMessage(
                     `Checked out branch: ${branchName} (from ${remoteName})`
                 );
@@ -245,6 +310,7 @@ export async function checkoutPullRequest(
                         remotes.find(r => r.name === 'origin')?.name ??
                         remotes[0]?.name ?? 'origin';
                     await repo.checkout(`${remoteName}/${branchName}`);
+                    checkoutSucceeded = true;
                     vscode.window.showInformationMessage(
                         `Checked out branch: ${branchName}`
                     );
@@ -256,6 +322,28 @@ export async function checkoutPullRequest(
             }
         }
     );
+
+    if (!checkoutSucceeded) { return; }
+
+    // Attach the PR's existing comment threads inline on the workspace files
+    // so reviewers can read and reply to them while editing the checked-out
+    // branch.
+    const project = node.project ?? config.project;
+    const organization = node.organization ?? client.organization ?? config.organization;
+    if (project && organization) {
+        try {
+            const count = await commentController.attachCheckout(pr, repo.rootUri, { organization, project });
+            if (count > 0) {
+                vscode.window.showInformationMessage(
+                    `Loaded ${count} pull request comment thread${count === 1 ? '' : 's'} inline. New comments can be added from the gutter.`
+                );
+            }
+        } catch (err) {
+            vscode.window.showWarningMessage(
+                `Branch checked out, but inline comments could not be loaded: ${err instanceof Error ? err.message : String(err)}`
+            );
+        }
+    }
 }
 
 /**

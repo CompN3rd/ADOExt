@@ -31,8 +31,12 @@ ADOExt is a full-featured Azure DevOps integration for Visual Studio Code, provi
 - **One-click to view full PR details in a dedicated webview panel** — no browser needed
   - See title, description, reviewers, source/target branches, and all comment threads
   - Reply to threads, resolve/reopen, and add new comments from the panel
-  - Open a pull request diff view with changed files, line hunks, and line comments
   - Open in browser available as a secondary action
+- **Native diff editor for pull requests** — picks up VS Code's normal side-by-side diff UI instead of a custom webview
+  - Pick a changed file from a quick pick to open the side-by-side diff
+  - Existing PR comment threads appear inline in the gutter, with full reply / resolve / reopen support
+  - Add new line comments using the same `+` gutter affordance and floating editor as the built-in GitHub PR extension
+- **Inline PR comments on the checked-out branch** — after running "Checkout Pull Request Branch", existing PR threads light up in the regular editor view so you can read and reply to them while editing the code, just like the built-in GitHub PR extension
 - **Checkout a PR branch** with a single click using the built-in Git extension
 
 ### Multi-Account & Multi-Organization Support

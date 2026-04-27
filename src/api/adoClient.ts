@@ -414,6 +414,25 @@ export class AdoClient {
         return pullRequest ?? undefined;
     }
 
+    /**
+     * Fetch the latest iteration id for a pull request without downloading
+     * any file content. Useful when posting line comments without first
+     * loading the full diff.
+     */
+    async getPullRequestLatestIterationId(
+        project: string,
+        repositoryId: string,
+        pullRequestId: number,
+        organization?: string
+    ): Promise<number> {
+        const gitApi: IGitApi = await this.getConnectionFor(organization).getGitApi();
+        const iterations = await gitApi.getPullRequestIterations(repositoryId, pullRequestId, project, true);
+        const latestIteration = [...(iterations ?? [])]
+            .filter(iteration => typeof iteration.id === 'number')
+            .sort((left, right) => (right.id ?? 0) - (left.id ?? 0))[0];
+        return latestIteration?.id ?? 1;
+    }
+
     async getPullRequestDiff(
         project: string,
         repositoryId: string,
