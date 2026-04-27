@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as crypto from 'crypto';
-import type { GitPullRequest, GitPullRequestCommentThread, Comment } from '../api/adoClient';
+import type { GitPullRequest, GitPullRequestCommentThread, Comment, PullRequestReviewVote } from '../api/adoClient';
+import { PullRequestReviewVotes } from '../api/adoClient';
 import type { AdoClient } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
 import { PrDiffPanel } from './prDiffPanel';
@@ -104,6 +105,7 @@ export class PrDetailsPanel {
         threadId?: number;
         content?: string;
         status?: number;
+        vote?: number;
     }): Promise<void> {
         const repoId = this._pr.repository?.id ?? '';
         const prId = this._pr.pullRequestId!;
@@ -163,6 +165,35 @@ export class PrDetailsPanel {
                     organization,
                     project
                 });
+            } else if (msg.type === 'setVote' && this._isReviewVote(msg.vote)) {
+                if (!organization || !project || !repoId) {
+                    vscode.window.showWarningMessage(
+                        'Unable to set review vote because organization, project, or repository is missing.'
+                    );
+                    return;
+                }
+
+                await this._client.setPullRequestReviewVote(
+                    project,
+                    repoId,
+                    prId,
+                    msg.vote,
+                    organization
+                );
+                vscode.window.showInformationMessage(`Review vote set to ${this._reviewVoteLabel(msg.vote)}.`);
+                void vscode.commands.executeCommand('adoext.refreshPullRequests');
+
+                try {
+                    const refreshedPr = (await this._client.getPullRequests(project, 'all', undefined, organization))
+                        .find(candidate => candidate.pullRequestId === prId);
+                    if (refreshedPr) {
+                        this._pr = refreshedPr;
+                    }
+                } catch {
+                    // The vote has already been saved; keep the existing PR model if reloading it fails.
+                }
+
+                await this._refresh(this._client, this._config, this._pr);
             }
         } catch (err) {
             vscode.window.showErrorMessage(`Error: ${err}`);
@@ -189,12 +220,9 @@ export class PrDetailsPanel {
         const reviewersHtml = (pr.reviewers ?? [])
             .map(r => {
                 const vote = r.vote ?? 0;
-                const voteIcon =
-                    vote === 10 ? '✅' :
-                    vote === 5 ? '✔' :
-                    vote === -5 ? '⚠' :
-                    vote === -10 ? '❌' : '⏳';
-                return `<li>${voteIcon} ${this._esc(r.displayName ?? '')}</li>`;
+                const voteLabel = this._reviewVoteLabel(vote);
+                const voteClass = this._reviewVoteClass(vote);
+                return `<li><span class="vote ${voteClass}">${this._esc(voteLabel)}</span>${this._esc(r.displayName ?? '')}</li>`;
             })
             .join('');
 
@@ -222,7 +250,11 @@ export class PrDetailsPanel {
   .section { margin-bottom: 20px; }
   .section h2 { font-size: 1em; border-bottom: 1px solid var(--vscode-panel-border); padding-bottom: 4px; margin-bottom: 8px; }
   .reviewers { list-style: none; padding: 0; margin: 0; }
-  .reviewers li { margin: 4px 0; }
+    .reviewers li { margin: 4px 0; display: flex; gap: 8px; align-items: center; }
+    .vote { min-width: 112px; padding: 2px 6px; border-radius: 3px; font-size: 0.8em; text-align: center; border: 1px solid var(--vscode-panel-border); color: var(--vscode-descriptionForeground); }
+    .vote-positive { color: var(--vscode-charts-green); border-color: var(--vscode-charts-green); }
+    .vote-waiting { color: var(--vscode-charts-yellow); border-color: var(--vscode-charts-yellow); }
+    .vote-negative { color: var(--vscode-charts-red); border-color: var(--vscode-charts-red); }
   .thread { border: 1px solid var(--vscode-panel-border); border-radius: 4px; margin-bottom: 10px; }
   .thread-header { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; background: var(--vscode-sideBarSectionHeader-background); border-radius: 4px 4px 0 0; }
   .thread-status { font-size: 0.8em; color: var(--vscode-descriptionForeground); }
@@ -240,12 +272,20 @@ export class PrDetailsPanel {
   .btn-secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
   .empty { color: var(--vscode-descriptionForeground); font-style: italic; }
   .new-comment-form { display: flex; flex-direction: column; gap: 6px; }
-  .toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
+    .toolbar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+    .review-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 </style>
 </head>
 <body>
 <div class="toolbar">
     <button class="btn btn-primary" data-action="open-diff">View Diff</button>
+        <div class="review-actions" aria-label="Review actions">
+                <button class="btn btn-secondary" data-action="set-vote" data-vote="${PullRequestReviewVotes.approved}">Approve</button>
+                <button class="btn btn-secondary" data-action="set-vote" data-vote="${PullRequestReviewVotes.approvedWithSuggestions}">Approve with Suggestions</button>
+                <button class="btn btn-secondary" data-action="set-vote" data-vote="${PullRequestReviewVotes.waitingForAuthor}">Wait for Author</button>
+                <button class="btn btn-secondary" data-action="set-vote" data-vote="${PullRequestReviewVotes.rejected}">Reject</button>
+                <button class="btn btn-secondary" data-action="set-vote" data-vote="${PullRequestReviewVotes.noVote}">Reset Vote</button>
+        </div>
     <button class="btn btn-secondary" data-action="open-browser">Open in Browser</button>
 </div>
 <h1>PR #${prId}: ${title}${isDraft}</h1>
@@ -283,6 +323,13 @@ document.querySelector('[data-action="open-browser"]')?.addEventListener('click'
 
 document.querySelector('[data-action="open-diff"]')?.addEventListener('click', () => {
     vscode.postMessage({ type: 'openDiff' });
+});
+
+document.querySelectorAll('[data-action="set-vote"]').forEach(button => {
+    button.addEventListener('click', () => {
+        const vote = Number(button.getAttribute('data-vote'));
+        vscode.postMessage({ type: 'setVote', vote });
+    });
 });
 
 document.querySelector('[data-action="add-comment"]')?.addEventListener('click', () => {
@@ -360,6 +407,43 @@ document.querySelectorAll('[data-action="set-status"]').forEach(button => {
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;');
+    }
+
+    private _reviewVoteLabel(vote: number): string {
+        switch (vote) {
+            case PullRequestReviewVotes.approved:
+                return 'Approved';
+            case PullRequestReviewVotes.approvedWithSuggestions:
+                return 'Suggestions';
+            case PullRequestReviewVotes.waitingForAuthor:
+                return 'Waiting';
+            case PullRequestReviewVotes.rejected:
+                return 'Rejected';
+            default:
+                return 'No vote';
+        }
+    }
+
+    private _reviewVoteClass(vote: number): string {
+        switch (vote) {
+            case PullRequestReviewVotes.approved:
+            case PullRequestReviewVotes.approvedWithSuggestions:
+                return 'vote-positive';
+            case PullRequestReviewVotes.waitingForAuthor:
+                return 'vote-waiting';
+            case PullRequestReviewVotes.rejected:
+                return 'vote-negative';
+            default:
+                return '';
+        }
+    }
+
+    private _isReviewVote(vote: number | undefined): vote is PullRequestReviewVote {
+        return vote === PullRequestReviewVotes.approved ||
+            vote === PullRequestReviewVotes.approvedWithSuggestions ||
+            vote === PullRequestReviewVotes.noVote ||
+            vote === PullRequestReviewVotes.waitingForAuthor ||
+            vote === PullRequestReviewVotes.rejected;
     }
 
     private _dispose(): void {

@@ -9,7 +9,8 @@ import type {
     WorkItem,
     WorkItemType,
     Comment as WorkItemComment,
-    CommentCreate
+    CommentCreate,
+    WorkItemReference
 } from 'azure-devops-node-api/interfaces/WorkItemTrackingInterfaces';
 import type {
     GitPullRequest,
@@ -18,7 +19,8 @@ import type {
     FileDiff,
     GitPullRequestSearchCriteria,
     Comment,
-    CommentThreadStatus
+    CommentThreadStatus,
+    IdentityRefWithVote
 } from 'azure-devops-node-api/interfaces/GitInterfaces';
 import type { TeamProject } from 'azure-devops-node-api/interfaces/CoreInterfaces';
 import type { JsonPatchDocument, JsonPatchOperation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
@@ -31,6 +33,7 @@ export type {
     GitPullRequestCommentThread,
     Comment,
     CommentThreadStatus,
+    IdentityRefWithVote,
     TeamProject
 };
 
@@ -51,6 +54,16 @@ export interface PullRequestDiffModel {
     targetCommit?: string;
     files: PullRequestFileDiff[];
 }
+
+export type PullRequestReviewVote = -10 | -5 | 0 | 5 | 10;
+
+export const PullRequestReviewVotes = {
+    rejected: -10,
+    waitingForAuthor: -5,
+    noVote: 0,
+    approvedWithSuggestions: 5,
+    approved: 10
+} as const satisfies Record<string, PullRequestReviewVote>;
 
 const WORK_ITEM_QUERY_LIMIT = 200;
 const PLANNING_WORK_ITEM_QUERY_LIMIT = 500;
@@ -161,7 +174,7 @@ export class AdoClient {
     }
 
     /**
-     * List all projects within the current organization.
+     * List all projects within the given organization.
      */
     async listProjects(organization?: string): Promise<TeamProject[]> {
         const coreApi: ICoreApi = await this.getConnectionFor(organization).getCoreApi();
@@ -217,7 +230,7 @@ export class AdoClient {
 
         const ids = result.workItems
             .slice(0, WORK_ITEM_QUERY_LIMIT)
-            .flatMap(wi => wi.id !== undefined ? [wi.id] : []);
+            .flatMap((wi: WorkItemReference) => wi.id !== undefined ? [wi.id] : []);
 
         if (ids.length === 0) {
             return [];
@@ -259,7 +272,7 @@ export class AdoClient {
 
         const ids = result.workItems
             .slice(0, PLANNING_WORK_ITEM_QUERY_LIMIT)
-            .flatMap(wi => wi.id !== undefined ? [wi.id] : []);
+            .flatMap((wi: WorkItemReference) => wi.id !== undefined ? [wi.id] : []);
 
         if (ids.length === 0) {
             return [];
@@ -354,7 +367,6 @@ export class AdoClient {
         } else if (filter === 'assigned' && currentUserDescriptor) {
             searchCriteria.reviewerId = currentUserDescriptor;
         } else if (filter === 'mine' && currentUserDescriptor) {
-            // Fetch both and merge
             const [created, assigned] = await Promise.all([
                 gitApi.getPullRequestsByProject(project, {
                     ...searchCriteria,
@@ -443,8 +455,9 @@ export class AdoClient {
                 const path = change.item?.path ?? '';
                 const originalPath = change.originalPath ?? path;
                 const changeType = this.formatChangeType(change.changeType);
-                const isAdd = change.changeType === VersionControlChangeType.Add;
-                const isDelete = change.changeType === VersionControlChangeType.Delete;
+                const changeTypeValue = change.changeType ?? 0;
+                const isAdd = (changeTypeValue & VersionControlChangeType.Add) === VersionControlChangeType.Add;
+                const isDelete = (changeTypeValue & VersionControlChangeType.Delete) === VersionControlChangeType.Delete;
                 const [originalContent, modifiedContent] = await Promise.all([
                     !isAdd && baseCommit
                         ? this.getItemText(gitApi, project, repositoryId, originalPath, baseCommit)
@@ -507,6 +520,43 @@ export class AdoClient {
         return gitApi.createThread(thread, repositoryId, pullRequestId, project);
     }
 
+    async setPullRequestReviewVote(
+        project: string,
+        repositoryId: string,
+        pullRequestId: number,
+        vote: PullRequestReviewVote,
+        organization?: string
+    ): Promise<IdentityRefWithVote> {
+        const gitApi: IGitApi = await this.getConnectionFor(organization).getGitApi();
+        const reviewerId = await this.getCurrentUserId(organization);
+        if (!reviewerId) {
+            throw new Error('Unable to determine the current Azure DevOps user.');
+        }
+
+        const reviewer: IdentityRefWithVote = {
+            id: reviewerId,
+            vote
+        };
+
+        try {
+            return await gitApi.updatePullRequestReviewer(
+                reviewer,
+                repositoryId,
+                pullRequestId,
+                reviewerId,
+                project
+            );
+        } catch {
+            return gitApi.createPullRequestReviewer(
+                reviewer,
+                repositoryId,
+                pullRequestId,
+                reviewerId,
+                project
+            );
+        }
+    }
+
     /**
      * Reply to an existing comment thread.
      */
@@ -557,7 +607,7 @@ export class AdoClient {
         const gitApi: IGitApi = await this.getConnectionFor(organization).getGitApi();
         const thread: GitPullRequestCommentThread = {
             comments: [{ content }],
-            status: 1 // active
+            status: 1
         };
         return gitApi.createThread(thread, repositoryId, pullRequestId, project);
     }
@@ -577,7 +627,7 @@ export class AdoClient {
     async getWorkItemComments(project: string, workItemId: number, organization?: string): Promise<WorkItemComment[]> {
         const witApi: IWorkItemTrackingApi = await this.getConnectionFor(organization).getWorkItemTrackingApi();
         const result = await witApi.getComments(project, workItemId);
-        return (result?.comments ?? []).filter((c): c is WorkItemComment => !c.isDeleted);
+        return (result?.comments ?? []).filter((comment): comment is WorkItemComment => !comment.isDeleted);
     }
 
     /**

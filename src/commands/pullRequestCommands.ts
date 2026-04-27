@@ -4,7 +4,8 @@ import type {
     PullRequestCommentNode,
     PullRequestThreadNode
 } from '../providers/pullRequestProvider';
-import type { AdoClient } from '../api/adoClient';
+import type { AdoClient, PullRequestReviewVote } from '../api/adoClient';
+import { PullRequestReviewVotes } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
 import { PrDetailsPanel } from '../views/prDetailsPanel';
 import { PrDiffPanel } from '../views/prDiffPanel';
@@ -58,6 +59,93 @@ export async function viewPullRequestDiff(
         organization: node.organization,
         project: node.project
     });
+}
+
+export async function setPullRequestReviewVote(
+    node: PullRequestNode | undefined,
+    client: AdoClient,
+    config: ConfigManager,
+    vote: PullRequestReviewVote,
+    label: string
+): Promise<boolean> {
+    if (!node) {
+        vscode.window.showInformationMessage('Select a pull request first, then run a review action.');
+        return false;
+    }
+
+    const pullRequest = node.pr;
+    const repositoryId = pullRequest.repository?.id;
+    const pullRequestId = pullRequest.pullRequestId;
+    const project = node.project ?? config.project;
+    const organization = node.organization ?? client.organization ?? config.organization;
+
+    if (!organization || !project || !repositoryId || typeof pullRequestId !== 'number') {
+        vscode.window.showWarningMessage(
+            'Unable to set review vote because organization, project, repository, or pull request ID is missing.'
+        );
+        return false;
+    }
+
+    try {
+        await client.setPullRequestReviewVote(project, repositoryId, pullRequestId, vote, organization);
+        vscode.window.showInformationMessage(`Review vote set to ${label}.`);
+        return true;
+    } catch (err) {
+        vscode.window.showErrorMessage(`Failed to set review vote: ${err}`);
+        return false;
+    }
+}
+
+export function approvePullRequest(
+    node: PullRequestNode | undefined,
+    client: AdoClient,
+    config: ConfigManager
+): Promise<boolean> {
+    return setPullRequestReviewVote(node, client, config, PullRequestReviewVotes.approved, 'Approved');
+}
+
+export function approvePullRequestWithSuggestions(
+    node: PullRequestNode | undefined,
+    client: AdoClient,
+    config: ConfigManager
+): Promise<boolean> {
+    return setPullRequestReviewVote(
+        node,
+        client,
+        config,
+        PullRequestReviewVotes.approvedWithSuggestions,
+        'Approved with suggestions'
+    );
+}
+
+export function waitForPullRequestAuthor(
+    node: PullRequestNode | undefined,
+    client: AdoClient,
+    config: ConfigManager
+): Promise<boolean> {
+    return setPullRequestReviewVote(
+        node,
+        client,
+        config,
+        PullRequestReviewVotes.waitingForAuthor,
+        'Waiting for author'
+    );
+}
+
+export function rejectPullRequest(
+    node: PullRequestNode | undefined,
+    client: AdoClient,
+    config: ConfigManager
+): Promise<boolean> {
+    return setPullRequestReviewVote(node, client, config, PullRequestReviewVotes.rejected, 'Rejected');
+}
+
+export function resetPullRequestVote(
+    node: PullRequestNode | undefined,
+    client: AdoClient,
+    config: ConfigManager
+): Promise<boolean> {
+    return setPullRequestReviewVote(node, client, config, PullRequestReviewVotes.noVote, 'No vote');
 }
 
 /**

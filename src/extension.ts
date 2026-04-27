@@ -20,6 +20,11 @@ import {
     openPullRequest,
     viewPullRequestDetails,
     viewPullRequestDiff,
+    approvePullRequest,
+    approvePullRequestWithSuggestions,
+    waitForPullRequestAuthor,
+    rejectPullRequest,
+    resetPullRequestVote,
     checkoutPullRequest,
     replyToComment,
     resolveThread,
@@ -245,6 +250,71 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             async (node: PullRequestNode) => {
                 if (!(await ensureSignedIn())) { return; }
                 await viewPullRequestDiff(node, client, config);
+            }
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.approvePullRequest',
+            async (node?: PullRequestNode) => {
+                if (!(await ensureSignedIn())) { return; }
+                const updated = await approvePullRequest(node, client, config);
+                if (updated) {
+                    pullRequestProvider.refresh();
+                }
+            }
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.approvePullRequestWithSuggestions',
+            async (node?: PullRequestNode) => {
+                if (!(await ensureSignedIn())) { return; }
+                const updated = await approvePullRequestWithSuggestions(node, client, config);
+                if (updated) {
+                    pullRequestProvider.refresh();
+                }
+            }
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.waitForPullRequestAuthor',
+            async (node?: PullRequestNode) => {
+                if (!(await ensureSignedIn())) { return; }
+                const updated = await waitForPullRequestAuthor(node, client, config);
+                if (updated) {
+                    pullRequestProvider.refresh();
+                }
+            }
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.rejectPullRequest',
+            async (node?: PullRequestNode) => {
+                if (!(await ensureSignedIn())) { return; }
+                const updated = await rejectPullRequest(node, client, config);
+                if (updated) {
+                    pullRequestProvider.refresh();
+                }
+            }
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.resetPullRequestVote',
+            async (node?: PullRequestNode) => {
+                if (!(await ensureSignedIn())) { return; }
+                const updated = await resetPullRequestVote(node, client, config);
+                if (updated) {
+                    pullRequestProvider.refresh();
+                }
             }
         )
     );
