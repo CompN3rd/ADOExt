@@ -169,6 +169,36 @@
         "icon": "$(diff)"
       },
       {
+        "command": "adoext.approvePullRequest",
+        "title": "Approve Pull Request",
+        "category": "ADOExt",
+        "icon": "$(check)"
+      },
+      {
+        "command": "adoext.approvePullRequestWithSuggestions",
+        "title": "Approve Pull Request with Suggestions",
+        "category": "ADOExt",
+        "icon": "$(lightbulb)"
+      },
+      {
+        "command": "adoext.waitForPullRequestAuthor",
+        "title": "Wait for Pull Request Author",
+        "category": "ADOExt",
+        "icon": "$(clock)"
+      },
+      {
+        "command": "adoext.rejectPullRequest",
+        "title": "Reject Pull Request",
+        "category": "ADOExt",
+        "icon": "$(error)"
+      },
+      {
+        "command": "adoext.resetPullRequestVote",
+        "title": "Reset Pull Request Vote",
+        "category": "ADOExt",
+        "icon": "$(circle-slash)"
+      },
+      {
         "command": "adoext.checkoutPullRequest",
         "title": "Checkout Pull Request Branch",
         "category": "ADOExt",
@@ -272,6 +302,31 @@
           "command": "adoext.viewPullRequestDiff",
           "when": "viewItem == pullRequest",
           "group": "inline"
+        },
+        {
+          "command": "adoext.approvePullRequest",
+          "when": "viewItem == pullRequest",
+          "group": "review@1"
+        },
+        {
+          "command": "adoext.approvePullRequestWithSuggestions",
+          "when": "viewItem == pullRequest",
+          "group": "review@2"
+        },
+        {
+          "command": "adoext.waitForPullRequestAuthor",
+          "when": "viewItem == pullRequest",
+          "group": "review@3"
+        },
+        {
+          "command": "adoext.rejectPullRequest",
+          "when": "viewItem == pullRequest",
+          "group": "review@4"
+        },
+        {
+          "command": "adoext.resetPullRequestVote",
+          "when": "viewItem == pullRequest",
+          "group": "review@5"
         },
         {
           "command": "adoext.checkoutPullRequest",

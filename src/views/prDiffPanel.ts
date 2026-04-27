@@ -99,7 +99,6 @@ export class PrDiffPanel {
         this._panel.webview.html = this.buildMessageHtml('Loading pull request diff...');
 
         const repoId = this._pr.repository?.id ?? '';
-        const prId = this._pr.pullRequestId ?? 0;
         const project = this._project ?? this._config.project;
         const organization = this._organization ?? this._client.organization ?? this._config.organization;
 
