@@ -4,7 +4,9 @@ import type { GitPullRequest, GitPullRequestCommentThread, Comment, PullRequestR
 import { PullRequestReviewVotes } from '../api/adoClient';
 import type { AdoClient } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
-import { PrDiffPanel } from './prDiffPanel';
+// Note: the diff is now opened via VS Code's native diff editor, dispatched
+// through the `adoext.viewPullRequestDiff` command so that the inline
+// comment controller is wired up consistently.
 
 interface PrPanelScope {
     organization?: string;
@@ -161,7 +163,8 @@ export class PrDetailsPanel {
                 const url = `https://dev.azure.com/${encodeURIComponent(org)}/${encodeURIComponent(projectName)}/_git/${encodeURIComponent(repoName)}/pullrequest/${prId}`;
                 void vscode.env.openExternal(vscode.Uri.parse(url));
             } else if (msg.type === 'openDiff') {
-                await PrDiffPanel.show(this._client, this._config, this._pr, {
+                await vscode.commands.executeCommand('adoext.viewPullRequestDiff', {
+                    pr: this._pr,
                     organization,
                     project
                 });

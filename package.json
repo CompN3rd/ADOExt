@@ -227,6 +227,32 @@
         "title": "Add Comment to Pull Request",
         "category": "ADOExt",
         "icon": "$(add)"
+      },
+      {
+        "command": "adoext.prComment.create",
+        "title": "Add Comment",
+        "category": "ADOExt",
+        "icon": "$(comment)",
+        "enablement": "!commentIsEmpty"
+      },
+      {
+        "command": "adoext.prComment.reply",
+        "title": "Reply",
+        "category": "ADOExt",
+        "icon": "$(reply)",
+        "enablement": "!commentIsEmpty"
+      },
+      {
+        "command": "adoext.prComment.resolve",
+        "title": "Resolve",
+        "category": "ADOExt",
+        "icon": "$(check)"
+      },
+      {
+        "command": "adoext.prComment.reopen",
+        "title": "Reopen",
+        "category": "ADOExt",
+        "icon": "$(issues)"
       }
     ],
     "menus": {
@@ -353,6 +379,48 @@
           "when": "viewItem == prCommentThreadResolved",
           "group": "inline"
         }
+      ],
+      "comments/commentThread/context": [
+        {
+          "command": "adoext.prComment.create",
+          "group": "inline",
+          "when": "commentController == adoext.prComments && commentThreadIsEmpty"
+        },
+        {
+          "command": "adoext.prComment.reply",
+          "group": "inline",
+          "when": "commentController == adoext.prComments && !commentThreadIsEmpty"
+        }
+      ],
+      "comments/commentThread/title": [
+        {
+          "command": "adoext.prComment.resolve",
+          "group": "inline@1",
+          "when": "commentController == adoext.prComments && commentThread == prThreadActive"
+        },
+        {
+          "command": "adoext.prComment.reopen",
+          "group": "inline@1",
+          "when": "commentController == adoext.prComments && commentThread == prThreadResolved"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "adoext.prComment.create",
+          "when": "false"
+        },
+        {
+          "command": "adoext.prComment.reply",
+          "when": "false"
+        },
+        {
+          "command": "adoext.prComment.resolve",
+          "when": "false"
+        },
+        {
+          "command": "adoext.prComment.reopen",
+          "when": "false"
+        }
       ]
     },
     "configuration": {
@@ -414,6 +482,17 @@
             "All active PRs"
           ],
           "description": "Which pull requests to show"
+        },
+        "adoext.notifyOnNewPullRequestComments": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a small notification when new comments appear on tracked pull requests. Disable to silence the toasts."
+        },
+        "adoext.pullRequestCommentPollIntervalSeconds": {
+          "type": "number",
+          "default": 300,
+          "minimum": 60,
+          "description": "How often (in seconds) ADOExt polls tracked pull requests for new comments. Ignored when notifications are disabled."
         }
       }
     }

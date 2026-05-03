@@ -99,6 +99,17 @@ export class ConfigManager {
         );
     }
 
+    /** Whether to show a small toast when new comments appear on tracked PRs. */
+    get notifyOnNewPullRequestComments(): boolean {
+        return this.config.get<boolean>('notifyOnNewPullRequestComments', true);
+    }
+
+    /** Poll interval for the new-comment notifier, in seconds (minimum 60). */
+    get pullRequestCommentPollIntervalSeconds(): number {
+        const raw = this.config.get<number>('pullRequestCommentPollIntervalSeconds', 300);
+        return Math.max(60, Math.floor(raw));
+    }
+
     /** Returns true if both organization and project are configured. */
     get isConfigured(): boolean {
         const organizations = this.selectedOrganizations;

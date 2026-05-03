@@ -11,6 +11,9 @@ import {
 } from './providers/pullRequestProvider';
 import { BacklogProvider, SprintProvider, BoardProvider } from './providers/planningProviders';
 import { PlanningPanel } from './views/planningPanel';
+import { PrCommentController, type CommentReply } from './views/prCommentController';
+import { PrDiffCache, PrDiffContentProvider, PR_DIFF_SCHEME } from './views/prContentProvider';
+import { PrCommentNotifier } from './views/prCommentNotifier';
 import {
     selectOrganization,
     selectProject
@@ -58,6 +61,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             client.connect(config.organization);
         }
         updateSignedInContext();
+        // Re-prime the notifier (also captures the brand-new sign-in case).
+        prCommentNotifier.applyConfig();
     }
 
     function updateSignedInContext(): void {
@@ -92,6 +97,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.window.registerTreeDataProvider('adoext.sprints', sprintProvider),
         vscode.window.registerTreeDataProvider('adoext.boards', boardProvider)
     );
+
+    // -------------------------------------------------------------------------
+    // Native diff editor + inline comment controller
+    // -------------------------------------------------------------------------
+    const diffCache = new PrDiffCache();
+    const diffContentProvider = new PrDiffContentProvider(client, diffCache);
+    context.subscriptions.push(
+        vscode.workspace.registerTextDocumentContentProvider(PR_DIFF_SCHEME, diffContentProvider)
+    );
+
+    const prCommentController = new PrCommentController(client);
+    context.subscriptions.push(prCommentController);
+
+    // Surface a small toast when a tracked PR receives new comments. The
+    // user can mute the notifications from the toast itself or via the
+    // `adoext.notifyOnNewPullRequestComments` setting.
+    const prCommentNotifier = new PrCommentNotifier(client, config, context.globalState);
+    context.subscriptions.push(prCommentNotifier);
 
     // -------------------------------------------------------------------------
     // Commands
@@ -247,9 +270,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(
         vscode.commands.registerCommand(
             'adoext.viewPullRequestDiff',
-            async (node: PullRequestNode) => {
+            async (node: PullRequestNode | { pr: import('./api/adoClient').GitPullRequest; organization?: string; project?: string }) => {
                 if (!(await ensureSignedIn())) { return; }
-                await viewPullRequestDiff(node, client, config);
+                await viewPullRequestDiff(node, client, config, prCommentController, diffCache);
             }
         )
     );
@@ -323,7 +346,35 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(
         vscode.commands.registerCommand(
             'adoext.checkoutPullRequest',
-            (node: PullRequestNode) => checkoutPullRequest(node, client, config)
+            (node: PullRequestNode) => checkoutPullRequest(node, client, config, prCommentController)
+        )
+    );
+
+    // Inline comment controller commands (used by the gutter/title affordances).
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.prComment.create',
+            async (reply: CommentReply) => {
+                await prCommentController.createOrReply(reply);
+            }
+        ),
+        vscode.commands.registerCommand(
+            'adoext.prComment.reply',
+            async (reply: CommentReply) => {
+                await prCommentController.createOrReply(reply);
+            }
+        ),
+        vscode.commands.registerCommand(
+            'adoext.prComment.resolve',
+            async (thread: vscode.CommentThread) => {
+                await prCommentController.setThreadStatus(thread, 2 /* Fixed */);
+            }
+        ),
+        vscode.commands.registerCommand(
+            'adoext.prComment.reopen',
+            async (thread: vscode.CommentThread) => {
+                await prCommentController.setThreadStatus(thread, 1 /* Active */);
+            }
         )
     );
 
@@ -406,6 +457,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
     }
     updateSignedInContext();
+    prCommentNotifier.applyConfig();
 
     // React to configuration changes
     context.subscriptions.push(
@@ -415,6 +467,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     client.connect(config.organization);
                 }
                 refreshAllViews();
+                if (
+                    e.affectsConfiguration('adoext.notifyOnNewPullRequestComments') ||
+                    e.affectsConfiguration('adoext.pullRequestCommentPollIntervalSeconds')
+                ) {
+                    prCommentNotifier.applyConfig();
+                }
             }
         })
     );
