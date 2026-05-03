@@ -33,6 +33,7 @@ import {
     resolveThread,
     reopenThread
 } from './commands/pullRequestCommands';
+import { McpServerManager } from './mcp/mcpServerManager';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
     const auth = new AuthProvider();
@@ -445,6 +446,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         )
     );
+
+    // -------------------------------------------------------------------------
+    // MCP Server
+    // -------------------------------------------------------------------------
+    const mcpManager = new McpServerManager(context, client);
+    mcpManager.register();
+    context.subscriptions.push(mcpManager);
 
     // -------------------------------------------------------------------------
     // Auto-restore session on activation

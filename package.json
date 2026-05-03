@@ -21,6 +21,9 @@
     "onStartupFinished"
   ],
   "main": "./out/extension.js",
+  "bin": {
+    "adoext-mcp": "./out/mcp/main.js"
+  },
   "contributes": {
     "viewsContainers": {
       "activitybar": [
@@ -253,6 +256,16 @@
         "title": "Reopen",
         "category": "ADOExt",
         "icon": "$(issues)"
+      },
+      {
+        "command": "adoext.getMcpServerConfig",
+        "title": "Copy MCP Server Configuration",
+        "category": "ADOExt"
+      },
+      {
+        "command": "adoext.startMcpServer",
+        "title": "Show MCP Server Info",
+        "category": "ADOExt"
       }
     ],
     "menus": {
@@ -512,6 +525,8 @@
     "typescript": "^5.3.0"
   },
   "dependencies": {
-    "azure-devops-node-api": "^15.1.2"
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "azure-devops-node-api": "^15.1.2",
+    "zod": "^3.25.76"
   }
 }

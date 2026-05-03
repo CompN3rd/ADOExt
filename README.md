@@ -77,3 +77,86 @@ npm run watch
 
 Press `F5` in VS Code to launch the Extension Development Host.
 
+## MCP Server Integration
+
+ADOExt includes a built-in [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that exposes Azure DevOps capabilities as tools for AI assistants (GitHub Copilot, Claude Desktop, etc.). This provides a single install with shared authentication for both the VS Code extension and MCP clients.
+
+### Available MCP Tools
+
+| Tool | Description |
+|---|---|
+| `list_organizations` | List Azure DevOps organizations |
+| `list_projects` | List projects in an organization |
+| `list_work_items` | List work items with filtering |
+| `get_work_item` | Get work item details |
+| `update_work_item_state` | Change work item state |
+| `get_work_item_comments` | Get work item comments |
+| `add_work_item_comment` | Add a comment to a work item |
+| `list_pull_requests` | List pull requests |
+| `get_pull_request` | Get pull request details |
+| `get_pull_request_threads` | Get PR comment threads |
+| `add_pull_request_comment` | Add a comment to a PR |
+| `reply_to_pull_request_thread` | Reply to a PR thread |
+| `update_pull_request_thread_status` | Resolve/reopen a thread |
+| `set_pull_request_vote` | Set your PR review vote |
+
+### Standalone Usage
+
+The MCP server can run standalone via stdio transport:
+
+```bash
+# Set your Azure DevOps PAT
+export AZURE_DEVOPS_PAT="your-pat-here"
+# Optionally set a default organization
+export ADO_ORGANIZATION="your-org"
+
+# Run the MCP server
+node out/mcp/main.js
+```
+
+### VS Code MCP Configuration
+
+Use the **ADOExt: Copy MCP Server Configuration** command to get a ready-to-paste configuration for `.vscode/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "adoext": {
+      "command": "node",
+      "args": ["<extension-path>/out/mcp/main.js"],
+      "env": {
+        "AZURE_DEVOPS_PAT": "${AZURE_DEVOPS_PAT}",
+        "ADO_ORGANIZATION": "${ADO_ORGANIZATION}"
+      }
+    }
+  }
+}
+```
+
+### Claude Desktop Configuration
+
+Add to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "adoext": {
+      "command": "node",
+      "args": ["/path/to/adoext/out/mcp/main.js"],
+      "env": {
+        "AZURE_DEVOPS_PAT": "your-pat-here",
+        "ADO_ORGANIZATION": "your-org"
+      }
+    }
+  }
+}
+```
+
+### Authentication
+
+The standalone MCP server accepts authentication via environment variables:
+- `AZURE_DEVOPS_PAT` — A personal access token (recommended for standalone use)
+- `ADO_ACCESS_TOKEN` — An OAuth/bearer token (used when integrated with the extension)
+
+When used within VS Code, the extension commands share the same authentication session, so no additional setup is needed beyond signing in through the extension.
+
