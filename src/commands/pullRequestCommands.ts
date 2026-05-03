@@ -101,24 +101,36 @@ export async function viewPullRequestDiff(
         return;
     }
 
-    const picks = fileEntries.map(entry => ({
-        label: `$(diff) ${entry.filePath}`,
-        description: entry.changeType,
-        entry
-    }));
-    const picked = await vscode.window.showQuickPick(picks, {
-        placeHolder: `Pull Request #${prId} — ${fileEntries.length} changed file${fileEntries.length === 1 ? '' : 's'}. Pick a file to open the diff.`,
-        matchOnDescription: true
-    });
-    if (!picked) { return; }
-
-    await vscode.commands.executeCommand(
-        'vscode.diff',
-        picked.entry.baseUri,
-        picked.entry.targetUri,
-        `PR #${prId}: ${picked.entry.filePath}`,
-        { preview: false }
+    // Open all changed files at once in VS Code's multi-diff editor — same
+    // UX as the GitHub Pull Request extension's "Files Changed" view. Each
+    // entry is a `[resourceUri, originalUri, modifiedUri]` tuple; the
+    // resource URI is what shows up in the file list and what the
+    // `CommentController` keys on, so we use the right-side (target) URI to
+    // line up with the inline comments registered by `loadDiff`.
+    const resources: Array<[vscode.Uri, vscode.Uri, vscode.Uri]> = fileEntries.map(
+        entry => [entry.targetUri, entry.baseUri, entry.targetUri]
     );
+    const title = `Pull Request #${prId}: ${pr.title ?? ''}`.trim();
+
+    try {
+        await vscode.commands.executeCommand('vscode.changes', title, resources);
+    } catch (err) {
+        // Older VS Code builds may not have `vscode.changes`; fall back to
+        // opening the files sequentially as side-by-side diffs so the user
+        // still gets something usable.
+        vscode.window.showWarningMessage(
+            `Multi-diff editor unavailable (${err instanceof Error ? err.message : String(err)}); opening diffs individually.`
+        );
+        for (const entry of fileEntries) {
+            await vscode.commands.executeCommand(
+                'vscode.diff',
+                entry.baseUri,
+                entry.targetUri,
+                `PR #${prId}: ${entry.filePath}`,
+                { preview: false }
+            );
+        }
+    }
 }
 
 export async function setPullRequestReviewVote(
