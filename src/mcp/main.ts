@@ -65,7 +65,10 @@ function main(): void {
     // Optionally filter domains
     const domains = process.env.ADO_MCP_DOMAINS;
     if (domains) {
-        args.push('--domains', ...domains.split(',').map(d => d.trim()));
+        const domainList = domains.split(',').map(d => d.trim()).filter(d => d.length > 0);
+        if (domainList.length > 0) {
+            args.push('--domains', ...domainList);
+        }
     }
 
     // Resolve npx path
@@ -83,7 +86,11 @@ function main(): void {
         process.exit(1);
     });
 
-    child.on('exit', (code) => {
+    child.on('exit', (code, signal) => {
+        if (signal) {
+            process.stderr.write(`Azure DevOps MCP server terminated by signal: ${signal}\n`);
+            process.exit(1);
+        }
         process.exit(code ?? 0);
     });
 }

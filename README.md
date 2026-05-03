@@ -98,7 +98,7 @@ Use the **ADOExt: Copy MCP Server Configuration** command to get a ready-to-past
 }
 ```
 
-**Extension token (uses your current ADOExt sign-in session):**
+**Bearer token via environment variable (e.g. from ADOExt sign-in session):**
 ```json
 {
   "servers": {
@@ -107,7 +107,23 @@ Use the **ADOExt: Copy MCP Server Configuration** command to get a ready-to-past
       "command": "npx",
       "args": ["-y", "@azure-devops/mcp", "your-org", "--authentication", "envvar"],
       "env": {
-        "ADO_MCP_AUTH_TOKEN": "<token-from-extension>"
+        "ADO_MCP_AUTH_TOKEN": "${ADO_MCP_AUTH_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+**PAT via environment variable:**
+```json
+{
+  "servers": {
+    "azure-devops": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@azure-devops/mcp", "your-org", "--authentication", "pat"],
+      "env": {
+        "PERSONAL_ACCESS_TOKEN": "${PERSONAL_ACCESS_TOKEN}"
       }
     }
   }
@@ -129,30 +145,34 @@ The official Azure DevOps MCP server provides tools across multiple domains:
 
 Use the `--domains` (`-d`) flag to load only specific domains. See the [official toolset docs](https://github.com/microsoft/azure-devops-mcp/blob/main/docs/TOOLSET.md) for the full list.
 
-### Standalone Usage
+### Development Wrapper
+
+For development/testing purposes, the repository includes a wrapper script that bridges environment variables to the official server CLI:
 
 ```bash
 # Interactive browser-based auth (default, no env vars needed)
 npx -y @azure-devops/mcp your-org
 
-# Or with the ADOExt wrapper (supports all auth methods)
+# Development wrapper (run from repo after `npm run compile`)
 export ADO_ORGANIZATION="your-org"
 node out/mcp/main.js                              # interactive (browser)
 
-export ADO_ACCESS_TOKEN="bearer-token-here"       # from extension session
-node out/mcp/main.js                              # uses extension token
+export ADO_ACCESS_TOKEN="bearer-token-here"       # maps to ADO_MCP_AUTH_TOKEN
+node out/mcp/main.js                              # uses --authentication envvar
 
-export AZURE_DEVOPS_PAT="your-pat-here"           # PAT fallback
-node out/mcp/main.js                              # uses PAT
+export AZURE_DEVOPS_PAT="your-pat-here"           # maps to PERSONAL_ACCESS_TOKEN
+node out/mcp/main.js                              # uses --authentication pat
 ```
+
+> **Note:** The `node out/mcp/main.js` path is only valid when running from the source repository after compilation. End users should use the `npx @azure-devops/mcp` configurations above.
 
 ### Authentication
 
-The MCP server supports multiple authentication methods (checked in order):
+The MCP server supports multiple authentication methods (checked in order by the wrapper):
 
 1. **Interactive (browser)** — Default. Opens a browser for Microsoft OAuth sign-in. No environment variables needed.
-2. **Extension token** (`ADO_ACCESS_TOKEN`) — Bearer token from the extension's auth session, passed via the `envvar` method to the official server.
-3. **PAT** (`AZURE_DEVOPS_PAT`) — Personal access token for automation scenarios.
+2. **Bearer token** (`ADO_MCP_AUTH_TOKEN`) — Pass a bearer token via the `--authentication envvar` method. The wrapper maps `ADO_ACCESS_TOKEN` → `ADO_MCP_AUTH_TOKEN`.
+3. **PAT** (`PERSONAL_ACCESS_TOKEN`) — Personal access token for automation scenarios. The wrapper maps `AZURE_DEVOPS_PAT` → `PERSONAL_ACCESS_TOKEN`.
 
-When using the **ADOExt: Copy MCP Server Configuration** command while signed in, you can choose to embed your current session token directly into the config for seamless auth.
+The **ADOExt: Copy MCP Server Configuration** command generates env-var-based configurations that reference `${ADO_MCP_AUTH_TOKEN}` or `${PERSONAL_ACCESS_TOKEN}` — tokens are never embedded directly in the config file.
 

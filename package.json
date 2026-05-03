@@ -260,7 +260,7 @@
         "category": "ADOExt"
       },
       {
-        "command": "adoext.startMcpServer",
+        "command": "adoext.showMcpServerInfo",
         "title": "Show MCP Server Info",
         "category": "ADOExt"
       }

@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import type { AdoClient } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
 import type { AuthProvider } from '../auth/authProvider';
 
@@ -15,8 +14,6 @@ export class McpServerManager implements vscode.Disposable {
     private _disposables: vscode.Disposable[] = [];
 
     constructor(
-        private readonly _context: vscode.ExtensionContext,
-        private readonly _client: AdoClient,
         private readonly _config: ConfigManager,
         private readonly _auth: AuthProvider
     ) {}
@@ -38,8 +35,8 @@ export class McpServerManager implements vscode.Disposable {
                     const choice = await vscode.window.showQuickPick(
                         [
                             { label: 'Interactive (browser login)', description: 'Default — opens browser to authenticate', value: 'interactive' },
-                            { label: 'Extension token', description: 'Uses your current ADOExt session token', value: 'envvar' },
-                            { label: 'PAT (environment variable)', description: 'Requires AZURE_DEVOPS_PAT in env', value: 'pat' }
+                            { label: 'Extension token (env var)', description: 'Set ADO_MCP_AUTH_TOKEN in your environment', value: 'envvar' },
+                            { label: 'PAT (env var)', description: 'Set PERSONAL_ACCESS_TOKEN in your environment', value: 'pat' }
                         ],
                         { placeHolder: 'Select authentication method for MCP server' }
                     );
@@ -56,11 +53,16 @@ export class McpServerManager implements vscode.Disposable {
                                     command: 'npx',
                                     args: ['-y', '@azure-devops/mcp', organization, '--authentication', 'envvar'],
                                     env: {
-                                        ADO_MCP_AUTH_TOKEN: this._auth.accessToken
+                                        ADO_MCP_AUTH_TOKEN: '${ADO_MCP_AUTH_TOKEN}'
                                     }
                                 }
                             }
                         };
+                        // Copy the current token to clipboard for convenience
+                        void vscode.window.showInformationMessage(
+                            'MCP config copied. Set ADO_MCP_AUTH_TOKEN in your environment ' +
+                            'with a valid Azure DevOps bearer token (e.g. from ADOExt sign-in).'
+                        );
                     } else if (choice.value === 'pat') {
                         config = {
                             servers: {
@@ -101,21 +103,24 @@ export class McpServerManager implements vscode.Disposable {
 
                 const doc = JSON.stringify(config, null, 2);
                 void vscode.env.clipboard.writeText(doc);
-                void vscode.window.showInformationMessage(
-                    'Azure DevOps MCP server configuration copied to clipboard. ' +
-                    'Paste it into your .vscode/mcp.json file.'
-                );
+                if (!this._auth.isSignedIn || !this._auth.accessToken) {
+                    void vscode.window.showInformationMessage(
+                        'Azure DevOps MCP server configuration copied to clipboard. ' +
+                        'Paste it into your .vscode/mcp.json file.'
+                    );
+                }
             })
         );
 
         // Show info about the MCP server integration
         this._disposables.push(
-            vscode.commands.registerCommand('adoext.startMcpServer', () => {
+            vscode.commands.registerCommand('adoext.showMcpServerInfo', () => {
                 const organization = this._config.organization || '<your-org>';
                 void vscode.window.showInformationMessage(
                     `ADOExt uses the official Microsoft Azure DevOps MCP server (@azure-devops/mcp).\n` +
                     `Run: npx -y @azure-devops/mcp ${organization}\n` +
-                    `Authentication: interactive (browser), or set ADO_ACCESS_TOKEN / AZURE_DEVOPS_PAT.`
+                    `Auth: interactive (default), --authentication envvar (ADO_MCP_AUTH_TOKEN), ` +
+                    `or --authentication pat (PERSONAL_ACCESS_TOKEN).`
                 );
             })
         );
