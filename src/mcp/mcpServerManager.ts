@@ -69,7 +69,7 @@ export class McpServerManager implements vscode.Disposable {
                                     command: 'npx',
                                     args: ['-y', '@azure-devops/mcp', organization, '--authentication', 'pat'],
                                     env: {
-                                        PERSONAL_ACCESS_TOKEN: '${AZURE_DEVOPS_PAT}'
+                                        PERSONAL_ACCESS_TOKEN: '${PERSONAL_ACCESS_TOKEN}'
                                     }
                                 }
                             }
