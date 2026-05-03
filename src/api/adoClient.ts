@@ -690,6 +690,15 @@ export class AdoClient {
         return this._connection !== undefined && this._accessToken.trim() !== '';
     }
 
+    /**
+     * Public accessor for the cached current-user id used by callers that
+     * need to attribute or filter comments by author (e.g. the new-comment
+     * notifier).
+     */
+    async getCurrentUserIdFor(organization?: string): Promise<string | undefined> {
+        return this.getCurrentUserId(organization);
+    }
+
     private async getCurrentUserId(organization?: string): Promise<string | undefined> {
         const cacheKey = organization ?? this._organization ?? '';
         const cached = this._currentUserIds.get(cacheKey);

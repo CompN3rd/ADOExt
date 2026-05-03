@@ -37,6 +37,7 @@ ADOExt is a full-featured Azure DevOps integration for Visual Studio Code, provi
   - Existing PR comment threads appear inline in the gutter, with full reply / resolve / reopen support
   - Add new line comments using the same `+` gutter affordance and floating editor as the built-in GitHub PR extension
 - **Inline PR comments on the checked-out branch** — after running "Checkout Pull Request Branch", existing PR threads light up in the regular editor view so you can read and reply to them while editing the code, just like the built-in GitHub PR extension
+- **New-comment notifications** — a small toast appears when tracked pull requests receive new comments. Toggle via `adoext.notifyOnNewPullRequestComments` (or the "Mute Notifications" action on the toast); poll interval via `adoext.pullRequestCommentPollIntervalSeconds`.
 - **Checkout a PR branch** with a single click using the built-in Git extension
 
 ### Multi-Account & Multi-Organization Support

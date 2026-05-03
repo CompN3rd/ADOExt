@@ -13,6 +13,7 @@ import { BacklogProvider, SprintProvider, BoardProvider } from './providers/plan
 import { PlanningPanel } from './views/planningPanel';
 import { PrCommentController, type CommentReply } from './views/prCommentController';
 import { PrDiffCache, PrDiffContentProvider, PR_DIFF_SCHEME } from './views/prContentProvider';
+import { PrCommentNotifier } from './views/prCommentNotifier';
 import {
     selectOrganization,
     selectProject
@@ -60,6 +61,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             client.connect(config.organization);
         }
         updateSignedInContext();
+        // Re-prime the notifier (also captures the brand-new sign-in case).
+        prCommentNotifier.applyConfig();
     }
 
     function updateSignedInContext(): void {
@@ -106,6 +109,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     const prCommentController = new PrCommentController(client);
     context.subscriptions.push(prCommentController);
+
+    // Surface a small toast when a tracked PR receives new comments. The
+    // user can mute the notifications from the toast itself or via the
+    // `adoext.notifyOnNewPullRequestComments` setting.
+    const prCommentNotifier = new PrCommentNotifier(client, config, context.globalState);
+    context.subscriptions.push(prCommentNotifier);
 
     // -------------------------------------------------------------------------
     // Commands
@@ -448,6 +457,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
     }
     updateSignedInContext();
+    prCommentNotifier.applyConfig();
 
     // React to configuration changes
     context.subscriptions.push(
@@ -457,6 +467,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     client.connect(config.organization);
                 }
                 refreshAllViews();
+                if (
+                    e.affectsConfiguration('adoext.notifyOnNewPullRequestComments') ||
+                    e.affectsConfiguration('adoext.pullRequestCommentPollIntervalSeconds')
+                ) {
+                    prCommentNotifier.applyConfig();
+                }
             }
         })
     );

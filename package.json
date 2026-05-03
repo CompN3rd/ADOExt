@@ -482,6 +482,17 @@
             "All active PRs"
           ],
           "description": "Which pull requests to show"
+        },
+        "adoext.notifyOnNewPullRequestComments": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a small notification when new comments appear on tracked pull requests. Disable to silence the toasts."
+        },
+        "adoext.pullRequestCommentPollIntervalSeconds": {
+          "type": "number",
+          "default": 300,
+          "minimum": 60,
+          "description": "How often (in seconds) ADOExt polls tracked pull requests for new comments. Ignored when notifications are disabled."
         }
       }
     }
