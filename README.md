@@ -83,17 +83,31 @@ ADOExt integrates with the official [Microsoft Azure DevOps MCP server](https://
 
 ### Quick Setup
 
-Use the **ADOExt: Copy MCP Server Configuration** command to get a ready-to-paste configuration for `.vscode/mcp.json`:
+Use the **ADOExt: Copy MCP Server Configuration** command to get a ready-to-paste configuration for `.vscode/mcp.json`. The command offers multiple authentication options:
 
+**Interactive (browser-based, default — no PAT needed):**
 ```json
 {
   "servers": {
     "azure-devops": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@azure-devops/mcp", "your-org", "--authentication", "pat"],
+      "args": ["-y", "@azure-devops/mcp", "your-org"]
+    }
+  }
+}
+```
+
+**Extension token (uses your current ADOExt sign-in session):**
+```json
+{
+  "servers": {
+    "azure-devops": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@azure-devops/mcp", "your-org", "--authentication", "envvar"],
       "env": {
-        "AZURE_DEVOPS_PAT": "${AZURE_DEVOPS_PAT}"
+        "ADO_MCP_AUTH_TOKEN": "<token-from-extension>"
       }
     }
   }
@@ -118,20 +132,27 @@ Use the `--domains` (`-d`) flag to load only specific domains. See the [official
 ### Standalone Usage
 
 ```bash
-# Set your Azure DevOps PAT
-export AZURE_DEVOPS_PAT="your-pat-here"
+# Interactive browser-based auth (default, no env vars needed)
+npx -y @azure-devops/mcp your-org
 
-# Run the official MCP server directly
-npx -y @azure-devops/mcp your-org --authentication pat
+# Or with the ADOExt wrapper (supports all auth methods)
+export ADO_ORGANIZATION="your-org"
+node out/mcp/main.js                              # interactive (browser)
 
-# Or use the ADOExt wrapper (requires ADO_ORGANIZATION and AZURE_DEVOPS_PAT env vars)
-node out/mcp/main.js
+export ADO_ACCESS_TOKEN="bearer-token-here"       # from extension session
+node out/mcp/main.js                              # uses extension token
+
+export AZURE_DEVOPS_PAT="your-pat-here"           # PAT fallback
+node out/mcp/main.js                              # uses PAT
 ```
 
 ### Authentication
 
-- `AZURE_DEVOPS_PAT` — A personal access token (recommended for automation/MCP use)
-- The official server also supports interactive browser auth and Azure CLI auth
+The MCP server supports multiple authentication methods (checked in order):
 
-When used within VS Code alongside ADOExt, the extension's sign-in flow handles authentication for the extension UI, while the MCP server uses PAT-based auth independently.
+1. **Interactive (browser)** — Default. Opens a browser for Microsoft OAuth sign-in. No environment variables needed.
+2. **Extension token** (`ADO_ACCESS_TOKEN`) — Bearer token from the extension's auth session, passed via the `envvar` method to the official server.
+3. **PAT** (`AZURE_DEVOPS_PAT`) — Personal access token for automation scenarios.
+
+When using the **ADOExt: Copy MCP Server Configuration** command while signed in, you can choose to embed your current session token directly into the config for seamless auth.
 

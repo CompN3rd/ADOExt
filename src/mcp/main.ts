@@ -6,8 +6,12 @@
  * This allows ADOExt to integrate with the official server — updates from
  * Microsoft flow through automatically without local rewrites.
  *
- * Authentication:
- *   Set AZURE_DEVOPS_PAT with a personal access token.
+ * Authentication (checked in order):
+ *   1. ADO_ACCESS_TOKEN — Bearer/OAuth token (e.g. from the extension's auth session).
+ *      Passed to the official server via --authentication envvar / ADO_MCP_AUTH_TOKEN.
+ *   2. AZURE_DEVOPS_PAT — Personal access token.
+ *      Passed via --authentication pat / PERSONAL_ACCESS_TOKEN.
+ *   3. Neither set — Falls back to --authentication interactive (browser-based OAuth).
  *
  * Required environment variables:
  *   ADO_ORGANIZATION - The Azure DevOps organization name
@@ -30,20 +34,32 @@ function main(): void {
         process.exit(1);
     }
 
+    // Determine authentication method.
+    // Priority: bearer token > PAT > interactive (browser)
+    const accessToken = process.env.ADO_ACCESS_TOKEN ?? '';
     const pat = process.env.AZURE_DEVOPS_PAT ?? '';
-    if (!pat) {
-        process.stderr.write(
-            'Error: No authentication token provided.\n' +
-            'Set AZURE_DEVOPS_PAT environment variable.\n'
-        );
-        process.exit(1);
+
+    let authMethod: string;
+    const childEnv: Record<string, string | undefined> = { ...process.env };
+
+    if (accessToken) {
+        // Use the extension's OAuth/bearer token via the "envvar" method
+        authMethod = 'envvar';
+        childEnv['ADO_MCP_AUTH_TOKEN'] = accessToken;
+    } else if (pat) {
+        // Use PAT authentication
+        authMethod = 'pat';
+        childEnv['PERSONAL_ACCESS_TOKEN'] = pat;
+    } else {
+        // Fall back to interactive browser-based OAuth (no env vars needed)
+        authMethod = 'interactive';
     }
 
     // Build args for the official @azure-devops/mcp server
     const args: string[] = [
         '-y', '@azure-devops/mcp',
         organization,
-        '--authentication', 'pat'
+        '--authentication', authMethod
     ];
 
     // Optionally filter domains
@@ -58,11 +74,7 @@ function main(): void {
     // Spawn the official server, piping stdio through for MCP protocol
     const child = spawn(npxCmd, args, {
         stdio: 'inherit',
-        env: {
-            ...process.env,
-            // The official server reads PAT via AZURE_DEVOPS_PAT env var
-            AZURE_DEVOPS_PAT: pat
-        }
+        env: childEnv
     });
 
     child.on('error', (err) => {
