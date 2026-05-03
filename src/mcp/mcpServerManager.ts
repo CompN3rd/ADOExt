@@ -58,11 +58,6 @@ export class McpServerManager implements vscode.Disposable {
                                 }
                             }
                         };
-                        // Copy the current token to clipboard for convenience
-                        void vscode.window.showInformationMessage(
-                            'MCP config copied. Set ADO_MCP_AUTH_TOKEN in your environment ' +
-                            'with a valid Azure DevOps bearer token (e.g. from ADOExt sign-in).'
-                        );
                     } else if (choice.value === 'pat') {
                         config = {
                             servers: {
@@ -103,12 +98,10 @@ export class McpServerManager implements vscode.Disposable {
 
                 const doc = JSON.stringify(config, null, 2);
                 void vscode.env.clipboard.writeText(doc);
-                if (!this._auth.isSignedIn || !this._auth.accessToken) {
-                    void vscode.window.showInformationMessage(
-                        'Azure DevOps MCP server configuration copied to clipboard. ' +
-                        'Paste it into your .vscode/mcp.json file.'
-                    );
-                }
+                void vscode.window.showInformationMessage(
+                    'Azure DevOps MCP server configuration copied to clipboard. ' +
+                    'Paste it into your .vscode/mcp.json file.'
+                );
             })
         );
 
