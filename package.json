@@ -121,6 +121,12 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "adoext.openSprintView",
+        "title": "Open Sprint in Editor",
+        "category": "ADOExt",
+        "icon": "$(open-preview)"
+      },
+      {
         "command": "adoext.refreshBoards",
         "title": "Refresh Boards",
         "category": "ADOExt",
@@ -286,6 +292,11 @@
         {
           "command": "adoext.refreshBacklog",
           "when": "view == adoext.backlog",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.openSprintView",
+          "when": "view == adoext.sprints",
           "group": "navigation"
         },
         {
