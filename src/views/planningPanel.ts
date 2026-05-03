@@ -297,8 +297,9 @@ document.querySelector('[data-action="refresh"]')?.addEventListener('click', () 
 document.querySelector('[data-action="expand-all"]')?.addEventListener('click', () => {
     document.querySelectorAll('.tree-twisty:not(.placeholder)').forEach(btn => {
         btn.setAttribute('aria-expanded', 'true');
-        const target = document.getElementById(btn.getAttribute('aria-controls'));
-        target?.classList.remove('collapsed');
+        const controls = btn.getAttribute('aria-controls');
+        if (!controls) { return; }
+        document.getElementById(controls)?.classList.remove('collapsed');
     });
     document.querySelectorAll('.sprint-body').forEach(el => el.classList.remove('collapsed'));
 });
@@ -306,8 +307,9 @@ document.querySelector('[data-action="expand-all"]')?.addEventListener('click', 
 document.querySelector('[data-action="collapse-all"]')?.addEventListener('click', () => {
     document.querySelectorAll('.tree-twisty:not(.placeholder)').forEach(btn => {
         btn.setAttribute('aria-expanded', 'false');
-        const target = document.getElementById(btn.getAttribute('aria-controls'));
-        target?.classList.add('collapsed');
+        const controls = btn.getAttribute('aria-controls');
+        if (!controls) { return; }
+        document.getElementById(controls)?.classList.add('collapsed');
     });
     document.querySelectorAll('.sprint-body').forEach(el => el.classList.add('collapsed'));
 });
