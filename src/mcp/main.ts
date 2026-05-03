@@ -1,53 +1,79 @@
 #!/usr/bin/env node
 /**
- * Standalone MCP server entry point for ADOExt.
+ * Thin wrapper that launches the official Microsoft Azure DevOps MCP server
+ * (@azure-devops/mcp) with authentication from the environment.
  *
- * This can be launched by any MCP-compatible client (e.g. VS Code, Claude Desktop)
- * via stdio transport. It shares the same Azure DevOps tool implementations as the
- * VS Code extension.
+ * This allows ADOExt to integrate with the official server — updates from
+ * Microsoft flow through automatically without local rewrites.
  *
  * Authentication:
- *   Set the AZURE_DEVOPS_PAT environment variable with a personal access token, or
- *   set ADO_ACCESS_TOKEN with an OAuth/bearer token.
+ *   Set AZURE_DEVOPS_PAT with a personal access token.
+ *
+ * Required environment variables:
+ *   ADO_ORGANIZATION - The Azure DevOps organization name
  *
  * Optional environment variables:
- *   ADO_ORGANIZATION - Default organization name
+ *   ADO_MCP_DOMAINS  - Comma-separated list of domains to enable (default: all)
  *
  * Usage:
  *   node out/mcp/main.js
  */
-import { AdoClient } from '../api/adoClient';
-import { createMcpServer } from './mcpServer';
+import { spawn } from 'child_process';
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js') as {
-    StdioServerTransport: new () => unknown;
-};
-
-async function main(): Promise<void> {
-    const token = process.env.AZURE_DEVOPS_PAT ?? process.env.ADO_ACCESS_TOKEN ?? '';
-
-    if (!token) {
+function main(): void {
+    const organization = process.env.ADO_ORGANIZATION ?? '';
+    if (!organization) {
         process.stderr.write(
-            'Error: No authentication token provided.\n' +
-            'Set AZURE_DEVOPS_PAT or ADO_ACCESS_TOKEN environment variable.\n'
+            'Error: No organization provided.\n' +
+            'Set ADO_ORGANIZATION environment variable.\n'
         );
         process.exit(1);
     }
 
-    const client = new AdoClient(token);
-
-    const organization = process.env.ADO_ORGANIZATION;
-    if (organization) {
-        client.connect(organization);
+    const pat = process.env.AZURE_DEVOPS_PAT ?? '';
+    if (!pat) {
+        process.stderr.write(
+            'Error: No authentication token provided.\n' +
+            'Set AZURE_DEVOPS_PAT environment variable.\n'
+        );
+        process.exit(1);
     }
 
-    const mcpServer = createMcpServer(client);
-    const transport = new StdioServerTransport();
-    await mcpServer.connect(transport);
+    // Build args for the official @azure-devops/mcp server
+    const args: string[] = [
+        '-y', '@azure-devops/mcp',
+        organization,
+        '--authentication', 'pat'
+    ];
+
+    // Optionally filter domains
+    const domains = process.env.ADO_MCP_DOMAINS;
+    if (domains) {
+        args.push('--domains', ...domains.split(',').map(d => d.trim()));
+    }
+
+    // Resolve npx path
+    const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+
+    // Spawn the official server, piping stdio through for MCP protocol
+    const child = spawn(npxCmd, args, {
+        stdio: 'inherit',
+        env: {
+            ...process.env,
+            // The official server reads PAT via AZURE_DEVOPS_PAT env var
+            AZURE_DEVOPS_PAT: pat
+        }
+    });
+
+    child.on('error', (err) => {
+        process.stderr.write(`Failed to start Azure DevOps MCP server: ${err.message}\n`);
+        process.stderr.write('Ensure @azure-devops/mcp is available (npx will download it automatically).\n');
+        process.exit(1);
+    });
+
+    child.on('exit', (code) => {
+        process.exit(code ?? 0);
+    });
 }
 
-main().catch(err => {
-    process.stderr.write(`Fatal error: ${err}\n`);
-    process.exit(1);
-});
+main();

@@ -79,84 +79,59 @@ Press `F5` in VS Code to launch the Extension Development Host.
 
 ## MCP Server Integration
 
-ADOExt includes a built-in [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that exposes Azure DevOps capabilities as tools for AI assistants (GitHub Copilot, Claude Desktop, etc.). This provides a single install with shared authentication for both the VS Code extension and MCP clients.
+ADOExt integrates with the official [Microsoft Azure DevOps MCP server](https://github.com/microsoft/azure-devops-mcp) (`@azure-devops/mcp`), providing a single-install experience with shared configuration. Updates to the official server flow through automatically.
 
-### Available MCP Tools
-
-| Tool | Description |
-|---|---|
-| `list_organizations` | List Azure DevOps organizations |
-| `list_projects` | List projects in an organization |
-| `list_work_items` | List work items with filtering |
-| `get_work_item` | Get work item details |
-| `update_work_item_state` | Change work item state |
-| `get_work_item_comments` | Get work item comments |
-| `add_work_item_comment` | Add a comment to a work item |
-| `list_pull_requests` | List pull requests |
-| `get_pull_request` | Get pull request details |
-| `get_pull_request_threads` | Get PR comment threads |
-| `add_pull_request_comment` | Add a comment to a PR |
-| `reply_to_pull_request_thread` | Reply to a PR thread |
-| `update_pull_request_thread_status` | Resolve/reopen a thread |
-| `set_pull_request_vote` | Set your PR review vote |
-
-### Standalone Usage
-
-The MCP server can run standalone via stdio transport:
-
-```bash
-# Set your Azure DevOps PAT
-export AZURE_DEVOPS_PAT="your-pat-here"
-# Optionally set a default organization
-export ADO_ORGANIZATION="your-org"
-
-# Run the MCP server
-node out/mcp/main.js
-```
-
-### VS Code MCP Configuration
+### Quick Setup
 
 Use the **ADOExt: Copy MCP Server Configuration** command to get a ready-to-paste configuration for `.vscode/mcp.json`:
 
 ```json
 {
-  "mcpServers": {
-    "adoext": {
-      "command": "node",
-      "args": ["<extension-path>/out/mcp/main.js"],
+  "servers": {
+    "azure-devops": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@azure-devops/mcp", "your-org", "--authentication", "pat"],
       "env": {
-        "AZURE_DEVOPS_PAT": "${AZURE_DEVOPS_PAT}",
-        "ADO_ORGANIZATION": "${ADO_ORGANIZATION}"
+        "AZURE_DEVOPS_PAT": "${AZURE_DEVOPS_PAT}"
       }
     }
   }
 }
 ```
 
-### Claude Desktop Configuration
+### Available Tools
 
-Add to your `claude_desktop_config.json`:
+The official Azure DevOps MCP server provides tools across multiple domains:
+- **Core** — Projects, teams, iterations
+- **Work Items** — Query, create, update work items
+- **Work** — Boards, sprints, backlogs
+- **Repositories** — Repos, pull requests, branches
+- **Pipelines** — Builds, releases
+- **Wiki** — Pages, content
+- **Search** — Code and work item search
+- **Test Plans** — Test suites and results
+- **Advanced Security** — Alerts and scanning
 
-```json
-{
-  "mcpServers": {
-    "adoext": {
-      "command": "node",
-      "args": ["/path/to/adoext/out/mcp/main.js"],
-      "env": {
-        "AZURE_DEVOPS_PAT": "your-pat-here",
-        "ADO_ORGANIZATION": "your-org"
-      }
-    }
-  }
-}
+Use the `--domains` (`-d`) flag to load only specific domains. See the [official toolset docs](https://github.com/microsoft/azure-devops-mcp/blob/main/docs/TOOLSET.md) for the full list.
+
+### Standalone Usage
+
+```bash
+# Set your Azure DevOps PAT
+export AZURE_DEVOPS_PAT="your-pat-here"
+
+# Run the official MCP server directly
+npx -y @azure-devops/mcp your-org --authentication pat
+
+# Or use the ADOExt wrapper (equivalent)
+node out/mcp/main.js  # reads ADO_ORGANIZATION and AZURE_DEVOPS_PAT from env
 ```
 
 ### Authentication
 
-The standalone MCP server accepts authentication via environment variables:
-- `AZURE_DEVOPS_PAT` — A personal access token (recommended for standalone use)
-- `ADO_ACCESS_TOKEN` — An OAuth/bearer token (used when integrated with the extension)
+- `AZURE_DEVOPS_PAT` — A personal access token (recommended for automation/MCP use)
+- The official server also supports interactive browser auth and Azure CLI auth
 
-When used within VS Code, the extension commands share the same authentication session, so no additional setup is needed beyond signing in through the extension.
+When used within VS Code alongside ADOExt, the extension's sign-in flow handles authentication for the extension UI, while the MCP server uses PAT-based auth independently.
 

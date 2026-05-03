@@ -450,7 +450,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // -------------------------------------------------------------------------
     // MCP Server
     // -------------------------------------------------------------------------
-    const mcpManager = new McpServerManager(context, client);
+    const mcpManager = new McpServerManager(context, client, config, auth);
     mcpManager.register();
     context.subscriptions.push(mcpManager);
 

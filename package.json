@@ -21,9 +21,6 @@
     "onStartupFinished"
   ],
   "main": "./out/extension.js",
-  "bin": {
-    "adoext-mcp": "./out/mcp/main.js"
-  },
   "contributes": {
     "viewsContainers": {
       "activitybar": [
@@ -525,8 +522,6 @@
     "typescript": "^5.3.0"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "azure-devops-node-api": "^15.1.2",
-    "zod": "^3.25.76"
+    "azure-devops-node-api": "^15.1.2"
   }
 }

@@ -1,43 +1,43 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
 import type { AdoClient } from '../api/adoClient';
+import type { ConfigManager } from '../config/configManager';
+import type { AuthProvider } from '../auth/authProvider';
 
 /**
- * Manages the MCP server lifecycle within the VS Code extension.
+ * Manages MCP server integration within the VS Code extension.
  *
- * When VS Code's MCP support is available (1.99+), the server is registered
- * as an in-process MCP server definition so that Copilot and other LM tools
- * can discover it automatically. The server shares the extension's auth token
- * and AdoClient, so there is no separate login needed.
+ * Delegates to the official Microsoft Azure DevOps MCP server
+ * (@azure-devops/mcp) so that updates from Microsoft flow through
+ * automatically. ADOExt provides convenience commands for configuration
+ * and shares auth context via environment variables.
  */
 export class McpServerManager implements vscode.Disposable {
     private _disposables: vscode.Disposable[] = [];
 
     constructor(
         private readonly _context: vscode.ExtensionContext,
-        private readonly _client: AdoClient
+        private readonly _client: AdoClient,
+        private readonly _config: ConfigManager,
+        private readonly _auth: AuthProvider
     ) {}
 
     /**
-     * Register the MCP server configuration so VS Code (and Copilot) can
-     * discover it. For VS Code versions without built-in MCP support,
-     * we expose a command that outputs the server configuration for manual
-     * setup in mcp.json or claude_desktop_config.json.
+     * Register commands that help the user configure the official
+     * Azure DevOps MCP server with their current ADOExt credentials.
      */
     register(): void {
-        // Register a command that outputs the MCP server launch configuration
-        // so users can copy it into their MCP client config.
+        // Copy a ready-to-paste MCP configuration for .vscode/mcp.json
         this._disposables.push(
             vscode.commands.registerCommand('adoext.getMcpServerConfig', () => {
-                const serverPath = path.join(this._context.extensionPath, 'out', 'mcp', 'main.js');
+                const organization = this._config.organization || '${input:ado_org}';
                 const config = {
-                    mcpServers: {
-                        adoext: {
-                            command: 'node',
-                            args: [serverPath],
+                    servers: {
+                        'azure-devops': {
+                            type: 'stdio',
+                            command: 'npx',
+                            args: ['-y', '@azure-devops/mcp', organization, '--authentication', 'pat'],
                             env: {
-                                AZURE_DEVOPS_PAT: '${AZURE_DEVOPS_PAT}',
-                                ADO_ORGANIZATION: '${ADO_ORGANIZATION}'
+                                AZURE_DEVOPS_PAT: '${AZURE_DEVOPS_PAT}'
                             }
                         }
                     }
@@ -45,20 +45,20 @@ export class McpServerManager implements vscode.Disposable {
                 const doc = JSON.stringify(config, null, 2);
                 void vscode.env.clipboard.writeText(doc);
                 void vscode.window.showInformationMessage(
-                    'ADOExt MCP server configuration copied to clipboard. ' +
-                    'Paste it into your MCP client settings (e.g. .vscode/mcp.json).'
+                    'Azure DevOps MCP server configuration copied to clipboard. ' +
+                    'Paste it into your .vscode/mcp.json file.'
                 );
             })
         );
 
-        // Register a command to start the MCP server with shared auth for use
-        // with VS Code's built-in MCP support (creates an stdio server config).
+        // Show info about the MCP server integration
         this._disposables.push(
             vscode.commands.registerCommand('adoext.startMcpServer', () => {
-                const serverPath = path.join(this._context.extensionPath, 'out', 'mcp', 'main.js');
+                const organization = this._config.organization || '<your-org>';
                 void vscode.window.showInformationMessage(
-                    `ADOExt MCP server available at: node ${serverPath}\n` +
-                    `Set AZURE_DEVOPS_PAT or ADO_ACCESS_TOKEN in your environment.`
+                    `ADOExt uses the official Microsoft Azure DevOps MCP server (@azure-devops/mcp).\n` +
+                    `Run: npx -y @azure-devops/mcp ${organization} --authentication pat\n` +
+                    `Set AZURE_DEVOPS_PAT in your environment for authentication.`
                 );
             })
         );
