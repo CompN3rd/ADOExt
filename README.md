@@ -124,8 +124,8 @@ export AZURE_DEVOPS_PAT="your-pat-here"
 # Run the official MCP server directly
 npx -y @azure-devops/mcp your-org --authentication pat
 
-# Or use the ADOExt wrapper (equivalent)
-node out/mcp/main.js  # reads ADO_ORGANIZATION and AZURE_DEVOPS_PAT from env
+# Or use the ADOExt wrapper (requires ADO_ORGANIZATION and AZURE_DEVOPS_PAT env vars)
+node out/mcp/main.js
 ```
 
 ### Authentication
