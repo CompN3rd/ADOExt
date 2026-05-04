@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import type { WorkItemNode } from '../providers/workItemProvider';
-import type { AdoClient } from '../api/adoClient';
+import type { AdoClient, WorkItem } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
 import { WorkItemDetailsPanel } from '../views/workItemDetailsPanel';
 import { showErrorMessage, showInformationMessage, showWarningMessage } from '../utils/notifications';
@@ -113,4 +113,128 @@ export async function changeWorkItemState(
         showErrorMessage(`Failed to change work item state: ${err}`);
         return false;
     }
+}
+
+/**
+ * Build a predictable Git branch name from a work item ID and title.
+ * Pattern: `wi/{id}-{sanitized-title}` where the title is lowercased,
+ * non-alphanumeric characters are replaced by `-`, and the result is
+ * truncated to keep branch names reasonably short.
+ */
+export function buildWorkItemBranchName(id: number, title: string): string {
+    const sanitized = title
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 50);
+    return sanitized ? `wi/${id}-${sanitized}` : `wi/${id}`;
+}
+
+/**
+ * Start working on a work item by creating or checking out a branch whose
+ * name is derived from the work item ID and title.  Reuses the VS Code
+ * built-in Git extension API so that all repository management stays inside
+ * the standard Git tooling.
+ *
+ * @param workItem  The ADO work item to start working on.
+ * @param _organization  Unused; reserved for future use (e.g. linking back).
+ * @param _project       Unused; reserved for future use.
+ */
+export async function startWorkingOnWorkItem(
+    workItem: WorkItem,
+    _organization?: string,
+    _project?: string
+): Promise<void> {
+    const id = workItem.id;
+    if (!id || id <= 0) {
+        showWarningMessage('Cannot start working: work item ID is missing.');
+        return;
+    }
+
+    const rawTitle = (workItem.fields?.['System.Title'] as string | undefined) ?? '';
+    const suggestedName = buildWorkItemBranchName(id, rawTitle);
+
+    const gitExtension = vscode.extensions.getExtension<GitExtension>('vscode.git');
+    if (!gitExtension) {
+        showWarningMessage('The built-in Git extension is not available.');
+        return;
+    }
+
+    const git = gitExtension.isActive
+        ? gitExtension.exports
+        : await gitExtension.activate();
+    const gitApi = git.getAPI(1);
+    if (!gitApi) {
+        showWarningMessage('Git API is not available.');
+        return;
+    }
+
+    const repos = gitApi.repositories;
+    if (repos.length === 0) {
+        showWarningMessage(
+            'No Git repositories found in the current workspace. Open a repository first.'
+        );
+        return;
+    }
+
+    let repo = repos[0];
+    if (repos.length > 1) {
+        const picked = await vscode.window.showQuickPick(
+            repos.map(r => ({ label: r.rootUri.fsPath, repo: r })),
+            { placeHolder: 'Select the repository to create the branch in' }
+        );
+        if (!picked) { return; }
+        repo = picked.repo;
+    }
+
+    // Let the user confirm or adjust the branch name before creating it.
+    const confirmedName = await vscode.window.showInputBox({
+        prompt: `Branch name for work item #${id}`,
+        value: suggestedName,
+        validateInput: v => (v.trim() ? undefined : 'Branch name must not be empty')
+    });
+    if (!confirmedName) { return; }
+    const branchName = confirmedName.trim();
+
+    await vscode.window.withProgress(
+        {
+            location: vscode.ProgressLocation.Notification,
+            title: `Creating/checking out branch "${branchName}"…`
+        },
+        async () => {
+            try {
+                // Attempt to create a new local branch and check it out.
+                await repo.createBranch(branchName, true);
+                showInformationMessage(`Created and checked out branch: ${branchName}`);
+            } catch {
+                // Branch likely already exists — try checking it out instead.
+                try {
+                    await repo.checkout(branchName);
+                    showInformationMessage(`Checked out existing branch: ${branchName}`);
+                } catch (err2) {
+                    showErrorMessage(
+                        `Failed to create or checkout branch "${branchName}": ${err2}`
+                    );
+                }
+            }
+        }
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Minimal VS Code Git extension API types
+// ---------------------------------------------------------------------------
+
+interface GitExtension {
+    getAPI(version: 1): GitAPI;
+}
+
+interface GitAPI {
+    repositories: Repository[];
+}
+
+interface Repository {
+    rootUri: vscode.Uri;
+    checkout(treeish: string): Promise<void>;
+    createBranch(name: string, checkout: boolean, ref?: string): Promise<void>;
 }

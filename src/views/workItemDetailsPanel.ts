@@ -172,7 +172,9 @@ export class WorkItemDetailsPanel {
                 ? 'Failed to update work item state'
                 : msg.type === 'openLinkedItem'
                     ? 'Failed to open linked item'
-                : 'Failed to open work item in browser';
+                    : msg.type === 'startWorking'
+                        ? 'Failed to start working on work item'
+                        : 'Failed to open work item in browser';
 
         try {
             if (msg.type === 'addComment' && msg.content) {
@@ -208,6 +210,22 @@ export class WorkItemDetailsPanel {
                 void vscode.commands.executeCommand('adoext.refreshSprints');
                 void vscode.commands.executeCommand('adoext.refreshBoards');
                 await this._refresh(this._client, this._config, this._workItem);
+            } else if (msg.type === 'openLinkedItem' && msg.url) {
+                // Only open https://dev.azure.com/ or https://*.visualstudio.com/ URLs
+                const safeUrl = msg.url;
+                if (
+                    safeUrl.startsWith('https://dev.azure.com/') ||
+                    /^https:\/\/[^/]+\.visualstudio\.com\//.test(safeUrl)
+                ) {
+                    void vscode.env.openExternal(vscode.Uri.parse(safeUrl));
+                }
+            } else if (msg.type === 'startWorking') {
+                await vscode.commands.executeCommand(
+                    'adoext.startWorkingOnWorkItem',
+                    this._workItem,
+                    org,
+                    project
+                );
             } else if (msg.type === 'openLinkedItem' && msg.url) {
                 // Only open https://dev.azure.com/ or https://*.visualstudio.com/ URLs
                 const safeUrl = msg.url;
@@ -364,6 +382,7 @@ export class WorkItemDetailsPanel {
 <body>
 <div class="toolbar">
   <button class="btn btn-secondary" data-action="open-browser">Open in Browser</button>
+  <button class="btn btn-primary" data-action="start-working">Start Working</button>
     <div class="state-edit">
         <select id="stateSelect" aria-label="Work item state">${stateOptions}</select>
         <button class="btn btn-primary" data-action="set-state">Update State</button>
@@ -411,6 +430,10 @@ const vscode = acquireVsCodeApi();
 
 document.querySelector('[data-action="open-browser"]')?.addEventListener('click', () => {
     vscode.postMessage({ type: 'openInBrowser' });
+});
+
+document.querySelector('[data-action="start-working"]')?.addEventListener('click', () => {
+    vscode.postMessage({ type: 'startWorking' });
 });
 
 document.querySelector('[data-action="add-comment"]')?.addEventListener('click', () => {

@@ -22,7 +22,7 @@ import {
     selectProject,
     detectAndSuggestRepoContext
 } from './commands/accountCommands';
-import { changeWorkItemState, openWorkItem, viewWorkItemDetails } from './commands/workItemCommands';
+import { changeWorkItemState, openWorkItem, viewWorkItemDetails, startWorkingOnWorkItem } from './commands/workItemCommands';
 import {
     openPullRequest,
     viewPullRequestDetails,
@@ -300,6 +300,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (updated) {
                     refreshAllViews();
                 }
+            }
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.startWorkingOnWorkItem',
+            async (nodeOrItem?: WorkItemNode | import('./api/adoClient').WorkItem, organization?: string, project?: string) => {
+                if (!nodeOrItem) {
+                    showInformationMessage('Select a work item first, then run "Start Working".');
+                    return;
+                }
+                // Accept either a WorkItemNode (from context menu) or a raw WorkItem
+                // (forwarded from the details panel webview message handler).
+                const isNode = nodeOrItem instanceof WorkItemNode;
+                const workItem = isNode ? nodeOrItem.workItem : nodeOrItem as import('./api/adoClient').WorkItem;
+                const org = isNode
+                    ? (nodeOrItem.organization ?? client.organization ?? config.organization)
+                    : organization;
+                const proj = isNode ? (nodeOrItem.project ?? config.project) : project;
+                await startWorkingOnWorkItem(workItem, org, proj);
             }
         )
     );
