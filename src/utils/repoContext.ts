@@ -89,18 +89,24 @@ interface GitExtension {
     getAPI(version: 1): { repositories: GitRepository[] };
 }
 
+async function getGitApi(): Promise<{ repositories: GitRepository[] } | undefined> {
+    const gitExtension = vscode.extensions.getExtension<GitExtension>('vscode.git');
+    if (!gitExtension) {
+        return undefined;
+    }
+
+    const git = gitExtension.isActive
+        ? gitExtension.exports
+        : await gitExtension.activate();
+    return git?.getAPI(1);
+}
+
 /**
  * Inspects all Git repositories in the current workspace and returns any
  * Azure DevOps contexts discovered from their remote URLs.
  */
-export function detectAdoRepoContexts(): RepoContext[] {
-    const gitExtension =
-        vscode.extensions.getExtension<GitExtension>('vscode.git');
-    if (!gitExtension?.isActive) {
-        return [];
-    }
-
-    const gitApi = gitExtension.exports.getAPI(1);
+export async function detectAdoRepoContexts(): Promise<RepoContext[]> {
+    const gitApi = await getGitApi();
     if (!gitApi) {
         return [];
     }

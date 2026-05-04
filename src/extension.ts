@@ -557,7 +557,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // Offer to infer org/project from workspace ADO remotes when the
             // extension is authenticated but not yet configured.
             const { detectAdoRepoContexts } = await import('./utils/repoContext');
-            const detected = detectAdoRepoContexts();
+            const detected = await detectAdoRepoContexts();
             if (detected.length > 0) {
                 const org = detected[0].organization.replace(/[<>&"]/g, '');
                 const proj = detected[0].project.replace(/[<>&"]/g, '');

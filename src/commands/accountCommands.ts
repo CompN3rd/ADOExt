@@ -189,7 +189,7 @@ export async function selectProject(
 export async function detectAndSuggestRepoContext(
     config: ConfigManager
 ): Promise<boolean> {
-    const contexts = detectAdoRepoContexts();
+    const contexts = await detectAdoRepoContexts();
 
     if (contexts.length === 0) {
         showWarningMessage(

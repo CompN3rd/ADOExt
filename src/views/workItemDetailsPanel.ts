@@ -151,7 +151,8 @@ export class WorkItemDetailsPanel {
             showWarningMessage(`Failed to load work item states: ${this._formatError(err)}`);
         }
 
-        this._linkedItems = this._parseLinkedItems(fullItem, organization, project);
+        const repositoryNames = await this._resolveRepositoryNames(fullItem, project, organization);
+        this._linkedItems = this._parseLinkedItems(fullItem, organization, project, repositoryNames);
 
         this._panel.webview.html = this._buildHtml(fullItem, comments);
     }
@@ -642,7 +643,56 @@ document.querySelectorAll('[data-action="open-linked-item"]').forEach(btn => {
      * Extract Azure DevOps git artifact links (PRs, branches, commits) from
      * a work item's relations array and build browser-navigable web URLs.
      */
-    private _parseLinkedItems(workItem: WorkItem, organization: string, project: string): LinkedItem[] {
+    private async _resolveRepositoryNames(
+        workItem: WorkItem,
+        project: string,
+        organization: string
+    ): Promise<Map<string, string>> {
+        const repositoryIds = new Set<string>();
+        const relations = workItem.relations ?? [];
+
+        for (const relation of relations) {
+            if (relation.rel !== 'ArtifactLink') { continue; }
+            const vstfsUrl = (relation as { rel?: string; url?: string }).url ?? '';
+            if (!vstfsUrl.startsWith('vstfs:///Git/')) { continue; }
+
+            const withoutPrefix = vstfsUrl.slice('vstfs:///Git/'.length);
+            const slashIdx = withoutPrefix.indexOf('/');
+            if (slashIdx === -1) { continue; }
+
+            const encodedPath = withoutPrefix.slice(slashIdx + 1);
+            const parts = encodedPath.split(/%2F/i).map(p => {
+                try { return decodeURIComponent(p); } catch {
+                    return p;
+                }
+            });
+            if (parts.length < 3) { continue; }
+
+            repositoryIds.add(parts[1]);
+        }
+
+        const names = new Map<string, string>();
+        await Promise.all(
+            Array.from(repositoryIds).map(async repositoryId => {
+                try {
+                    const repositoryName = await this._client.getRepositoryName(project, repositoryId, organization);
+                    if (repositoryName) {
+                        names.set(repositoryId, repositoryName);
+                    }
+                } catch {
+                    // Fall back to the raw repo identifier when name lookup fails.
+                }
+            })
+        );
+        return names;
+    }
+
+    private _parseLinkedItems(
+        workItem: WorkItem,
+        organization: string,
+        project: string,
+        repositoryNames: Map<string, string>
+    ): LinkedItem[] {
         const items: LinkedItem[] = [];
         const relations = workItem.relations ?? [];
 
@@ -669,20 +719,21 @@ document.querySelectorAll('[data-action="open-linked-item"]').forEach(btn => {
 
             const [, repoId, ...rest] = parts;
             const identifier = rest.join('/');
+            const repository = repositoryNames.get(repoId) ?? repoId;
 
             if (artifactType === 'PullRequestId') {
                 const prId = parseInt(identifier, 10);
                 if (!isFinite(prId)) { continue; }
-                const webUrl = `https://dev.azure.com/${encodeURIComponent(organization)}/${encodeURIComponent(project)}/_git/${encodeURIComponent(repoId)}/pullrequest/${prId}`;
+                const webUrl = `https://dev.azure.com/${encodeURIComponent(organization)}/${encodeURIComponent(project)}/_git/${encodeURIComponent(repository)}/pullrequest/${prId}`;
                 items.push({ type: 'pr', label: `Pull Request #${prId}`, webUrl });
             } else if (artifactType === 'Ref') {
                 // Branch names carry a 'GB' prefix (GB = Git Branch)
                 const branchName = identifier.startsWith('GB') ? identifier.slice(2) : identifier;
-                const webUrl = `https://dev.azure.com/${encodeURIComponent(organization)}/${encodeURIComponent(project)}/_git/${encodeURIComponent(repoId)}?version=GB${encodeURIComponent(branchName)}`;
+                const webUrl = `https://dev.azure.com/${encodeURIComponent(organization)}/${encodeURIComponent(project)}/_git/${encodeURIComponent(repository)}?version=GB${encodeURIComponent(branchName)}`;
                 items.push({ type: 'branch', label: `Branch: ${branchName}`, webUrl });
             } else if (artifactType === 'Commit') {
                 const shortId = identifier.slice(0, 8);
-                const webUrl = `https://dev.azure.com/${encodeURIComponent(organization)}/${encodeURIComponent(project)}/_git/${encodeURIComponent(repoId)}/commit/${encodeURIComponent(identifier)}`;
+                const webUrl = `https://dev.azure.com/${encodeURIComponent(organization)}/${encodeURIComponent(project)}/_git/${encodeURIComponent(repository)}/commit/${encodeURIComponent(identifier)}`;
                 items.push({ type: 'commit', label: `Commit: ${shortId}`, webUrl });
             }
         }
