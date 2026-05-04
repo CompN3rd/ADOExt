@@ -297,7 +297,7 @@ export async function createWorkItem(
     const typePickItems: vscode.QuickPickItem[] = workItemTypes.length > 0
         ? workItemTypes.map(type => ({
             label: type,
-            description: presetTemplates[type] !== undefined ? '$(template) has preset fields' : undefined
+            description: type in presetTemplates ? '$(template) has preset fields' : undefined
         }))
         : Object.keys(presetTemplates).map(type => ({ label: type, description: '$(template) preset' }));
 

@@ -878,10 +878,13 @@ export class AdoClient {
             const nodePath = parentPath
                 ? `${parentPath}\\${node.name ?? ''}`
                 : (node.name ?? '');
+            if (!nodePath) {
+                return;
+            }
             const segments = nodePath.split('\\').filter(Boolean);
             paths.push({
                 path: nodePath,
-                label: segments[segments.length - 1] ?? nodePath
+                label: segments.length > 0 ? segments[segments.length - 1]! : nodePath
             });
             for (const child of node.children ?? []) {
                 flatten(child, nodePath);
