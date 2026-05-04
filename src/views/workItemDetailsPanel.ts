@@ -207,10 +207,10 @@ export class WorkItemDetailsPanel {
                 }
                 const url = `https://dev.azure.com/${encodeURIComponent(org)}/${encodeURIComponent(project)}/_workitems/edit/${id}`;
                 void vscode.env.openExternal(vscode.Uri.parse(url));
-            } else if (msg.type === 'openBuild' && msg.buildId) {
-                if (!org || !project) {
+            } else if (msg.type === 'openBuild' && typeof msg.buildId === 'number') {
+                if (!org || !project || msg.buildId <= 0) {
                     showWarningMessage(
-                        'Unable to open build because organization or project is missing.'
+                        'Unable to open build because organization, project, or build ID is missing.'
                     );
                     return;
                 }
@@ -481,7 +481,9 @@ document.querySelectorAll('[data-action="open-linked-item"]').forEach(btn => {
 document.querySelectorAll('[data-action="open-build"]').forEach(button => {
     button.addEventListener('click', () => {
         const buildId = Number(button.getAttribute('data-build-id'));
-        vscode.postMessage({ type: 'openBuild', buildId });
+        if (Number.isFinite(buildId) && buildId > 0) {
+            vscode.postMessage({ type: 'openBuild', buildId });
+        }
     });
 });
 

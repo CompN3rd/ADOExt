@@ -1011,10 +1011,11 @@ export class AdoClient {
         organization?: string
     ): Promise<Build[]> {
         const relations = workItem.relations ?? [];
+        const buildArtifactPattern = /vstfs:\/\/\/Build\/Build\/(\d+)/i;
         const buildIds = relations
             .flatMap(r => {
                 if (r.rel !== 'ArtifactLink') { return []; }
-                const match = /vstfs:\/\/\/Build\/Build\/(\d+)/i.exec(r.url ?? '');
+                const match = buildArtifactPattern.exec(r.url ?? '');
                 return match ? [Number(match[1])] : [];
             });
 

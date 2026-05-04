@@ -1,5 +1,5 @@
-import type { Build } from '../api/adoClient';
 import { BuildStatus, BuildResult } from 'azure-devops-node-api/interfaces/BuildInterfaces';
+import type { Build } from '../api/adoClient';
 
 /**
  * Escapes HTML special characters in a string.

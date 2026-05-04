@@ -181,10 +181,10 @@ export class PrDetailsPanel {
 
                 const url = `https://dev.azure.com/${encodeURIComponent(org)}/${encodeURIComponent(projectName)}/_git/${encodeURIComponent(repoName)}/pullrequest/${prId}`;
                 void vscode.env.openExternal(vscode.Uri.parse(url));
-            } else if (msg.type === 'openBuild' && msg.buildId) {
-                if (!organization || !project) {
+            } else if (msg.type === 'openBuild' && typeof msg.buildId === 'number') {
+                if (!organization || !project || msg.buildId <= 0) {
                     showWarningMessage(
-                        'Unable to open build because organization or project is missing.'
+                        'Unable to open build because organization, project, or build ID is missing.'
                     );
                     return;
                 }
@@ -406,7 +406,9 @@ document.querySelector('[data-action="add-comment"]')?.addEventListener('click',
 document.querySelectorAll('[data-action="open-build"]').forEach(button => {
     button.addEventListener('click', () => {
         const buildId = Number(button.getAttribute('data-build-id'));
-        vscode.postMessage({ type: 'openBuild', buildId });
+        if (Number.isFinite(buildId) && buildId > 0) {
+            vscode.postMessage({ type: 'openBuild', buildId });
+        }
     });
 });
 
