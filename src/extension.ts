@@ -13,7 +13,10 @@ import { BacklogProvider, SprintProvider, BoardProvider } from './providers/plan
 import { PlanningPanel } from './views/planningPanel';
 import { PrCommentController, type CommentReply } from './views/prCommentController';
 import { PrDiffCache, PrDiffContentProvider, PR_DIFF_SCHEME } from './views/prContentProvider';
-import { PrCommentNotifier } from './views/prCommentNotifier';
+import { NotificationService } from './notifications/notificationService';
+import { PrCommentHandler } from './notifications/handlers/prCommentHandler';
+import { PrReviewRequestHandler } from './notifications/handlers/prReviewRequestHandler';
+import { PrStatusChangeHandler } from './notifications/handlers/prStatusChangeHandler';
 import {
     selectOrganization,
     selectProject
@@ -70,8 +73,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             client.connect(config.organization);
         }
         updateSignedInContext();
-        // Re-prime the notifier (also captures the brand-new sign-in case).
-        prCommentNotifier.applyConfig();
+        // Re-prime the notification service (also captures the brand-new sign-in case).
+        notificationService.applyConfig();
         // Notify MCP provider of new auth/org state
         mcpManager.refresh();
     }
@@ -121,11 +124,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const prCommentController = new PrCommentController(client);
     context.subscriptions.push(prCommentController);
 
-    // Surface a small toast when a tracked PR receives new comments. The
-    // user can mute the notifications from the toast itself or via the
-    // `adoext.notifyOnNewPullRequestComments` setting.
-    const prCommentNotifier = new PrCommentNotifier(client, config, context.globalState);
-    context.subscriptions.push(prCommentNotifier);
+    // Shared notification service: surfaces toasts for PR comments, review
+    // requests, and vote/status changes.  New event types can be added by
+    // registering additional INotificationHandler implementations below.
+    const notificationService = new NotificationService(client, config, [
+        new PrCommentHandler(client, config, context.globalState),
+        new PrReviewRequestHandler(client, config, context.globalState),
+        new PrStatusChangeHandler(client, config, context.globalState)
+    ]);
+    context.subscriptions.push(notificationService);
 
     // -------------------------------------------------------------------------
     // Commands
@@ -517,7 +524,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
     }
     updateSignedInContext();
-    prCommentNotifier.applyConfig();
+    notificationService.applyConfig();
 
     // React to configuration changes
     context.subscriptions.push(
@@ -529,12 +536,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 refreshAllViews();
                 if (
                     e.affectsConfiguration('adoext.notifyOnNewPullRequestComments') ||
+                    e.affectsConfiguration('adoext.notifyOnPullRequestReviewRequests') ||
+                    e.affectsConfiguration('adoext.notifyOnPullRequestStatusChanges') ||
                     e.affectsConfiguration('adoext.pullRequestCommentPollIntervalSeconds') ||
                     e.affectsConfiguration('adoext.pullRequestFilter') ||
                     e.affectsConfiguration('adoext.pullRequestQueries') ||
                     e.affectsConfiguration('adoext.activePullRequestQueryId')
                 ) {
-                    prCommentNotifier.applyConfig();
+                    notificationService.applyConfig();
                 }
             }
         })

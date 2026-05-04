@@ -651,11 +651,21 @@
           "default": true,
           "description": "Show a small notification when new comments appear on tracked pull requests. Disable to silence the toasts."
         },
+        "adoext.notifyOnPullRequestReviewRequests": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a notification when you are added as a reviewer on a pull request."
+        },
+        "adoext.notifyOnPullRequestStatusChanges": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a notification when a reviewer votes on a pull request you created."
+        },
         "adoext.pullRequestCommentPollIntervalSeconds": {
           "type": "number",
           "default": 300,
           "minimum": 60,
-          "description": "How often (in seconds) ADOExt polls tracked pull requests for new comments. Ignored when notifications are disabled."
+          "description": "How often (in seconds) ADOExt polls tracked pull requests for notifications. Ignored when all notifications are disabled."
         }
       }
     }
