@@ -506,7 +506,7 @@
         "adoext.activeWorkItemQueryId": {
           "type": "string",
           "default": "",
-          "description": "Active saved work item query ID. When empty or invalid, ADOExt uses the first saved query or migrates from adoext.workItemQuery."
+          "description": "Active saved work item query ID. When empty or invalid, ADOExt falls back to the first saved query or derives one from adoext.workItemQuery."
         },
         "adoext.workItemQuery": {
           "type": "string",
@@ -566,7 +566,7 @@
         "adoext.activePullRequestQueryId": {
           "type": "string",
           "default": "",
-          "description": "Active saved pull request query ID. When empty or invalid, ADOExt uses the first saved query or migrates from adoext.pullRequestFilter."
+          "description": "Active saved pull request query ID. When empty or invalid, ADOExt falls back to the first saved query or derives one from adoext.pullRequestFilter."
         },
         "adoext.pullRequestFilter": {
           "type": "string",
