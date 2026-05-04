@@ -101,6 +101,7 @@ const PLANNING_WORK_ITEM_QUERY_LIMIT = 500;
 const BUILDS_PER_QUERY = 10;
 const PLANNING_WORK_ITEM_TOTAL_LIMIT = 1000;
 const WORK_ITEM_BATCH_SIZE = 200;
+const COMPLETION_WORK_ITEM_LIMIT = 50;
 
 /**
  * Thin wrapper around the azure-devops-node-api package.
@@ -219,9 +220,14 @@ export class AdoClient {
 
     /**
      * List team members for the given project.
+     *
      * Queries up to the first 20 teams in the project and deduplicates members
      * by identity id. Returns an empty array when the API is unavailable or
      * the caller lacks permission.
+     *
+     * Note: projects with more than 20 teams will have members from later teams
+     * omitted. The default team is always included because it is typically
+     * returned first by the API.
      */
     async listProjectTeamMembers(project: string, organization?: string): Promise<IdentityRef[]> {
         const coreApi: ICoreApi = await this.getConnectionFor(organization).getCoreApi();
@@ -244,6 +250,45 @@ export class AdoClient {
         }));
 
         return Array.from(membersById.values());
+    }
+
+    /**
+     * Fetch the most recently changed active work items for use in completion
+     * suggestions. Limited to {@link COMPLETION_WORK_ITEM_LIMIT} items to keep
+     * the initial load fast; results should be cached by the caller.
+     */
+    async getRecentWorkItems(project: string, organization?: string): Promise<WorkItem[]> {
+        const witApi: IWorkItemTrackingApi = await this.getConnectionFor(organization).getWorkItemTrackingApi();
+
+        const wiql = {
+            query: `SELECT [System.Id], [System.Title], [System.State], [System.WorkItemType]
+                    FROM WorkItems
+                    WHERE [System.TeamProject] = '${this.escapeWiqlString(project)}'
+                      AND [System.State] NOT IN ('Closed', 'Removed')
+                    ORDER BY [System.ChangedDate] DESC`
+        };
+
+        const result = await witApi.queryByWiql(wiql, { project }, false, COMPLETION_WORK_ITEM_LIMIT);
+        if (!result.workItems || result.workItems.length === 0) {
+            return [];
+        }
+
+        const ids = result.workItems
+            .flatMap((wi: WorkItemReference) => wi.id !== undefined ? [wi.id] : []);
+
+        if (ids.length === 0) {
+            return [];
+        }
+
+        const workItems = await witApi.getWorkItems(
+            ids,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            project
+        );
+        return (workItems ?? []).filter((wi): wi is WorkItem => wi !== null);
     }
 
     // -------------------------------------------------------------------------

@@ -5,6 +5,12 @@ import { resolveProjectScopes } from './projectScopes';
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
+/**
+ * Number of digits used when padding work item IDs for lexicographic sort.
+ * Supports IDs up to 9,999,999,999 which exceeds any real-world ADO project.
+ */
+const WORK_ITEM_ID_SORT_PAD_LENGTH = 10;
+
 interface CacheEntry {
     items: vscode.CompletionItem[];
     timestamp: number;
@@ -61,7 +67,9 @@ export class AdoCompletionProvider implements vscode.CompletionItemProvider, vsc
         const lineText = document.lineAt(position).text;
         const textBeforeCursor = lineText.substring(0, position.character);
 
-        // Work item reference: AB#123 or #123
+        // Work item reference: AB#123 or #123.
+        // 'AB' (Azure Boards) is the standard ADO work-item prefix used in rich
+        // text and commit messages; plain '#NNN' references are also widely used.
         if (/(?:AB)?#\d*$/.test(textBeforeCursor)) {
             return this._getWorkItemCompletions(token);
         }
@@ -97,7 +105,7 @@ export class AdoCompletionProvider implements vscode.CompletionItemProvider, vsc
             }
 
             try {
-                const workItems = await this._client.getWorkItems(scope.project, 'all', scope.organization);
+                const workItems = await this._client.getRecentWorkItems(scope.project, scope.organization);
                 if (token.isCancellationRequested) { return []; }
 
                 const items: vscode.CompletionItem[] = [];
@@ -119,7 +127,7 @@ export class AdoCompletionProvider implements vscode.CompletionItemProvider, vsc
                     item.filterText = `#${id} ${title}`;
                     item.documentation = new vscode.MarkdownString(`**#${id}** — ${title}\n\n*${type}* | ${state}`);
                     // Sort numerically so lower IDs appear first
-                    item.sortText = String(id).padStart(10, '0');
+                    item.sortText = String(id).padStart(WORK_ITEM_ID_SORT_PAD_LENGTH, '0');
                     items.push(item);
                 }
 
