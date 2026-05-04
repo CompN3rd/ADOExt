@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as crypto from 'crypto';
-import type { GitPullRequest, GitPullRequestCommentThread, Comment, PullRequestReviewVote } from '../api/adoClient';
-import { PullRequestReviewVotes } from '../api/adoClient';
+import type { GitPullRequest, GitPullRequestCommentThread, Comment, PullRequestReviewVote, GitPullRequestStatus, PolicyEvaluationRecord } from '../api/adoClient';
+import { PullRequestReviewVotes, GitStatusState, PolicyEvaluationStatus, PullRequestAsyncStatus, PullRequestMergeFailureType } from '../api/adoClient';
 import type { AdoClient } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
 import { showErrorMessage, showInformationMessage, showWarningMessage } from '../utils/notifications';
@@ -94,13 +94,24 @@ export class PrDetailsPanel {
         const prId = pr.pullRequestId!;
         const project = this._project ?? config.project;
         const organization = this._organization ?? client.organization ?? config.organization;
-        let threads: GitPullRequestCommentThread[] = [];
-        try {
-            threads = await client.getPullRequestThreads(project, repoId, prId, organization);
-        } catch {
-            // show panel anyway, threads will just be empty
-        }
-        this._panel.webview.html = this._buildHtml(pr, threads);
+        const projectId = pr.repository?.project?.id;
+
+        const [latestPrResult, threadsResult, statusesResult, policiesResult] = await Promise.allSettled([
+            client.getPullRequest(project, repoId, prId, organization),
+            client.getPullRequestThreads(project, repoId, prId, organization),
+            client.getPullRequestStatuses(project, repoId, prId, organization),
+            projectId
+                ? client.getPullRequestPolicyEvaluations(project, prId, projectId, organization)
+                : Promise.resolve([] as PolicyEvaluationRecord[])
+        ]);
+
+        const latestPr = latestPrResult.status === 'fulfilled' && latestPrResult.value ? latestPrResult.value : pr;
+        const threads = threadsResult.status === 'fulfilled' ? threadsResult.value : [];
+        const statuses = statusesResult.status === 'fulfilled' ? statusesResult.value : [];
+        const policies = policiesResult.status === 'fulfilled' ? policiesResult.value : [];
+
+        this._pr = latestPr;
+        this._panel.webview.html = this._buildHtml(latestPr, threads, statuses, policies);
     }
 
     private async _handleMessage(msg: {
@@ -205,7 +216,9 @@ export class PrDetailsPanel {
 
     private _buildHtml(
         pr: GitPullRequest,
-        threads: GitPullRequestCommentThread[]
+        threads: GitPullRequestCommentThread[],
+        statuses: GitPullRequestStatus[] = [],
+        policies: PolicyEvaluationRecord[] = []
     ): string {
         const webview = this._panel.webview;
         const nonce = this._createNonce();
@@ -237,6 +250,9 @@ export class PrDetailsPanel {
             ? '<p class="empty">No comment threads.</p>'
             : meaningfulThreads.map(t => this._buildThreadHtml(t)).join('');
 
+        const branchStatusHtml = this._buildBranchStatusHtml(pr);
+        const checksHtml = this._buildChecksHtml(statuses, policies);
+
         return /* html */`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -258,6 +274,16 @@ export class PrDetailsPanel {
     .vote-positive { color: var(--vscode-charts-green); border-color: var(--vscode-charts-green); }
     .vote-waiting { color: var(--vscode-charts-yellow); border-color: var(--vscode-charts-yellow); }
     .vote-negative { color: var(--vscode-charts-red); border-color: var(--vscode-charts-red); }
+  .checks-list { list-style: none; padding: 0; margin: 0; }
+  .checks-list li { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--vscode-panel-border); }
+  .checks-list li:last-child { border-bottom: none; }
+  .check-state { font-size: 0.8em; min-width: 80px; padding: 2px 6px; border-radius: 3px; text-align: center; border: 1px solid; }
+  .check-success { color: var(--vscode-charts-green); border-color: var(--vscode-charts-green); }
+  .check-failure { color: var(--vscode-charts-red); border-color: var(--vscode-charts-red); }
+  .check-pending { color: var(--vscode-charts-yellow); border-color: var(--vscode-charts-yellow); }
+  .check-neutral { color: var(--vscode-descriptionForeground); border-color: var(--vscode-panel-border); }
+  .check-name { flex: 1; }
+  .check-desc { color: var(--vscode-descriptionForeground); font-size: 0.85em; }
   .thread { border: 1px solid var(--vscode-panel-border); border-radius: 4px; margin-bottom: 10px; }
   .thread-header { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; background: var(--vscode-sideBarSectionHeader-background); border-radius: 4px 4px 0 0; }
   .thread-status { font-size: 0.8em; color: var(--vscode-descriptionForeground); }
@@ -303,6 +329,10 @@ export class PrDetailsPanel {
 </div>
 
 ${reviewersHtml ? `<div class="section"><h2>Reviewers</h2><ul class="reviewers">${reviewersHtml}</ul></div>` : ''}
+
+${branchStatusHtml}
+
+${checksHtml}
 
 <div class="section">
   <h2>Comment Threads</h2>
@@ -370,6 +400,150 @@ document.querySelectorAll('[data-action="set-status"]').forEach(button => {
 </script>
 </body>
 </html>`;
+    }
+
+    private _buildChecksHtml(
+        statuses: GitPullRequestStatus[],
+        policies: PolicyEvaluationRecord[]
+    ): string {
+        const totalChecks = statuses.length + policies.length;
+        if (totalChecks === 0) {
+            return '';
+        }
+
+        const items: string[] = [];
+
+        for (const status of statuses) {
+            const name = this._esc(
+                [status.context?.genre, status.context?.name].filter(Boolean).join('/') || 'Check'
+            );
+            const desc = this._esc(status.description ?? '');
+            const { cls, label } = this._statusStateBadge(status.state);
+            items.push(
+                `<li><span class="check-state ${cls}">${label}</span><span class="check-name">${name}</span>${desc ? `<span class="check-desc">${desc}</span>` : ''}</li>`
+            );
+        }
+
+        for (const policy of policies) {
+            const name = this._esc(policy.configuration?.type?.displayName ?? 'Policy');
+            const { cls, label } = this._policyStatusBadge(policy.status);
+            items.push(
+                `<li><span class="check-state ${cls}">${label}</span><span class="check-name">${name}</span></li>`
+            );
+        }
+
+        return `<div class="section"><h2>Build &amp; Policy Status</h2><ul class="checks-list">${items.join('')}</ul></div>`;
+    }
+
+    private _buildBranchStatusHtml(pr: GitPullRequest): string {
+        const rows: string[] = [];
+        rows.push(this._buildStatusRow('Merge state', this._branchStatusBadge(pr.mergeStatus)));
+
+        if (pr.hasMultipleMergeBases) {
+            rows.push(this._buildStatusRow('Merge bases', { cls: 'check-pending', label: 'Multiple detected' }));
+        }
+
+        if (this._hasMergeFailure(pr)) {
+            rows.push(this._buildStatusRow(
+                'Failure reason',
+                { cls: 'check-failure', label: this._mergeFailureLabel(pr.mergeFailureType, pr.mergeFailureMessage) }
+            ));
+        }
+
+        if (pr.completionQueueTime) {
+            rows.push(this._buildStatusRow(
+                'Last merge queue time',
+                { cls: 'check-neutral', label: new Date(pr.completionQueueTime).toLocaleString() }
+            ));
+        }
+
+        return `<div class="section"><h2>Branch Status</h2><ul class="checks-list">${rows.join('')}</ul></div>`;
+    }
+
+    private _hasMergeFailure(pr: GitPullRequest): boolean {
+        return (
+            (pr.mergeFailureType !== undefined && pr.mergeFailureType !== PullRequestMergeFailureType.None) ||
+            !!pr.mergeFailureMessage
+        );
+    }
+
+    private _buildStatusRow(name: string, badge: { cls: string; label: string }): string {
+        return `<li><span class="check-state ${badge.cls}">${this._esc(badge.label)}</span><span class="check-name">${this._esc(name)}</span></li>`;
+    }
+
+    private _statusStateBadge(state?: GitStatusState): { cls: string; label: string } {
+        switch (state) {
+            case GitStatusState.Succeeded:
+                return { cls: 'check-success', label: 'Succeeded' };
+            case GitStatusState.Failed:
+                return { cls: 'check-failure', label: 'Failed' };
+            case GitStatusState.Error:
+                return { cls: 'check-failure', label: 'Error' };
+            case GitStatusState.Pending:
+            case GitStatusState.NotSet:
+                return { cls: 'check-pending', label: 'Pending' };
+            case GitStatusState.NotApplicable:
+                return { cls: 'check-neutral', label: 'N/A' };
+            default:
+                return { cls: 'check-neutral', label: 'Unknown' };
+        }
+    }
+
+    private _policyStatusBadge(status?: PolicyEvaluationStatus): { cls: string; label: string } {
+        switch (status) {
+            case PolicyEvaluationStatus.Approved:
+                return { cls: 'check-success', label: 'Approved' };
+            case PolicyEvaluationStatus.Rejected:
+                return { cls: 'check-failure', label: 'Rejected' };
+            case PolicyEvaluationStatus.Broken:
+                return { cls: 'check-failure', label: 'Broken' };
+            case PolicyEvaluationStatus.Running:
+                return { cls: 'check-pending', label: 'Running' };
+            case PolicyEvaluationStatus.Queued:
+                return { cls: 'check-pending', label: 'Queued' };
+            case PolicyEvaluationStatus.NotApplicable:
+                return { cls: 'check-neutral', label: 'N/A' };
+            default:
+                return { cls: 'check-neutral', label: 'Unknown' };
+        }
+    }
+
+    private _branchStatusBadge(status?: PullRequestAsyncStatus): { cls: string; label: string } {
+        switch (status) {
+            case PullRequestAsyncStatus.Succeeded:
+                return { cls: 'check-success', label: 'Up to date' };
+            case PullRequestAsyncStatus.Conflicts:
+                return { cls: 'check-failure', label: 'Conflicts' };
+            case PullRequestAsyncStatus.Failure:
+                return { cls: 'check-failure', label: 'Merge failed' };
+            case PullRequestAsyncStatus.RejectedByPolicy:
+                return { cls: 'check-failure', label: 'Rejected by policy' };
+            case PullRequestAsyncStatus.Queued:
+                return { cls: 'check-pending', label: 'Queued' };
+            case PullRequestAsyncStatus.NotSet:
+                return { cls: 'check-neutral', label: 'Not computed' };
+            default:
+                return { cls: 'check-neutral', label: 'Unknown' };
+        }
+    }
+
+    private _mergeFailureLabel(type?: PullRequestMergeFailureType, message?: string): string {
+        if (message) {
+            return message;
+        }
+
+        switch (type) {
+            case PullRequestMergeFailureType.None:
+                return 'None';
+            case PullRequestMergeFailureType.Unknown:
+                return 'Unknown merge failure';
+            case PullRequestMergeFailureType.CaseSensitive:
+                return 'Case-sensitive file conflict';
+            case PullRequestMergeFailureType.ObjectTooLarge:
+                return 'Merge object too large';
+            default:
+                return 'Unknown';
+        }
     }
 
     private _buildThreadHtml(thread: GitPullRequestCommentThread): string {
