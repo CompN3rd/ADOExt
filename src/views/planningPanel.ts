@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import * as crypto from 'crypto';
-import type { WorkItem } from '../api/adoClient';
+import type { WorkItem, WorkItemType } from '../api/adoClient';
 import type { AdoClient } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
 import { WorkItemDetailsPanel } from './workItemDetailsPanel';
@@ -30,6 +30,7 @@ interface PlanningMessage {
     state?: string;
     organization?: string;
     project?: string;
+    // quick-create carries no extra payload — title/type are gathered via InputBox
 }
 
 export class PlanningPanel {
@@ -128,6 +129,11 @@ export class PlanningPanel {
             return;
         }
 
+        if (message.type === 'quickCreate') {
+            await this.handleQuickCreate(message.organization, message.project);
+            return;
+        }
+
         if (typeof message.id !== 'number') {
             return;
         }
@@ -160,7 +166,149 @@ export class PlanningPanel {
                 this._onDidUpdate?.();
                 await this.refresh();
             } catch (err) {
-                showErrorMessage(`Failed to update work item state: ${this.formatError(err)}`);
+                const action = await vscode.window.showErrorMessage(
+                    `Failed to update work item state: ${this.formatError(err)}`,
+                    'Refresh'
+                );
+                if (action === 'Refresh') {
+                    await this.refresh();
+                }
+            }
+            return;
+        }
+
+        if (message.type === 'editAssignee') {
+            await this.handleEditAssignee(message.id, organization, project);
+            return;
+        }
+
+        if (message.type === 'editIteration') {
+            await this.handleEditIteration(message.id, organization, project);
+            return;
+        }
+    }
+
+    private async handleQuickCreate(orgHint?: string, projectHint?: string): Promise<void> {
+        const scopes = await resolveProjectScopes(this._client, this._config);
+        if (scopes.length === 0) {
+            showWarningMessage('No projects are configured. Please select an organization and project first.');
+            return;
+        }
+
+        let organization = orgHint;
+        let project = projectHint;
+
+        if (!organization || !project) {
+            if (scopes.length === 1) {
+                organization = scopes[0].organization;
+                project = scopes[0].project;
+            } else {
+                const scopeItems = scopes.map(s => ({
+                    label: scopeLabel(s),
+                    description: `${s.organization} / ${s.project}`,
+                    scope: s
+                }));
+                const picked = await vscode.window.showQuickPick(scopeItems, {
+                    placeHolder: 'Select the project for the new work item'
+                });
+                if (!picked) { return; }
+                organization = picked.scope.organization;
+                project = picked.scope.project;
+            }
+        }
+
+        if (!organization || !project) {
+            showWarningMessage('Unable to determine the target project for the new work item.');
+            return;
+        }
+
+        const title = await vscode.window.showInputBox({
+            prompt: `New work item in ${project}`,
+            placeHolder: 'Enter title...',
+            validateInput: v => v?.trim() ? undefined : 'Title cannot be empty'
+        });
+        if (!title?.trim()) { return; }
+
+        let workItemTypes: WorkItemType[];
+        try {
+            workItemTypes = await this._client.getWorkItemTypes(project, organization);
+        } catch (err) {
+            showErrorMessage(`Failed to load work item types: ${this.formatError(err)}`);
+            return;
+        }
+
+        const typeItems = workItemTypes
+            .map(type => type.name)
+            .filter((name): name is string => typeof name === 'string' && name.trim().length > 0)
+            .sort((left, right) => left.localeCompare(right));
+        if (typeItems.length === 0) {
+            showWarningMessage(`No work item types are available for ${project}.`);
+            return;
+        }
+
+        const workItemType = await vscode.window.showQuickPick(typeItems, {
+            placeHolder: 'Select work item type'
+        });
+        if (!workItemType) { return; }
+
+        try {
+            const created = await this._client.createWorkItem(project, title.trim(), workItemType, undefined, organization);
+            showInformationMessage(`Created work item #${created.id}: ${title.trim()}`);
+            this._onDidUpdate?.();
+            await this.refresh();
+        } catch (err) {
+            const action = await vscode.window.showErrorMessage(
+                `Failed to create work item: ${this.formatError(err)}`,
+                'Retry'
+            );
+            if (action === 'Retry') {
+                await this.handleQuickCreate(orgHint, projectHint);
+            }
+        }
+    }
+
+    private async handleEditAssignee(id: number, organization: string, project: string): Promise<void> {
+        const value = await vscode.window.showInputBox({
+            prompt: `New assignee for work item #${id}`,
+            placeHolder: 'Display name or email address'
+        });
+        if (value === undefined) { return; }
+
+        try {
+            await this._client.updateWorkItemFields(project, id, { 'System.AssignedTo': value }, organization);
+            showInformationMessage(`Work item #${id} reassigned.`);
+            this._onDidUpdate?.();
+            await this.refresh();
+        } catch (err) {
+            const action = await vscode.window.showErrorMessage(
+                `Failed to reassign work item #${id}: ${this.formatError(err)}`,
+                'Refresh'
+            );
+            if (action === 'Refresh') {
+                await this.refresh();
+            }
+        }
+    }
+
+    private async handleEditIteration(id: number, organization: string, project: string): Promise<void> {
+        const value = await vscode.window.showInputBox({
+            prompt: `New iteration path for work item #${id}`,
+            placeHolder: 'Project\\Iteration\\Sprint'
+        });
+        if (value === undefined) { return; }
+
+        try {
+            await this._client.updateWorkItemFields(project, id, { 'System.IterationPath': value }, organization);
+            showInformationMessage(`Work item #${id} iteration updated.`);
+            this._onDidUpdate?.();
+            await this.refresh();
+        } catch (err) {
+            const action = await vscode.window.showErrorMessage(
+                `Failed to update iteration for work item #${id}: ${this.formatError(err)}`,
+                'Refresh'
+            );
+            if (action === 'Refresh') {
+                await this.refresh();
             }
         }
     }
@@ -299,6 +447,10 @@ export class PlanningPanel {
   .sprint-task:last-child { border-bottom: none; }
 
   .empty { color: var(--vscode-descriptionForeground); font-style: italic; padding: 8px; }
+  .meta-edit { color: var(--vscode-descriptionForeground); font-size: 0.85em; }
+  .meta-edit:hover { color: var(--vscode-textLink-activeForeground); text-decoration: underline; }
+  .btn-small { padding: 2px 7px; font-size: 0.82em; }
+  .scope-new-item { margin-left: auto; }
   @media (max-width: 720px) {
     .tree-row, .sprint-task { grid-template-columns: 1fr; align-items: start; }
     .state-control { justify-content: flex-start; }
@@ -315,6 +467,7 @@ export class PlanningPanel {
     </div>
     <div class="toolbar">
       ${this._kind === 'backlog' || this._kind === 'sprint' ? '<button class="btn btn-secondary" data-action="expand-all">Expand all</button><button class="btn btn-secondary" data-action="collapse-all">Collapse all</button>' : ''}
+      <button class="btn btn-primary" data-action="quick-create">+ New Item</button>
       <button class="btn btn-secondary" data-action="refresh">Refresh</button>
     </div>
   </div>
@@ -397,6 +550,38 @@ document.addEventListener('click', event => {
             project: stateButton.getAttribute('data-project') || undefined
         });
     }
+
+    const quickCreateButton = target.closest('[data-action="quick-create"]');
+    if (quickCreateButton) {
+        vscode.postMessage({
+            type: 'quickCreate',
+            organization: quickCreateButton.getAttribute('data-organization') || undefined,
+            project: quickCreateButton.getAttribute('data-project') || undefined
+        });
+        return;
+    }
+
+    const editAssigneeButton = target.closest('[data-action="edit-assignee"]');
+    if (editAssigneeButton) {
+        vscode.postMessage({
+            type: 'editAssignee',
+            id: Number(editAssigneeButton.getAttribute('data-id')),
+            organization: editAssigneeButton.getAttribute('data-organization') || undefined,
+            project: editAssigneeButton.getAttribute('data-project') || undefined
+        });
+        return;
+    }
+
+    const editIterationButton = target.closest('[data-action="edit-iteration"]');
+    if (editIterationButton) {
+        vscode.postMessage({
+            type: 'editIteration',
+            id: Number(editIterationButton.getAttribute('data-id')),
+            organization: editIterationButton.getAttribute('data-organization') || undefined,
+            project: editIterationButton.getAttribute('data-project') || undefined
+        });
+        return;
+    }
 });
 
 document.addEventListener('keydown', event => {
@@ -423,7 +608,7 @@ document.addEventListener('keydown', event => {
             const hierarchy = roots.length === 0
                 ? '<p class="empty">No backlog items in this project.</p>'
                 : `<div class="backlog" role="tree">${roots.map(root => this.buildBacklogItemHtml(root, scopedItems, 0, new Set())).join('')}</div>`;
-            return `<section class="scope"><h2 class="scope-title">${this.esc(scopeLabel(scope))} <span class="scope-count">${scopedItems.length}</span></h2>${hierarchy}</section>`;
+            return `<section class="scope"><h2 class="scope-title">${this.esc(scopeLabel(scope))} <span class="scope-count">${scopedItems.length}</span><button class="btn btn-primary btn-small scope-new-item" data-action="quick-create" data-organization="${this.escAttr(scope.organization)}" data-project="${this.escAttr(scope.project)}">+ New Item</button></h2>${hierarchy}</section>`;
         }).join('');
     }
 
@@ -455,7 +640,7 @@ document.addEventListener('keydown', event => {
         return scopes.map(scope => {
             const scopedItems = items.filter(item => scopeKey(item.scope) === scopeKey(scope));
             if (scopedItems.length === 0) {
-                return `<section class="scope"><h2 class="scope-title">${this.esc(scopeLabel(scope))} <span class="scope-count">0</span></h2><p class="empty">No board items in this project.</p></section>`;
+                return `<section class="scope"><h2 class="scope-title">${this.esc(scopeLabel(scope))} <span class="scope-count">0</span><button class="btn btn-primary btn-small scope-new-item" data-action="quick-create" data-organization="${this.escAttr(scope.organization)}" data-project="${this.escAttr(scope.project)}">+ New Item</button></h2><p class="empty">No board items in this project.</p></section>`;
             }
 
             // Discover columns (states) and lanes (parent backlog items, like ADO swim lanes).
@@ -484,7 +669,7 @@ document.addEventListener('keydown', event => {
             }).join('');
 
             return `<section class="scope">
-  <h2 class="scope-title">${this.esc(scopeLabel(scope))} <span class="scope-count">${scopedItems.length}</span></h2>
+  <h2 class="scope-title">${this.esc(scopeLabel(scope))} <span class="scope-count">${scopedItems.length}</span><button class="btn btn-primary btn-small scope-new-item" data-action="quick-create" data-organization="${this.escAttr(scope.organization)}" data-project="${this.escAttr(scope.project)}">+ New Item</button></h2>
   <div class="board-table" style="grid-template-columns: ${colTemplate};">
     ${headerCells}
     ${laneRows}
@@ -515,7 +700,7 @@ document.addEventListener('keydown', event => {
         return scopes.map(scope => {
             const scopedItems = items.filter(item => scopeKey(item.scope) === scopeKey(scope));
             if (scopedItems.length === 0) {
-                return `<section class="scope"><h2 class="scope-title">${this.esc(scopeLabel(scope))} <span class="scope-count">0</span></h2><p class="empty">No sprint items in this project.</p></section>`;
+                return `<section class="scope"><h2 class="scope-title">${this.esc(scopeLabel(scope))} <span class="scope-count">0</span><button class="btn btn-primary btn-small scope-new-item" data-action="quick-create" data-organization="${this.escAttr(scope.organization)}" data-project="${this.escAttr(scope.project)}">+ New Item</button></h2><p class="empty">No sprint items in this project.</p></section>`;
             }
 
             const byIteration = new Map<string, ScopedWorkItem[]>();
@@ -550,7 +735,7 @@ document.addEventListener('keydown', event => {
 </section>`;
             }).join('');
 
-            return `<section class="scope"><h2 class="scope-title">${this.esc(scopeLabel(scope))} <span class="scope-count">${scopedItems.length}</span></h2>${sprintBlocks}</section>`;
+            return `<section class="scope"><h2 class="scope-title">${this.esc(scopeLabel(scope))} <span class="scope-count">${scopedItems.length}</span><button class="btn btn-primary btn-small scope-new-item" data-action="quick-create" data-organization="${this.escAttr(scope.organization)}" data-project="${this.escAttr(scope.project)}">+ New Item</button></h2>${sprintBlocks}</section>`;
         }).join('');
     }
 
@@ -575,12 +760,13 @@ document.addEventListener('keydown', event => {
         const title = (fields['System.Title'] as string | undefined) ?? '(no title)';
         const state = (fields['System.State'] as string | undefined) ?? '';
         const assignee = identityName(fields['System.AssignedTo']) ?? 'Unassigned';
+        const iteration = (fields['System.IterationPath'] as string | undefined) ?? '';
         return `<div class="sprint-task">
   <div class="title-line">
     <span class="type ${typeClass(wiType)}">${this.esc(wiType)}</span>
     <span class="id">#${id}</span>
     <button class="btn-link" data-action="open-work-item" data-id="${id}" data-organization="${this.escAttr(item.scope.organization)}" data-project="${this.escAttr(item.scope.project)}"><span class="title">${this.esc(title)}</span></button>
-    <span class="meta">· ${this.esc(assignee)}</span>
+    ${this.buildEditableMetaLink('edit-assignee', id, item.scope, this.esc(assignee), '· ')}${this.buildEditableMetaLink('edit-iteration', id, item.scope, this.iterationMetaLabel(iteration), ' · ')}
   </div>
   ${this.buildStateControl(item, state)}
 </div>`;
@@ -640,6 +826,25 @@ document.addEventListener('keydown', event => {
             .filter(lane => lane.parent || lane.cards.length > 0);
     }
 
+    /**
+     * Renders a small clickable meta link that triggers an inline edit action.
+     * @param action  The `data-action` value, e.g. `'edit-assignee'`.
+     * @param id      The work item id.
+     * @param scope   The work item's project scope.
+     * @param label   The display text (already HTML-escaped by the caller).
+     * @param prefix  Optional prefix text (e.g. `'· '`) shown before the label.
+     */
+    private buildEditableMetaLink(
+        action: string,
+        id: number,
+        scope: ProjectScope,
+        label: string,
+        prefix: string = ''
+    ): string {
+        const titleAttr = action === 'edit-assignee' ? 'Edit assignee' : 'Edit iteration';
+        return `<button class="btn-link meta-edit" data-action="${action}" data-id="${id}" data-organization="${this.escAttr(scope.organization)}" data-project="${this.escAttr(scope.project)}" title="${titleAttr}">${prefix}${label}</button>`;
+    }
+
     private buildWorkItemRow(item: ScopedWorkItem, depth: number, hasChildren: boolean): string {
         const fields = item.workItem.fields ?? {};
         const id = item.workItem.id ?? 0;
@@ -658,7 +863,7 @@ document.addEventListener('keydown', event => {
     <span class="type ${typeClass(wiType)}">${this.esc(wiType)}</span>
     <span class="id">#${id}</span>
     <button class="btn-link" data-action="open-work-item" data-id="${id}" data-organization="${this.escAttr(item.scope.organization)}" data-project="${this.escAttr(item.scope.project)}"><span class="title">${this.esc(title)}</span></button>
-    <span class="meta">· ${this.esc(assignee)}${iteration ? ` · ${this.esc(iterationLabel(iteration))}` : ''}</span>
+    ${this.buildEditableMetaLink('edit-assignee', id, item.scope, this.esc(assignee), '· ')}${this.buildEditableMetaLink('edit-iteration', id, item.scope, this.iterationMetaLabel(iteration), ' · ')}
   </div>
   ${this.buildStateControl(item, state)}
 </div>`;
@@ -670,19 +875,24 @@ document.addEventListener('keydown', event => {
         const wiType = (fields['System.WorkItemType'] as string | undefined) ?? 'Work Item';
         const title = (fields['System.Title'] as string | undefined) ?? '(no title)';
         const state = (fields['System.State'] as string | undefined) ?? '';
-        const assignee = identityName(fields['System.AssignedTo']) ?? 'Unassigned';
+                const assignee = identityName(fields['System.AssignedTo']) ?? 'Unassigned';
+                const iteration = (fields['System.IterationPath'] as string | undefined) ?? '';
         return `<article class="card">
   <div class="card-title">
     <span class="type ${typeClass(wiType)}">${this.esc(wiType)}</span>
     <span class="id">#${id}</span>
     <button class="btn-link" data-action="open-work-item" data-id="${id}" data-organization="${this.escAttr(item.scope.organization)}" data-project="${this.escAttr(item.scope.project)}"><span class="title">${this.esc(title)}</span></button>
   </div>
-  <div class="meta">${this.esc(assignee)}</div>
+    ${this.buildEditableMetaLink('edit-assignee', id, item.scope, this.esc(assignee))}${this.buildEditableMetaLink('edit-iteration', id, item.scope, this.iterationMetaLabel(iteration), ' · ')}
   <div class="card-footer">
     ${this.buildStateControl(item, state)}
   </div>
 </article>`;
     }
+
+        private iterationMetaLabel(iteration: string): string {
+                return this.esc(iteration ? iterationLabel(iteration) : 'No iteration');
+        }
 
     private buildStateControl(item: ScopedWorkItem, state: string): string {
         const id = item.workItem.id ?? 0;
