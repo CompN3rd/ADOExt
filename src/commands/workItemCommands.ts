@@ -1,10 +1,11 @@
 import * as vscode from 'vscode';
 import type { WorkItemNode } from '../providers/workItemProvider';
-import type { AdoClient, WorkItem } from '../api/adoClient';
+import type { AdoClient, WorkItem, SavedQuery, ClassificationPath } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
 import { WorkItemDetailsPanel } from '../views/workItemDetailsPanel';
 import { parseAdoRemoteUrl } from '../utils/repoContext';
 import { showErrorMessage, showInformationMessage, showWarningMessage } from '../utils/notifications';
+import { resolveProjectScopes } from '../providers/projectScopes';
 
 /**
  * Show the work item details webview panel.
@@ -117,6 +118,260 @@ export async function changeWorkItemState(
 }
 
 /**
+ * Let the user browse saved ADO queries and open the results in the
+ * Work Items tree (by displaying a quick-pick list of the work items).
+ */
+export async function openSavedQuery(
+    client: AdoClient,
+    config: ConfigManager
+): Promise<void> {
+    const scopes = await resolveProjectScopes(client, config);
+    if (scopes.length === 0) {
+        showWarningMessage('Please configure your organization and project first.');
+        return;
+    }
+
+    let scope = scopes[0];
+    if (scopes.length > 1) {
+        const scopeItems = scopes.map(s => ({
+            label: s.project,
+            description: s.organization,
+            scope: s
+        }));
+        const picked = await vscode.window.showQuickPick(scopeItems, {
+            placeHolder: 'Select a project to browse saved queries'
+        });
+        if (!picked) {
+            return;
+        }
+        scope = picked.scope;
+    }
+
+    const { project, organization } = scope;
+
+    let queries: SavedQuery[];
+    try {
+        queries = await vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Notification, title: 'Loading saved queries…', cancellable: false },
+            () => client.getSavedQueries(project, organization)
+        );
+    } catch (err) {
+        showErrorMessage(`Failed to load saved queries: ${err}`);
+        return;
+    }
+
+    if (queries.length === 0) {
+        showInformationMessage('No saved queries found for this project.');
+        return;
+    }
+
+    const queryItems = queries.map(query => ({
+        label: query.name,
+        description: query.path.replace(/\\/g, ' › '),
+        query
+    }));
+
+    const selectedQuery = await vscode.window.showQuickPick(queryItems, {
+        placeHolder: 'Select a saved query to run',
+        matchOnDescription: true
+    });
+    if (!selectedQuery) {
+        return;
+    }
+
+    let workItems;
+    try {
+        workItems = await vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Notification, title: `Running "${selectedQuery.query.name}"…`, cancellable: false },
+            () => client.getWorkItemsBySavedQuery(project, selectedQuery.query.id, organization)
+        );
+    } catch (err) {
+        showErrorMessage(`Failed to run query: ${err}`);
+        return;
+    }
+
+    if (workItems.length === 0) {
+        showInformationMessage(`Query "${selectedQuery.query.name}" returned no results.`);
+        return;
+    }
+
+    const resultItems = workItems.map(workItem => {
+        const id = workItem.id ?? 0;
+        const title = (workItem.fields?.['System.Title'] as string | undefined) ?? '(no title)';
+        const workItemType = (workItem.fields?.['System.WorkItemType'] as string | undefined) ?? 'Work Item';
+        const state = (workItem.fields?.['System.State'] as string | undefined) ?? '';
+        return {
+            label: `#${id} ${title}`,
+            description: `${workItemType} · ${state}`,
+            workItem
+        };
+    });
+
+    const resultPick = await vscode.window.showQuickPick(resultItems, {
+        placeHolder: `${workItems.length} result(s) — select to open details`,
+        matchOnDescription: true
+    });
+    if (!resultPick) {
+        return;
+    }
+
+    await WorkItemDetailsPanel.show(client, config, resultPick.workItem, { organization, project });
+}
+
+/**
+ * Prompt the user to pick a classification path (area or iteration) using
+ * a discoverable quick-pick populated from ADO.
+ * Returns the selected path string, or undefined if cancelled.
+ */
+async function pickClassificationPath(
+    paths: ClassificationPath[],
+    placeHolder: string
+): Promise<string | undefined> {
+    if (paths.length === 0) {
+        return vscode.window.showInputBox({ prompt: placeHolder });
+    }
+
+    const items = paths.map(path => ({
+        label: path.label,
+        description: path.path,
+        path: path.path
+    }));
+
+    const picked = await vscode.window.showQuickPick(items, {
+        placeHolder,
+        matchOnDescription: true
+    });
+    return picked?.path;
+}
+
+/**
+ * Multi-step wizard to create a new work item. The user chooses:
+ *  1. Work item type (from the project's types or a preset template)
+ *  2. Title
+ *  3. (Optional) Area path – picked from a discoverable tree
+ *  4. (Optional) Iteration path – picked from a discoverable tree
+ */
+export async function createWorkItem(
+    client: AdoClient,
+    config: ConfigManager
+): Promise<boolean> {
+    const scopes = await resolveProjectScopes(client, config);
+    if (scopes.length === 0) {
+        showWarningMessage('Please configure your organization and project first.');
+        return false;
+    }
+
+    let scope = scopes[0];
+    if (scopes.length > 1) {
+        const scopeItems = scopes.map(s => ({
+            label: s.project,
+            description: s.organization,
+            scope: s
+        }));
+        const picked = await vscode.window.showQuickPick(scopeItems, {
+            placeHolder: 'Select a project for the new work item'
+        });
+        if (!picked) {
+            return false;
+        }
+        scope = picked.scope;
+    }
+
+    const { project, organization } = scope;
+
+    let workItemTypes: string[] = [];
+    try {
+        const types = await client.getWorkItemTypes(project, organization);
+        workItemTypes = types.map(type => type.name ?? '').filter(Boolean);
+    } catch {
+        // If fetching types fails, fall back to a small preset list.
+    }
+
+    const presetTemplates: Record<string, Record<string, unknown>> = {
+        Bug: { 'Microsoft.VSTS.TCM.ReproSteps': '' },
+        Task: { 'Microsoft.VSTS.Scheduling.RemainingWork': '' },
+        'User Story': { 'Microsoft.VSTS.Common.AcceptanceCriteria': '' },
+        Feature: {}
+    };
+
+    const typePickItems: vscode.QuickPickItem[] = workItemTypes.length > 0
+        ? workItemTypes.map(type => ({
+            label: type,
+            description: presetTemplates[type] !== undefined ? '$(template) has preset fields' : undefined
+        }))
+        : Object.keys(presetTemplates).map(type => ({ label: type, description: '$(template) preset' }));
+
+    const typePick = await vscode.window.showQuickPick(typePickItems, {
+        placeHolder: 'Select work item type'
+    });
+    if (!typePick) {
+        return false;
+    }
+    const workItemType = typePick.label;
+
+    const title = await vscode.window.showInputBox({
+        prompt: `Enter title for the new ${workItemType}`,
+        placeHolder: 'Work item title'
+    });
+    if (!title?.trim()) {
+        return false;
+    }
+
+    let areaPaths: ClassificationPath[] = [];
+    try {
+        areaPaths = await client.getAreaPaths(project, organization);
+    } catch {
+        // Non-fatal: fall back to free-text.
+    }
+
+    const areaPath = await pickClassificationPath(
+        areaPaths,
+        'Select area path (press Escape to skip)'
+    );
+
+    let iterationPaths: ClassificationPath[] = [];
+    try {
+        iterationPaths = await client.getIterationPaths(project, organization);
+    } catch {
+        // Non-fatal: fall back to free-text.
+    }
+
+    const iterationPath = await pickClassificationPath(
+        iterationPaths,
+        'Select iteration path (press Escape to skip)'
+    );
+
+    const fields: Record<string, unknown> = {};
+
+    const presetFields = presetTemplates[workItemType] ?? {};
+    for (const [fieldRef, defaultValue] of Object.entries(presetFields)) {
+        if (defaultValue !== undefined) {
+            fields[fieldRef] = defaultValue;
+        }
+    }
+
+    if (areaPath) {
+        fields['System.AreaPath'] = areaPath;
+    }
+    if (iterationPath) {
+        fields['System.IterationPath'] = iterationPath;
+    }
+
+    try {
+        const newItem = await vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Notification, title: `Creating ${workItemType}…`, cancellable: false },
+            () => client.createWorkItem(project, title.trim(), workItemType, fields, organization)
+        );
+        const newId = newItem.id ?? 0;
+        showInformationMessage(`Created ${workItemType} #${newId}: ${title.trim()}`);
+        return true;
+    } catch (err) {
+        showErrorMessage(`Failed to create work item: ${err}`);
+        return false;
+    }
+}
+
+/**
  * Build a predictable Git branch name from a work item ID and title.
  * Pattern: `wi/{id}-{sanitized-title}` where the title is lowercased,
  * non-alphanumeric characters are replaced by `-`, and the result is
@@ -133,14 +388,14 @@ export function buildWorkItemBranchName(id: number, title: string): string {
 
 /**
  * Start working on a work item by creating or checking out a branch whose
- * name is derived from the work item ID and title.  Reuses the VS Code
+ * name is derived from the work item ID and title. Reuses the VS Code
  * built-in Git extension API so that all repository management stays inside
  * the standard Git tooling.
  *
- * @param workItem  The ADO work item to start working on.
- * @param organization  Optional ADO organization used to narrow candidate
+ * @param workItem The ADO work item to start working on.
+ * @param organization Optional ADO organization used to narrow candidate
  * repositories to those whose remotes match the work item's scope.
- * @param project       Optional ADO project used alongside organization when
+ * @param project Optional ADO project used alongside organization when
  * selecting the most likely repository in a multi-repo workspace.
  */
 export async function startWorkingOnWorkItem(
@@ -198,11 +453,10 @@ export async function startWorkingOnWorkItem(
         repo = picked.repo;
     }
 
-    // Let the user confirm or adjust the branch name before creating it.
     const confirmedName = await vscode.window.showInputBox({
         prompt: `Branch name for work item #${id}`,
         value: suggestedName,
-        validateInput: v => (v.trim() ? undefined : 'Branch name must not be empty')
+        validateInput: value => (value.trim() ? undefined : 'Branch name must not be empty')
     });
     if (!confirmedName) { return; }
     const branchName = confirmedName.trim();
@@ -214,11 +468,9 @@ export async function startWorkingOnWorkItem(
         },
         async () => {
             try {
-                // Attempt to create a new local branch and check it out.
                 await repo.createBranch(branchName, true);
                 showInformationMessage(`Created and checked out branch: ${branchName}`);
             } catch (createBranchError) {
-                // Branch likely already exists — try checking it out instead.
                 try {
                     await repo.checkout(branchName);
                     showInformationMessage(`Checked out existing branch: ${branchName}`);
@@ -231,10 +483,6 @@ export async function startWorkingOnWorkItem(
         }
     );
 }
-
-// ---------------------------------------------------------------------------
-// Minimal VS Code Git extension API types
-// ---------------------------------------------------------------------------
 
 interface GitExtension {
     getAPI(version: 1): GitAPI;

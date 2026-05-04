@@ -3,12 +3,14 @@ import type { IWorkItemTrackingApi } from 'azure-devops-node-api/WorkItemTrackin
 import type { IGitApi } from 'azure-devops-node-api/GitApi';
 import type { ICoreApi } from 'azure-devops-node-api/CoreApi';
 import type { IPolicyApi } from 'azure-devops-node-api/PolicyApi';
-import { CommentExpandOptions, WorkItemExpand } from 'azure-devops-node-api/interfaces/WorkItemTrackingInterfaces';
+import { CommentExpandOptions, QueryExpand, TreeStructureGroup, WorkItemExpand } from 'azure-devops-node-api/interfaces/WorkItemTrackingInterfaces';
 import { GitVersionType, VersionControlChangeType, GitStatusState, PullRequestAsyncStatus, PullRequestMergeFailureType } from 'azure-devops-node-api/interfaces/GitInterfaces';
 import { Operation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
 import type {
     WorkItem,
     WorkItemType,
+    WorkItemClassificationNode,
+    QueryHierarchyItem,
     Comment as WorkItemComment,
     CommentCreate,
     WorkItemReference
@@ -32,6 +34,8 @@ import { PolicyEvaluationStatus } from 'azure-devops-node-api/interfaces/PolicyI
 export type {
     WorkItem,
     WorkItemType,
+    WorkItemClassificationNode,
+    QueryHierarchyItem,
     WorkItemComment,
     GitPullRequest,
     GitPullRequestCommentThread,
@@ -43,6 +47,21 @@ export type {
     PolicyEvaluationRecord
 };
 export { GitStatusState, PolicyEvaluationStatus, PullRequestAsyncStatus, PullRequestMergeFailureType };
+
+/** A flattened representation of a saved query (non-folder). */
+export interface SavedQuery {
+    id: string;
+    name: string;
+    path: string;
+}
+
+/** A flattened path for an area or iteration node. */
+export interface ClassificationPath {
+    /** Full path including project root, e.g. "MyProject\\Iteration 1". */
+    path: string;
+    /** The display label (last segment of the path). */
+    label: string;
+}
 
 export interface PullRequestFileDiff {
     path: string;
@@ -421,7 +440,8 @@ export class AdoClient {
         organization?: string
     ): Promise<WorkItemType[]> {
         const witApi: IWorkItemTrackingApi = await this.getConnectionFor(organization).getWorkItemTrackingApi();
-        return (await witApi.getWorkItemTypes(project)) ?? [];
+        const types = await witApi.getWorkItemTypes(project);
+        return (types ?? []).filter((type): type is WorkItemType => type !== null && !type.isDisabled);
     }
 
     async getWorkItemTypeStates(
@@ -779,6 +799,98 @@ export class AdoClient {
         const witApi: IWorkItemTrackingApi = await this.getConnectionFor(organization).getWorkItemTrackingApi();
         const request: CommentCreate = { text };
         return witApi.addComment(request, project, workItemId);
+    }
+
+    /**
+     * Fetch the flat list of saved queries (non-folder items) for a project.
+     * The top-level query folders are fetched with a depth of 2 to capture
+     * immediate children; deeper nesting is not traversed.
+     */
+    async getSavedQueries(project: string, organization?: string): Promise<SavedQuery[]> {
+        const witApi: IWorkItemTrackingApi = await this.getConnectionFor(organization).getWorkItemTrackingApi();
+        const roots = await witApi.getQueries(project, QueryExpand.None, 2, false);
+        const queries: SavedQuery[] = [];
+        const flatten = (items: QueryHierarchyItem[] | undefined): void => {
+            for (const item of items ?? []) {
+                if (item.isFolder) {
+                    flatten(item.children);
+                } else if (item.id && item.name && item.path) {
+                    queries.push({ id: item.id, name: item.name, path: item.path });
+                }
+            }
+        };
+        flatten(roots);
+        return queries;
+    }
+
+    /**
+     * Run a saved query by its ID and return the matching work items.
+     */
+    async getWorkItemsBySavedQuery(project: string, queryId: string, organization?: string): Promise<WorkItem[]> {
+        const witApi: IWorkItemTrackingApi = await this.getConnectionFor(organization).getWorkItemTrackingApi();
+        const result = await witApi.queryById(queryId, { project }, false, WORK_ITEM_QUERY_LIMIT);
+        if (!result.workItems || result.workItems.length === 0) {
+            return [];
+        }
+
+        const ids = result.workItems
+            .slice(0, WORK_ITEM_QUERY_LIMIT)
+            .flatMap((wi: WorkItemReference) => wi.id !== undefined ? [wi.id] : []);
+
+        if (ids.length === 0) {
+            return [];
+        }
+
+        const workItems = await witApi.getWorkItems(
+            ids,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            project
+        );
+        return (workItems ?? []).filter((wi): wi is WorkItem => wi !== null);
+    }
+
+    /**
+     * Fetch all area paths for a project as a flat list.
+     */
+    async getAreaPaths(project: string, organization?: string): Promise<ClassificationPath[]> {
+        return this.getClassificationPaths(project, TreeStructureGroup.Areas, organization);
+    }
+
+    /**
+     * Fetch all iteration paths for a project as a flat list.
+     */
+    async getIterationPaths(project: string, organization?: string): Promise<ClassificationPath[]> {
+        return this.getClassificationPaths(project, TreeStructureGroup.Iterations, organization);
+    }
+
+    private async getClassificationPaths(
+        project: string,
+        structureGroup: TreeStructureGroup,
+        organization?: string
+    ): Promise<ClassificationPath[]> {
+        const witApi: IWorkItemTrackingApi = await this.getConnectionFor(organization).getWorkItemTrackingApi();
+        const root = await witApi.getClassificationNode(project, structureGroup, undefined, 10);
+        const paths: ClassificationPath[] = [];
+        const flatten = (node: WorkItemClassificationNode, parentPath: string): void => {
+            const nodePath = parentPath
+                ? `${parentPath}\\${node.name ?? ''}`
+                : (node.name ?? '');
+            const segments = nodePath.split('\\').filter(Boolean);
+            paths.push({
+                path: nodePath,
+                label: segments[segments.length - 1] ?? nodePath
+            });
+            for (const child of node.children ?? []) {
+                flatten(child, nodePath);
+            }
+        };
+        if (root) {
+            flatten(root, '');
+        }
+        return paths;
     }
 
     /**
