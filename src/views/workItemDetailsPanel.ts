@@ -226,15 +226,6 @@ export class WorkItemDetailsPanel {
                     org,
                     project
                 );
-            } else if (msg.type === 'openLinkedItem' && msg.url) {
-                // Only open https://dev.azure.com/ or https://*.visualstudio.com/ URLs
-                const safeUrl = msg.url;
-                if (
-                    safeUrl.startsWith('https://dev.azure.com/') ||
-                    /^https:\/\/[^/]+\.visualstudio\.com\//.test(safeUrl)
-                ) {
-                    void vscode.env.openExternal(vscode.Uri.parse(safeUrl));
-                }
             }
         } catch (err) {
             showErrorMessage(`${action}: ${this._formatError(err)}`);
