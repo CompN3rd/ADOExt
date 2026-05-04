@@ -2,8 +2,9 @@ import * as azdev from 'azure-devops-node-api';
 import type { IWorkItemTrackingApi } from 'azure-devops-node-api/WorkItemTrackingApi';
 import type { IGitApi } from 'azure-devops-node-api/GitApi';
 import type { ICoreApi } from 'azure-devops-node-api/CoreApi';
+import type { IPolicyApi } from 'azure-devops-node-api/PolicyApi';
 import { CommentExpandOptions, WorkItemExpand } from 'azure-devops-node-api/interfaces/WorkItemTrackingInterfaces';
-import { GitVersionType, VersionControlChangeType } from 'azure-devops-node-api/interfaces/GitInterfaces';
+import { GitVersionType, VersionControlChangeType, GitStatusState } from 'azure-devops-node-api/interfaces/GitInterfaces';
 import { Operation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
 import type {
     WorkItem,
@@ -16,6 +17,7 @@ import type {
     GitPullRequest,
     GitPullRequestCommentThread,
     GitPullRequestChange,
+    GitPullRequestStatus,
     FileDiff,
     GitPullRequestSearchCriteria,
     Comment,
@@ -24,6 +26,8 @@ import type {
 } from 'azure-devops-node-api/interfaces/GitInterfaces';
 import type { TeamProject } from 'azure-devops-node-api/interfaces/CoreInterfaces';
 import type { JsonPatchDocument, JsonPatchOperation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
+import type { PolicyEvaluationRecord } from 'azure-devops-node-api/interfaces/PolicyInterfaces';
+import { PolicyEvaluationStatus } from 'azure-devops-node-api/interfaces/PolicyInterfaces';
 
 export type {
     WorkItem,
@@ -31,11 +35,14 @@ export type {
     WorkItemComment,
     GitPullRequest,
     GitPullRequestCommentThread,
+    GitPullRequestStatus,
     Comment,
     CommentThreadStatus,
     IdentityRefWithVote,
-    TeamProject
+    TeamProject,
+    PolicyEvaluationRecord
 };
+export { GitStatusState, PolicyEvaluationStatus };
 
 export interface PullRequestFileDiff {
     path: string;
@@ -690,6 +697,37 @@ export class AdoClient {
         const witApi: IWorkItemTrackingApi = await this.getConnectionFor(organization).getWorkItemTrackingApi();
         const request: CommentCreate = { text };
         return witApi.addComment(request, project, workItemId);
+    }
+
+    /**
+     * Fetch the build/check statuses posted on a pull request.
+     */
+    async getPullRequestStatuses(
+        project: string,
+        repositoryId: string,
+        pullRequestId: number,
+        organization?: string
+    ): Promise<GitPullRequestStatus[]> {
+        const gitApi: IGitApi = await this.getConnectionFor(organization).getGitApi();
+        const statuses = await gitApi.getPullRequestStatuses(repositoryId, pullRequestId, project);
+        return statuses ?? [];
+    }
+
+    /**
+     * Fetch the policy evaluation records for a pull request.
+     * The artifact ID is built from the project GUID and pull request ID using the
+     * format `vstfs:///CodeReview/CodeReviewId/{projectId}/{pullRequestId}`.
+     */
+    async getPullRequestPolicyEvaluations(
+        project: string,
+        pullRequestId: number,
+        projectId: string,
+        organization?: string
+    ): Promise<PolicyEvaluationRecord[]> {
+        const policyApi: IPolicyApi = await this.getConnectionFor(organization).getPolicyApi();
+        const artifactId = `vstfs:///CodeReview/CodeReviewId/${encodeURIComponent(projectId)}/${pullRequestId}`;
+        const evaluations = await policyApi.getPolicyEvaluations(project, artifactId, false);
+        return evaluations ?? [];
     }
 
     /**

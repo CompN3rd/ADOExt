@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
-import type { AdoClient, GitPullRequest, GitPullRequestCommentThread, Comment } from '../api/adoClient';
+import type { AdoClient, GitPullRequest, GitPullRequestCommentThread, Comment, GitPullRequestStatus, PolicyEvaluationRecord } from '../api/adoClient';
+import { GitStatusState, PolicyEvaluationStatus } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
 import {
     resolveProjectScopes,
@@ -126,6 +127,161 @@ export class PullRequestCommentNode extends vscode.TreeItem {
     }
 }
 
+export class PullRequestChecksNode extends vscode.TreeItem {
+    public readonly organization?: string;
+    public readonly project?: string;
+
+    constructor(
+        statuses: GitPullRequestStatus[],
+        policies: PolicyEvaluationRecord[],
+        public readonly scope?: ProjectScope
+    ) {
+        const { icon, label, description } = PullRequestChecksNode.summarize(statuses, policies);
+        super(label, vscode.TreeItemCollapsibleState.Collapsed);
+        this.description = description;
+        this.iconPath = icon;
+        this.contextValue = 'prChecks';
+        this.organization = scope?.organization;
+        this.project = scope?.project;
+        this._statusChildren = PullRequestChecksNode.buildChildren(statuses, policies);
+    }
+
+    private readonly _statusChildren: vscode.TreeItem[];
+
+    getChildren(): vscode.TreeItem[] {
+        return this._statusChildren;
+    }
+
+    private static summarize(
+        statuses: GitPullRequestStatus[],
+        policies: PolicyEvaluationRecord[]
+    ): { icon: vscode.ThemeIcon; label: string; description: string } {
+        const totalChecks = statuses.length + policies.length;
+        if (totalChecks === 0) {
+            return {
+                icon: new vscode.ThemeIcon('circle-outline'),
+                label: 'Checks',
+                description: 'No checks'
+            };
+        }
+
+        const failed = statuses.filter(s =>
+            s.state === GitStatusState.Failed || s.state === GitStatusState.Error
+        ).length + policies.filter(p =>
+            p.status === PolicyEvaluationStatus.Rejected || p.status === PolicyEvaluationStatus.Broken
+        ).length;
+
+        const pending = statuses.filter(s =>
+            s.state === GitStatusState.Pending || s.state === GitStatusState.NotSet
+        ).length + policies.filter(p =>
+            p.status === PolicyEvaluationStatus.Queued || p.status === PolicyEvaluationStatus.Running
+        ).length;
+
+        if (failed > 0) {
+            return {
+                icon: new vscode.ThemeIcon('error', new vscode.ThemeColor('charts.red')),
+                label: 'Checks',
+                description: `${failed} failed`
+            };
+        }
+        if (pending > 0) {
+            return {
+                icon: new vscode.ThemeIcon('loading~spin', new vscode.ThemeColor('charts.yellow')),
+                label: 'Checks',
+                description: `${pending} pending`
+            };
+        }
+        return {
+            icon: new vscode.ThemeIcon('pass', new vscode.ThemeColor('charts.green')),
+            label: 'Checks',
+            description: `${totalChecks} passed`
+        };
+    }
+
+    private static buildChildren(
+        statuses: GitPullRequestStatus[],
+        policies: PolicyEvaluationRecord[]
+    ): vscode.TreeItem[] {
+        const children: vscode.TreeItem[] = [];
+
+        for (const status of statuses) {
+            const name = [status.context?.genre, status.context?.name].filter(Boolean).join('/') || 'Check';
+            const node = new vscode.TreeItem(name, vscode.TreeItemCollapsibleState.None);
+            node.description = status.description ?? statusStateLabel(status.state);
+            node.iconPath = statusStateIcon(status.state);
+            node.tooltip = status.description ?? name;
+            children.push(node);
+        }
+
+        for (const policy of policies) {
+            const name = policy.configuration?.type?.displayName ?? 'Policy';
+            const node = new vscode.TreeItem(name, vscode.TreeItemCollapsibleState.None);
+            node.description = policyStatusLabel(policy.status);
+            node.iconPath = policyStatusIcon(policy.status);
+            node.tooltip = name;
+            children.push(node);
+        }
+
+        return children;
+    }
+}
+
+function statusStateLabel(state?: GitStatusState): string {
+    switch (state) {
+        case GitStatusState.Succeeded: return 'Succeeded';
+        case GitStatusState.Failed: return 'Failed';
+        case GitStatusState.Error: return 'Error';
+        case GitStatusState.Pending: return 'Pending';
+        case GitStatusState.NotApplicable: return 'Not applicable';
+        default: return 'Unknown';
+    }
+}
+
+function statusStateIcon(state?: GitStatusState): vscode.ThemeIcon {
+    switch (state) {
+        case GitStatusState.Succeeded:
+            return new vscode.ThemeIcon('pass', new vscode.ThemeColor('charts.green'));
+        case GitStatusState.Failed:
+        case GitStatusState.Error:
+            return new vscode.ThemeIcon('error', new vscode.ThemeColor('charts.red'));
+        case GitStatusState.Pending:
+            return new vscode.ThemeIcon('loading~spin', new vscode.ThemeColor('charts.yellow'));
+        case GitStatusState.NotApplicable:
+            return new vscode.ThemeIcon('circle-slash');
+        default:
+            return new vscode.ThemeIcon('circle-outline');
+    }
+}
+
+function policyStatusLabel(status?: PolicyEvaluationStatus): string {
+    switch (status) {
+        case PolicyEvaluationStatus.Approved: return 'Approved';
+        case PolicyEvaluationStatus.Rejected: return 'Rejected';
+        case PolicyEvaluationStatus.Running: return 'Running';
+        case PolicyEvaluationStatus.Queued: return 'Queued';
+        case PolicyEvaluationStatus.Broken: return 'Broken';
+        case PolicyEvaluationStatus.NotApplicable: return 'Not applicable';
+        default: return 'Unknown';
+    }
+}
+
+function policyStatusIcon(status?: PolicyEvaluationStatus): vscode.ThemeIcon {
+    switch (status) {
+        case PolicyEvaluationStatus.Approved:
+            return new vscode.ThemeIcon('pass', new vscode.ThemeColor('charts.green'));
+        case PolicyEvaluationStatus.Rejected:
+        case PolicyEvaluationStatus.Broken:
+            return new vscode.ThemeIcon('error', new vscode.ThemeColor('charts.red'));
+        case PolicyEvaluationStatus.Running:
+        case PolicyEvaluationStatus.Queued:
+            return new vscode.ThemeIcon('loading~spin', new vscode.ThemeColor('charts.yellow'));
+        case PolicyEvaluationStatus.NotApplicable:
+            return new vscode.ThemeIcon('circle-slash');
+        default:
+            return new vscode.ThemeIcon('circle-outline');
+    }
+}
+
 function prIcon(pr: GitPullRequest): vscode.ThemeIcon {
     if (pr.isDraft) {
         return new vscode.ThemeIcon('git-pull-request-draft', new vscode.ThemeColor('charts.gray'));
@@ -137,6 +293,7 @@ type PullRequestTreeNode =
     | PullRequestScopeGroup
     | PullRequestGroup
     | PullRequestNode
+    | PullRequestChecksNode
     | PullRequestThreadNode
     | PullRequestCommentNode
     | vscode.TreeItem;
@@ -171,7 +328,11 @@ export class PullRequestProvider implements vscode.TreeDataProvider<PullRequestT
         }
 
         if (element instanceof PullRequestNode) {
-            return this.loadThreads(element.pr, element.scope);
+            return this.loadPrChildren(element.pr, element.scope);
+        }
+
+        if (element instanceof PullRequestChecksNode) {
+            return element.getChildren();
         }
 
         if (element instanceof PullRequestThreadNode) {
@@ -242,6 +403,52 @@ export class PullRequestProvider implements vscode.TreeDataProvider<PullRequestT
             return prs.map(pr => ({ pr, scope }));
         });
         return results.flat();
+    }
+
+    private async loadPrChildren(
+        pr: GitPullRequest,
+        scope?: ProjectScope
+    ): Promise<PullRequestTreeNode[]> {
+        const repoId = pr.repository?.id ?? '';
+        const prId = pr.pullRequestId ?? 0;
+        const project = scope?.project ?? this.config.project;
+        const organization = scope?.organization ?? this.config.organization;
+
+        const [checksNode, threadNodes] = await Promise.all([
+            this.loadChecks(pr, project, organization, repoId, prId, scope),
+            this.loadThreads(pr, scope)
+        ]);
+
+        return [checksNode, ...threadNodes];
+    }
+
+    private async loadChecks(
+        pr: GitPullRequest,
+        project: string,
+        organization: string | undefined,
+        repoId: string,
+        prId: number,
+        scope?: ProjectScope
+    ): Promise<PullRequestChecksNode> {
+        let statuses: GitPullRequestStatus[] = [];
+        let policies: PolicyEvaluationRecord[] = [];
+
+        try {
+            statuses = await this.client.getPullRequestStatuses(project, repoId, prId, organization);
+        } catch {
+            // Statuses unavailable – continue with empty array
+        }
+
+        const projectId = pr.repository?.project?.id;
+        if (projectId) {
+            try {
+                policies = await this.client.getPullRequestPolicyEvaluations(project, prId, projectId, organization);
+            } catch {
+                // Policies unavailable – continue with empty array
+            }
+        }
+
+        return new PullRequestChecksNode(statuses, policies, scope);
     }
 
     private async loadThreads(
