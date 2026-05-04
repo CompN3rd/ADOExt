@@ -4,6 +4,32 @@ export const ALL_PROJECTS = '*';
 
 export type ProjectSelectionsByOrganization = Record<string, string[]>;
 
+export interface WorkItemQueryDescriptor {
+    id: string;
+    name: string;
+    filter: 'assigned' | 'created' | 'mentioned' | 'all';
+}
+
+export interface PullRequestQueryDescriptor {
+    id: string;
+    name: string;
+    filter: 'mine' | 'created' | 'assigned' | 'all';
+}
+
+export const DEFAULT_WORK_ITEM_QUERIES: readonly WorkItemQueryDescriptor[] = [
+    { id: 'assigned', name: 'Assigned to Me', filter: 'assigned' },
+    { id: 'created', name: 'Created by Me', filter: 'created' },
+    { id: 'mentioned', name: 'Mentioned in', filter: 'mentioned' },
+    { id: 'all', name: 'All Active', filter: 'all' },
+];
+
+export const DEFAULT_PR_QUERIES: readonly PullRequestQueryDescriptor[] = [
+    { id: 'mine', name: 'Mine (Created or Reviewing)', filter: 'mine' },
+    { id: 'created', name: 'Created by Me', filter: 'created' },
+    { id: 'assigned', name: 'Assigned to Me for Review', filter: 'assigned' },
+    { id: 'all', name: 'All Active', filter: 'all' },
+];
+
 /**
  * Centralises all reads and writes to the extension's VS Code configuration.
  * Settings are stored under the "adoext" namespace in workspace/user settings.
@@ -97,6 +123,76 @@ export class ConfigManager {
             'pullRequestFilter',
             'mine'
         );
+    }
+
+    // -------------------------------------------------------------------------
+    // Saved query presets
+    // -------------------------------------------------------------------------
+
+    get workItemQueries(): WorkItemQueryDescriptor[] {
+        return this.config.get<WorkItemQueryDescriptor[]>('workItemQueries', []);
+    }
+
+    async setWorkItemQueries(queries: WorkItemQueryDescriptor[]): Promise<void> {
+        await this.config.update('workItemQueries', queries, vscode.ConfigurationTarget.Global);
+    }
+
+    get pullRequestQueries(): PullRequestQueryDescriptor[] {
+        return this.config.get<PullRequestQueryDescriptor[]>('pullRequestQueries', []);
+    }
+
+    async setPullRequestQueries(queries: PullRequestQueryDescriptor[]): Promise<void> {
+        await this.config.update('pullRequestQueries', queries, vscode.ConfigurationTarget.Global);
+    }
+
+    get activeWorkItemQueryId(): string {
+        return this.config.get<string>('activeWorkItemQueryId', '');
+    }
+
+    async setActiveWorkItemQueryId(id: string): Promise<void> {
+        await this.config.update('activeWorkItemQueryId', id, vscode.ConfigurationTarget.Global);
+    }
+
+    get activePullRequestQueryId(): string {
+        return this.config.get<string>('activePullRequestQueryId', '');
+    }
+
+    async setActivePullRequestQueryId(id: string): Promise<void> {
+        await this.config.update('activePullRequestQueryId', id, vscode.ConfigurationTarget.Global);
+    }
+
+    /**
+     * Returns the active work item query descriptor, falling back to the legacy
+     * `adoext.workItemQuery` setting when no saved preset is selected.
+     */
+    get activeWorkItemQuery(): WorkItemQueryDescriptor {
+        const activeId = this.activeWorkItemQueryId;
+        if (activeId) {
+            const saved = this.workItemQueries.find(q => q.id === activeId);
+            if (saved) { return saved; }
+            const builtIn = DEFAULT_WORK_ITEM_QUERIES.find(q => q.id === activeId);
+            if (builtIn) { return { ...builtIn }; }
+        }
+        // Legacy fallback: honour the plain workItemQuery setting
+        const legacyFilter = this.workItemQuery;
+        return { ...(DEFAULT_WORK_ITEM_QUERIES.find(q => q.filter === legacyFilter) ?? DEFAULT_WORK_ITEM_QUERIES[0]) };
+    }
+
+    /**
+     * Returns the active pull request query descriptor, falling back to the
+     * legacy `adoext.pullRequestFilter` setting when no saved preset is selected.
+     */
+    get activePullRequestQuery(): PullRequestQueryDescriptor {
+        const activeId = this.activePullRequestQueryId;
+        if (activeId) {
+            const saved = this.pullRequestQueries.find(q => q.id === activeId);
+            if (saved) { return saved; }
+            const builtIn = DEFAULT_PR_QUERIES.find(q => q.id === activeId);
+            if (builtIn) { return { ...builtIn }; }
+        }
+        // Legacy fallback: honour the plain pullRequestFilter setting
+        const legacyFilter = this.pullRequestFilter;
+        return { ...(DEFAULT_PR_QUERIES.find(q => q.filter === legacyFilter) ?? DEFAULT_PR_QUERIES[0]) };
     }
 
     /** Whether to show a small toast when new comments appear on tracked PRs. */

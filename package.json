@@ -281,6 +281,30 @@
         "title": "Show Output",
         "category": "ADOExt",
         "icon": "$(output)"
+      },
+      {
+        "command": "adoext.selectWorkItemQuery",
+        "title": "Select Work Item Query",
+        "category": "ADOExt",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "adoext.saveWorkItemQuery",
+        "title": "Save Work Item Query Preset",
+        "category": "ADOExt",
+        "icon": "$(save)"
+      },
+      {
+        "command": "adoext.selectPullRequestQuery",
+        "title": "Select Pull Request Query",
+        "category": "ADOExt",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "adoext.savePullRequestQuery",
+        "title": "Save Pull Request Query Preset",
+        "category": "ADOExt",
+        "icon": "$(save)"
       }
     ],
     "menus": {
@@ -332,6 +356,26 @@
         },
         {
           "command": "adoext.refreshPullRequests",
+          "when": "view == adoext.pullRequests",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.selectWorkItemQuery",
+          "when": "view == adoext.workItems",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.saveWorkItemQuery",
+          "when": "view == adoext.workItems",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.selectPullRequestQuery",
+          "when": "view == adoext.pullRequests",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.savePullRequestQuery",
           "when": "view == adoext.pullRequests",
           "group": "navigation"
         }
@@ -526,6 +570,52 @@
           "default": 300,
           "minimum": 60,
           "description": "How often (in seconds) ADOExt polls tracked pull requests for new comments. Ignored when notifications are disabled."
+        },
+        "adoext.workItemQueries": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string", "description": "Unique identifier for the query preset." },
+              "name": { "type": "string", "description": "Display name for the query preset." },
+              "filter": {
+                "type": "string",
+                "enum": ["assigned", "created", "mentioned", "all"],
+                "description": "Which work items to fetch."
+              }
+            },
+            "required": ["id", "name", "filter"]
+          },
+          "description": "User-saved work item query presets. The built-in presets (assigned, created, mentioned, all) are always available."
+        },
+        "adoext.pullRequestQueries": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string", "description": "Unique identifier for the query preset." },
+              "name": { "type": "string", "description": "Display name for the query preset." },
+              "filter": {
+                "type": "string",
+                "enum": ["mine", "created", "assigned", "all"],
+                "description": "Which pull requests to fetch."
+              }
+            },
+            "required": ["id", "name", "filter"]
+          },
+          "description": "User-saved pull request query presets. The built-in presets (mine, created, assigned, all) are always available."
+        },
+        "adoext.activeWorkItemQueryId": {
+          "type": "string",
+          "default": "",
+          "description": "ID of the active work item query preset. Falls back to adoext.workItemQuery when not set."
+        },
+        "adoext.activePullRequestQueryId": {
+          "type": "string",
+          "default": "",
+          "description": "ID of the active pull request query preset. Falls back to adoext.pullRequestFilter when not set."
         }
       }
     }
