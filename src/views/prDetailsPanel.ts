@@ -94,27 +94,20 @@ export class PrDetailsPanel {
         const prId = pr.pullRequestId!;
         const project = this._project ?? config.project;
         const organization = this._organization ?? client.organization ?? config.organization;
-        let threads: GitPullRequestCommentThread[] = [];
-        let statuses: GitPullRequestStatus[] = [];
-        let policies: PolicyEvaluationRecord[] = [];
-        try {
-            threads = await client.getPullRequestThreads(project, repoId, prId, organization);
-        } catch {
-            // show panel anyway, threads will just be empty
-        }
-        try {
-            statuses = await client.getPullRequestStatuses(project, repoId, prId, organization);
-        } catch {
-            // statuses unavailable – show panel without them
-        }
         const projectId = pr.repository?.project?.id;
-        if (projectId) {
-            try {
-                policies = await client.getPullRequestPolicyEvaluations(project, prId, projectId, organization);
-            } catch {
-                // policies unavailable – show panel without them
-            }
-        }
+
+        const [threadsResult, statusesResult, policiesResult] = await Promise.allSettled([
+            client.getPullRequestThreads(project, repoId, prId, organization),
+            client.getPullRequestStatuses(project, repoId, prId, organization),
+            projectId
+                ? client.getPullRequestPolicyEvaluations(project, prId, projectId, organization)
+                : Promise.resolve([] as PolicyEvaluationRecord[])
+        ]);
+
+        const threads = threadsResult.status === 'fulfilled' ? threadsResult.value : [];
+        const statuses = statusesResult.status === 'fulfilled' ? statusesResult.value : [];
+        const policies = policiesResult.status === 'fulfilled' ? policiesResult.value : [];
+
         this._panel.webview.html = this._buildHtml(pr, threads, statuses, policies);
     }
 
@@ -447,7 +440,7 @@ document.querySelectorAll('[data-action="set-status"]').forEach(button => {
             rows.push(this._buildStatusRow('Merge bases', { cls: 'check-pending', label: 'Multiple detected' }));
         }
 
-        if (pr.mergeFailureType !== undefined || pr.mergeFailureMessage) {
+        if ((pr.mergeFailureType !== undefined && pr.mergeFailureType !== PullRequestMergeFailureType.None) || pr.mergeFailureMessage) {
             rows.push(this._buildStatusRow(
                 'Failure reason',
                 { cls: 'check-failure', label: this._mergeFailureLabel(pr.mergeFailureType, pr.mergeFailureMessage) }

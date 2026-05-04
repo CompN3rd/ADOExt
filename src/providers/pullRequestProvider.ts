@@ -376,7 +376,7 @@ function buildBranchStatusChildren(pr: GitPullRequest): vscode.TreeItem[] {
         items.push(mergeBases);
     }
 
-    if (pr.mergeFailureType !== undefined || pr.mergeFailureMessage) {
+    if ((pr.mergeFailureType !== undefined && pr.mergeFailureType !== PullRequestMergeFailureType.None) || pr.mergeFailureMessage) {
         const failureReason = pr.mergeFailureMessage ?? mergeFailureTypeLabel(pr.mergeFailureType) ?? 'Unknown';
         const failure = createLeafItem('Failure reason', failureReason || 'Unknown');
         failure.iconPath = new vscode.ThemeIcon('error', new vscode.ThemeColor('charts.red'));
@@ -582,23 +582,17 @@ export class PullRequestProvider implements vscode.TreeDataProvider<PullRequestT
         prId: number,
         scope?: ProjectScope
     ): Promise<PullRequestChecksNode> {
-        let statuses: GitPullRequestStatus[] = [];
-        let policies: PolicyEvaluationRecord[] = [];
-
-        try {
-            statuses = await this.client.getPullRequestStatuses(project, repoId, prId, organization);
-        } catch {
-            // Statuses unavailable – continue with empty array
-        }
-
         const projectId = pr.repository?.project?.id;
-        if (projectId) {
-            try {
-                policies = await this.client.getPullRequestPolicyEvaluations(project, prId, projectId, organization);
-            } catch {
-                // Policies unavailable – continue with empty array
-            }
-        }
+
+        const [statusesResult, policiesResult] = await Promise.allSettled([
+            this.client.getPullRequestStatuses(project, repoId, prId, organization),
+            projectId
+                ? this.client.getPullRequestPolicyEvaluations(project, prId, projectId, organization)
+                : Promise.resolve([] as PolicyEvaluationRecord[])
+        ]);
+
+        const statuses = statusesResult.status === 'fulfilled' ? statusesResult.value : [];
+        const policies = policiesResult.status === 'fulfilled' ? policiesResult.value : [];
 
         return new PullRequestChecksNode(statuses, policies, scope);
     }
