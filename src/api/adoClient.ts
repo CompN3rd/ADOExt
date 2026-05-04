@@ -4,7 +4,7 @@ import type { IGitApi } from 'azure-devops-node-api/GitApi';
 import type { ICoreApi } from 'azure-devops-node-api/CoreApi';
 import type { IPolicyApi } from 'azure-devops-node-api/PolicyApi';
 import { CommentExpandOptions, WorkItemExpand } from 'azure-devops-node-api/interfaces/WorkItemTrackingInterfaces';
-import { GitVersionType, VersionControlChangeType, GitStatusState } from 'azure-devops-node-api/interfaces/GitInterfaces';
+import { GitVersionType, VersionControlChangeType, GitStatusState, PullRequestAsyncStatus, PullRequestMergeFailureType } from 'azure-devops-node-api/interfaces/GitInterfaces';
 import { Operation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
 import type {
     WorkItem,
@@ -42,7 +42,7 @@ export type {
     TeamProject,
     PolicyEvaluationRecord
 };
-export { GitStatusState, PolicyEvaluationStatus };
+export { GitStatusState, PolicyEvaluationStatus, PullRequestAsyncStatus, PullRequestMergeFailureType };
 
 export interface PullRequestFileDiff {
     path: string;

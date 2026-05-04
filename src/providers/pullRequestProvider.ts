@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import type { AdoClient, GitPullRequest, GitPullRequestCommentThread, Comment, GitPullRequestStatus, PolicyEvaluationRecord } from '../api/adoClient';
-import { GitStatusState, PolicyEvaluationStatus } from '../api/adoClient';
+import { GitStatusState, PolicyEvaluationStatus, PullRequestAsyncStatus, PullRequestMergeFailureType } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
 import {
     resolveProjectScopes,
@@ -226,6 +226,32 @@ export class PullRequestChecksNode extends vscode.TreeItem {
     }
 }
 
+export class PullRequestBranchStatusNode extends vscode.TreeItem {
+    public readonly organization?: string;
+    public readonly project?: string;
+
+    constructor(
+        pr: GitPullRequest,
+        public readonly scope?: ProjectScope
+    ) {
+        const summary = summarizeBranchStatus(pr);
+        super('Branch Status', vscode.TreeItemCollapsibleState.Collapsed);
+        this.description = summary.description;
+        this.iconPath = summary.icon;
+        this.tooltip = summary.tooltip;
+        this.contextValue = 'prBranchStatus';
+        this.organization = scope?.organization;
+        this.project = scope?.project;
+        this._children = buildBranchStatusChildren(pr);
+    }
+
+    private readonly _children: vscode.TreeItem[];
+
+    getChildren(): vscode.TreeItem[] {
+        return this._children;
+    }
+}
+
 function statusStateLabel(state?: GitStatusState): string {
     switch (state) {
         case GitStatusState.Succeeded: return 'Succeeded';
@@ -282,6 +308,127 @@ function policyStatusIcon(status?: PolicyEvaluationStatus): vscode.ThemeIcon {
     }
 }
 
+function summarizeBranchStatus(pr: GitPullRequest): { icon: vscode.ThemeIcon; description: string; tooltip: string } {
+    if (pr.mergeStatus === PullRequestAsyncStatus.Conflicts) {
+        return {
+            icon: new vscode.ThemeIcon('warning', new vscode.ThemeColor('charts.red')),
+            description: 'Conflicts',
+            tooltip: branchStatusTooltip(pr, 'This pull request has merge conflicts.')
+        };
+    }
+
+    if (pr.mergeStatus === PullRequestAsyncStatus.Failure) {
+        return {
+            icon: new vscode.ThemeIcon('error', new vscode.ThemeColor('charts.red')),
+            description: 'Merge failed',
+            tooltip: branchStatusTooltip(pr, pr.mergeFailureMessage ?? mergeFailureTypeLabel(pr.mergeFailureType))
+        };
+    }
+
+    if (pr.mergeStatus === PullRequestAsyncStatus.RejectedByPolicy) {
+        return {
+            icon: new vscode.ThemeIcon('warning', new vscode.ThemeColor('charts.yellow')),
+            description: 'Blocked by policy',
+            tooltip: branchStatusTooltip(pr, 'This pull request cannot complete until policy requirements pass.')
+        };
+    }
+
+    if (pr.mergeStatus === PullRequestAsyncStatus.Queued) {
+        return {
+            icon: new vscode.ThemeIcon('loading~spin', new vscode.ThemeColor('charts.yellow')),
+            description: 'Queued',
+            tooltip: branchStatusTooltip(pr, 'Azure DevOps is computing merge status for this pull request.')
+        };
+    }
+
+    if (pr.hasMultipleMergeBases) {
+        return {
+            icon: new vscode.ThemeIcon('warning', new vscode.ThemeColor('charts.yellow')),
+            description: 'Multiple merge bases',
+            tooltip: branchStatusTooltip(pr, 'Multiple merge bases were detected for this pull request.')
+        };
+    }
+
+    if (pr.mergeStatus === PullRequestAsyncStatus.Succeeded) {
+        return {
+            icon: new vscode.ThemeIcon('pass', new vscode.ThemeColor('charts.green')),
+            description: 'Up to date',
+            tooltip: branchStatusTooltip(pr, 'This pull request can be merged cleanly.')
+        };
+    }
+
+    return {
+        icon: new vscode.ThemeIcon('circle-outline'),
+        description: 'Not computed',
+        tooltip: branchStatusTooltip(pr, 'Azure DevOps has not computed merge status yet.')
+    };
+}
+
+function buildBranchStatusChildren(pr: GitPullRequest): vscode.TreeItem[] {
+    const items: vscode.TreeItem[] = [];
+    const mergeState = createLeafItem('Merge state', branchStatusLabel(pr));
+    mergeState.iconPath = summarizeBranchStatus(pr).icon;
+    items.push(mergeState);
+
+    if (pr.hasMultipleMergeBases) {
+        const mergeBases = createLeafItem('Merge bases', 'Multiple detected');
+        mergeBases.iconPath = new vscode.ThemeIcon('warning', new vscode.ThemeColor('charts.yellow'));
+        items.push(mergeBases);
+    }
+
+    if (pr.mergeFailureType !== undefined || pr.mergeFailureMessage) {
+        const failureReason = pr.mergeFailureMessage ?? mergeFailureTypeLabel(pr.mergeFailureType) ?? 'Unknown';
+        const failure = createLeafItem('Failure reason', failureReason || 'Unknown');
+        failure.iconPath = new vscode.ThemeIcon('error', new vscode.ThemeColor('charts.red'));
+        items.push(failure);
+    }
+
+    if (pr.completionQueueTime) {
+        const queuedAt = createLeafItem('Last merge queue time', new Date(pr.completionQueueTime).toLocaleString());
+        queuedAt.iconPath = new vscode.ThemeIcon('history');
+        items.push(queuedAt);
+    }
+
+    return items;
+}
+
+function createLeafItem(label: string, description: string): vscode.TreeItem {
+    const item = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.None);
+    item.description = description;
+    item.tooltip = `${label}: ${description}`;
+    return item;
+}
+
+function branchStatusLabel(pr: GitPullRequest): string {
+    switch (pr.mergeStatus) {
+        case PullRequestAsyncStatus.NotSet: return 'Not computed';
+        case PullRequestAsyncStatus.Queued: return 'Queued';
+        case PullRequestAsyncStatus.Conflicts: return 'Conflicts';
+        case PullRequestAsyncStatus.Succeeded: return pr.hasMultipleMergeBases ? 'Succeeded with multiple merge bases' : 'Succeeded';
+        case PullRequestAsyncStatus.RejectedByPolicy: return 'Rejected by policy';
+        case PullRequestAsyncStatus.Failure: return 'Failed';
+        default: return 'Unknown';
+    }
+}
+
+function mergeFailureTypeLabel(type?: PullRequestMergeFailureType): string {
+    switch (type) {
+        case PullRequestMergeFailureType.None: return '';
+        case PullRequestMergeFailureType.Unknown: return 'Unknown merge failure';
+        case PullRequestMergeFailureType.CaseSensitive: return 'Case-sensitive file conflict';
+        case PullRequestMergeFailureType.ObjectTooLarge: return 'Merge object too large';
+        default: return '';
+    }
+}
+
+function branchStatusTooltip(pr: GitPullRequest, detail: string): string {
+    const parts = ['Branch Status', detail];
+    if (pr.mergeFailureMessage) {
+        parts.push(pr.mergeFailureMessage);
+    }
+    return parts.filter(Boolean).join('\n');
+}
+
 function prIcon(pr: GitPullRequest): vscode.ThemeIcon {
     if (pr.isDraft) {
         return new vscode.ThemeIcon('git-pull-request-draft', new vscode.ThemeColor('charts.gray'));
@@ -293,6 +440,7 @@ type PullRequestTreeNode =
     | PullRequestScopeGroup
     | PullRequestGroup
     | PullRequestNode
+    | PullRequestBranchStatusNode
     | PullRequestChecksNode
     | PullRequestThreadNode
     | PullRequestCommentNode
@@ -332,6 +480,10 @@ export class PullRequestProvider implements vscode.TreeDataProvider<PullRequestT
         }
 
         if (element instanceof PullRequestChecksNode) {
+            return element.getChildren();
+        }
+
+        if (element instanceof PullRequestBranchStatusNode) {
             return element.getChildren();
         }
 
@@ -419,7 +571,7 @@ export class PullRequestProvider implements vscode.TreeDataProvider<PullRequestT
             this.loadThreads(pr, scope)
         ]);
 
-        return [checksNode, ...threadNodes];
+        return [new PullRequestBranchStatusNode(pr, scope), checksNode, ...threadNodes];
     }
 
     private async loadChecks(

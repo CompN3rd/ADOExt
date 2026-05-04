@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as crypto from 'crypto';
 import type { GitPullRequest, GitPullRequestCommentThread, Comment, PullRequestReviewVote, GitPullRequestStatus, PolicyEvaluationRecord } from '../api/adoClient';
-import { PullRequestReviewVotes, GitStatusState, PolicyEvaluationStatus } from '../api/adoClient';
+import { PullRequestReviewVotes, GitStatusState, PolicyEvaluationStatus, PullRequestAsyncStatus, PullRequestMergeFailureType } from '../api/adoClient';
 import type { AdoClient } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
 import { showErrorMessage, showInformationMessage, showWarningMessage } from '../utils/notifications';
@@ -254,6 +254,7 @@ export class PrDetailsPanel {
             ? '<p class="empty">No comment threads.</p>'
             : meaningfulThreads.map(t => this._buildThreadHtml(t)).join('');
 
+        const branchStatusHtml = this._buildBranchStatusHtml(pr);
         const checksHtml = this._buildChecksHtml(statuses, policies);
 
         return /* html */`<!DOCTYPE html>
@@ -332,6 +333,8 @@ export class PrDetailsPanel {
 </div>
 
 ${reviewersHtml ? `<div class="section"><h2>Reviewers</h2><ul class="reviewers">${reviewersHtml}</ul></div>` : ''}
+
+${branchStatusHtml}
 
 ${checksHtml}
 
@@ -436,6 +439,35 @@ document.querySelectorAll('[data-action="set-status"]').forEach(button => {
         return `<div class="section"><h2>Build &amp; Policy Status</h2><ul class="checks-list">${items.join('')}</ul></div>`;
     }
 
+    private _buildBranchStatusHtml(pr: GitPullRequest): string {
+        const rows: string[] = [];
+        rows.push(this._buildStatusRow('Merge state', this._branchStatusBadge(pr.mergeStatus)));
+
+        if (pr.hasMultipleMergeBases) {
+            rows.push(this._buildStatusRow('Merge bases', { cls: 'check-pending', label: 'Multiple detected' }));
+        }
+
+        if (pr.mergeFailureType !== undefined || pr.mergeFailureMessage) {
+            rows.push(this._buildStatusRow(
+                'Failure reason',
+                { cls: 'check-failure', label: this._mergeFailureLabel(pr.mergeFailureType, pr.mergeFailureMessage) }
+            ));
+        }
+
+        if (pr.completionQueueTime) {
+            rows.push(this._buildStatusRow(
+                'Last merge queue time',
+                { cls: 'check-neutral', label: new Date(pr.completionQueueTime).toLocaleString() }
+            ));
+        }
+
+        return `<div class="section"><h2>Branch Status</h2><ul class="checks-list">${rows.join('')}</ul></div>`;
+    }
+
+    private _buildStatusRow(name: string, badge: { cls: string; label: string }): string {
+        return `<li><span class="check-state ${badge.cls}">${this._esc(badge.label)}</span><span class="check-name">${this._esc(name)}</span></li>`;
+    }
+
     private _statusStateBadge(state?: GitStatusState): { cls: string; label: string } {
         switch (state) {
             case GitStatusState.Succeeded:
@@ -469,6 +501,44 @@ document.querySelectorAll('[data-action="set-status"]').forEach(button => {
                 return { cls: 'check-neutral', label: 'N/A' };
             default:
                 return { cls: 'check-neutral', label: 'Unknown' };
+        }
+    }
+
+    private _branchStatusBadge(status?: PullRequestAsyncStatus): { cls: string; label: string } {
+        switch (status) {
+            case PullRequestAsyncStatus.Succeeded:
+                return { cls: 'check-success', label: 'Up to date' };
+            case PullRequestAsyncStatus.Conflicts:
+                return { cls: 'check-failure', label: 'Conflicts' };
+            case PullRequestAsyncStatus.Failure:
+                return { cls: 'check-failure', label: 'Merge failed' };
+            case PullRequestAsyncStatus.RejectedByPolicy:
+                return { cls: 'check-failure', label: 'Rejected by policy' };
+            case PullRequestAsyncStatus.Queued:
+                return { cls: 'check-pending', label: 'Queued' };
+            case PullRequestAsyncStatus.NotSet:
+                return { cls: 'check-neutral', label: 'Not computed' };
+            default:
+                return { cls: 'check-neutral', label: 'Unknown' };
+        }
+    }
+
+    private _mergeFailureLabel(type?: PullRequestMergeFailureType, message?: string): string {
+        if (message) {
+            return message;
+        }
+
+        switch (type) {
+            case PullRequestMergeFailureType.None:
+                return 'None';
+            case PullRequestMergeFailureType.Unknown:
+                return 'Unknown merge failure';
+            case PullRequestMergeFailureType.CaseSensitive:
+                return 'Case-sensitive file conflict';
+            case PullRequestMergeFailureType.ObjectTooLarge:
+                return 'Merge object too large';
+            default:
+                return 'Unknown';
         }
     }
 
