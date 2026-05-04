@@ -7,6 +7,10 @@ import { parseAdoRemoteUrl } from '../utils/repoContext';
 import { showErrorMessage, showInformationMessage, showWarningMessage } from '../utils/notifications';
 import { resolveProjectScopes } from '../providers/projectScopes';
 
+function formatUnknownError(err: unknown): string {
+    return err instanceof Error ? err.message : String(err);
+}
+
 /**
  * Show the work item details webview panel.
  */
@@ -156,7 +160,7 @@ export async function openSavedQuery(
             () => client.getSavedQueries(project, organization)
         );
     } catch (err) {
-        showErrorMessage(`Failed to load saved queries: ${err}`);
+        showErrorMessage(`Failed to load saved queries: ${formatUnknownError(err)}`);
         return;
     }
 
@@ -179,14 +183,14 @@ export async function openSavedQuery(
         return;
     }
 
-    let workItems;
+    let workItems: WorkItem[];
     try {
         workItems = await vscode.window.withProgress(
             { location: vscode.ProgressLocation.Notification, title: `Running "${selectedQuery.query.name}"…`, cancellable: false },
             () => client.getWorkItemsBySavedQuery(project, selectedQuery.query.id, organization)
         );
     } catch (err) {
-        showErrorMessage(`Failed to run query: ${err}`);
+        showErrorMessage(`Failed to run query: ${formatUnknownError(err)}`);
         return;
     }
 
@@ -195,8 +199,16 @@ export async function openSavedQuery(
         return;
     }
 
-    const resultItems = workItems.map(workItem => {
-        const id = workItem.id ?? 0;
+    const validWorkItems = workItems.filter(
+        (workItem): workItem is WorkItem & { id: number } => typeof workItem.id === 'number' && Number.isFinite(workItem.id)
+    );
+    if (validWorkItems.length === 0) {
+        showInformationMessage(`Query "${selectedQuery.query.name}" returned no openable work items.`);
+        return;
+    }
+
+    const resultItems = validWorkItems.map(workItem => {
+        const id = workItem.id;
         const title = (workItem.fields?.['System.Title'] as string | undefined) ?? '(no title)';
         const workItemType = (workItem.fields?.['System.WorkItemType'] as string | undefined) ?? 'Work Item';
         const state = (workItem.fields?.['System.State'] as string | undefined) ?? '';
@@ -366,7 +378,7 @@ export async function createWorkItem(
         showInformationMessage(`Created ${workItemType} #${newId}: ${title.trim()}`);
         return true;
     } catch (err) {
-        showErrorMessage(`Failed to create work item: ${err}`);
+        showErrorMessage(`Failed to create work item: ${formatUnknownError(err)}`);
         return false;
     }
 }

@@ -173,8 +173,8 @@
         "title": "Start Working",
         "category": "ADOExt",
         "icon": "$(git-branch)"
-            },
-            {
+      },
+      {
         "command": "adoext.openSavedQuery",
         "title": "Open Saved Query",
         "category": "ADOExt",
