@@ -96,7 +96,8 @@ export class PrDetailsPanel {
         const organization = this._organization ?? client.organization ?? config.organization;
         const projectId = pr.repository?.project?.id;
 
-        const [threadsResult, statusesResult, policiesResult] = await Promise.allSettled([
+        const [latestPrResult, threadsResult, statusesResult, policiesResult] = await Promise.allSettled([
+            client.getPullRequest(project, repoId, prId, organization),
             client.getPullRequestThreads(project, repoId, prId, organization),
             client.getPullRequestStatuses(project, repoId, prId, organization),
             projectId
@@ -104,11 +105,13 @@ export class PrDetailsPanel {
                 : Promise.resolve([] as PolicyEvaluationRecord[])
         ]);
 
+        const latestPr = latestPrResult.status === 'fulfilled' && latestPrResult.value ? latestPrResult.value : pr;
         const threads = threadsResult.status === 'fulfilled' ? threadsResult.value : [];
         const statuses = statusesResult.status === 'fulfilled' ? statusesResult.value : [];
         const policies = policiesResult.status === 'fulfilled' ? policiesResult.value : [];
 
-        this._panel.webview.html = this._buildHtml(pr, threads, statuses, policies);
+        this._pr = latestPr;
+        this._panel.webview.html = this._buildHtml(latestPr, threads, statuses, policies);
     }
 
     private async _handleMessage(msg: {
@@ -477,6 +480,7 @@ document.querySelectorAll('[data-action="set-status"]').forEach(button => {
             case GitStatusState.Error:
                 return { cls: 'check-failure', label: 'Error' };
             case GitStatusState.Pending:
+            case GitStatusState.NotSet:
                 return { cls: 'check-pending', label: 'Pending' };
             case GitStatusState.NotApplicable:
                 return { cls: 'check-neutral', label: 'N/A' };

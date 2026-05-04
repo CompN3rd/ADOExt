@@ -165,17 +165,7 @@ export class PullRequestChecksNode extends vscode.TreeItem {
             };
         }
 
-        const failed = statuses.filter(s =>
-            s.state === GitStatusState.Failed || s.state === GitStatusState.Error
-        ).length + policies.filter(p =>
-            p.status === PolicyEvaluationStatus.Rejected || p.status === PolicyEvaluationStatus.Broken
-        ).length;
-
-        const pending = statuses.filter(s =>
-            s.state === GitStatusState.Pending || s.state === GitStatusState.NotSet
-        ).length + policies.filter(p =>
-            p.status === PolicyEvaluationStatus.Queued || p.status === PolicyEvaluationStatus.Running
-        ).length;
+        const { failed, pending, passed, neutral } = summarizeChecks(statuses, policies);
 
         if (failed > 0) {
             return {
@@ -191,10 +181,17 @@ export class PullRequestChecksNode extends vscode.TreeItem {
                 description: `${pending} pending`
             };
         }
+        if (passed === 0) {
+            return {
+                icon: new vscode.ThemeIcon('circle-outline'),
+                label: 'Checks',
+                description: `${neutral} neutral`
+            };
+        }
         return {
             icon: new vscode.ThemeIcon('pass', new vscode.ThemeColor('charts.green')),
             label: 'Checks',
-            description: `${totalChecks} passed`
+            description: neutral > 0 ? `${passed} passed, ${neutral} neutral` : `${passed} passed`
         };
     }
 
@@ -258,6 +255,7 @@ function statusStateLabel(state?: GitStatusState): string {
         case GitStatusState.Failed: return 'Failed';
         case GitStatusState.Error: return 'Error';
         case GitStatusState.Pending: return 'Pending';
+        case GitStatusState.NotSet: return 'Pending';
         case GitStatusState.NotApplicable: return 'Not applicable';
         default: return 'Unknown';
     }
@@ -271,6 +269,7 @@ function statusStateIcon(state?: GitStatusState): vscode.ThemeIcon {
         case GitStatusState.Error:
             return new vscode.ThemeIcon('error', new vscode.ThemeColor('charts.red'));
         case GitStatusState.Pending:
+        case GitStatusState.NotSet:
             return new vscode.ThemeIcon('loading~spin', new vscode.ThemeColor('charts.yellow'));
         case GitStatusState.NotApplicable:
             return new vscode.ThemeIcon('circle-slash');
@@ -321,7 +320,7 @@ function summarizeBranchStatus(pr: GitPullRequest): { icon: vscode.ThemeIcon; de
         return {
             icon: new vscode.ThemeIcon('error', new vscode.ThemeColor('charts.red')),
             description: 'Merge failed',
-            tooltip: branchStatusTooltip(pr, pr.mergeFailureMessage ?? mergeFailureTypeLabel(pr.mergeFailureType))
+            tooltip: branchStatusTooltip(pr, 'Azure DevOps could not compute a clean merge for this pull request.')
         };
     }
 
@@ -392,6 +391,56 @@ function buildBranchStatusChildren(pr: GitPullRequest): vscode.TreeItem[] {
     return items;
 }
 
+function summarizeChecks(
+    statuses: GitPullRequestStatus[],
+    policies: PolicyEvaluationRecord[]
+): { failed: number; pending: number; passed: number; neutral: number } {
+    let failed = 0;
+    let pending = 0;
+    let passed = 0;
+    let neutral = 0;
+
+    for (const status of statuses) {
+        switch (status.state) {
+            case GitStatusState.Failed:
+            case GitStatusState.Error:
+                failed++;
+                break;
+            case GitStatusState.Pending:
+            case GitStatusState.NotSet:
+                pending++;
+                break;
+            case GitStatusState.Succeeded:
+                passed++;
+                break;
+            default:
+                neutral++;
+                break;
+        }
+    }
+
+    for (const policy of policies) {
+        switch (policy.status) {
+            case PolicyEvaluationStatus.Rejected:
+            case PolicyEvaluationStatus.Broken:
+                failed++;
+                break;
+            case PolicyEvaluationStatus.Queued:
+            case PolicyEvaluationStatus.Running:
+                pending++;
+                break;
+            case PolicyEvaluationStatus.Approved:
+                passed++;
+                break;
+            default:
+                neutral++;
+                break;
+        }
+    }
+
+    return { failed, pending, passed, neutral };
+}
+
 function createLeafItem(label: string, description: string): vscode.TreeItem {
     const item = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.None);
     item.description = description;
@@ -430,7 +479,7 @@ function mergeFailureTypeLabel(type?: PullRequestMergeFailureType): string {
 
 function branchStatusTooltip(pr: GitPullRequest, detail: string): string {
     const parts = ['Branch Status', detail];
-    if (pr.mergeFailureMessage) {
+    if (pr.mergeFailureMessage && pr.mergeFailureMessage !== detail) {
         parts.push(pr.mergeFailureMessage);
     }
     return parts.filter(Boolean).join('\n');
@@ -573,12 +622,13 @@ export class PullRequestProvider implements vscode.TreeDataProvider<PullRequestT
         const project = scope?.project ?? this.config.project;
         const organization = scope?.organization ?? this.config.organization;
 
-        const [checksNode, threadNodes] = await Promise.all([
+        const [latestPr, checksNode, threadNodes] = await Promise.all([
+            this.client.getPullRequest(project, repoId, prId, organization).catch(() => undefined),
             this.loadChecks(pr, project, organization, repoId, prId, scope),
             this.loadThreads(pr, scope)
         ]);
 
-        return [new PullRequestBranchStatusNode(pr, scope), checksNode, ...threadNodes];
+        return [new PullRequestBranchStatusNode(latestPr ?? pr, scope), checksNode, ...threadNodes];
     }
 
     private async loadChecks(
