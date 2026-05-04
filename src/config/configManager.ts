@@ -30,6 +30,20 @@ const PULL_REQUEST_QUERY_FILTERS: ReadonlySet<PullRequestQueryFilter> = new Set(
     'all'
 ]);
 
+const DEFAULT_WORK_ITEM_QUERIES: readonly SavedWorkItemQuery[] = [
+    { id: 'assigned', label: defaultWorkItemQueryLabel('assigned'), filter: 'assigned' },
+    { id: 'created', label: defaultWorkItemQueryLabel('created'), filter: 'created' },
+    { id: 'mentioned', label: defaultWorkItemQueryLabel('mentioned'), filter: 'mentioned' },
+    { id: 'all', label: defaultWorkItemQueryLabel('all'), filter: 'all' }
+];
+
+const DEFAULT_PULL_REQUEST_QUERIES: readonly SavedPullRequestQuery[] = [
+    { id: 'mine', label: defaultPullRequestQueryLabel('mine'), filter: 'mine' },
+    { id: 'created', label: defaultPullRequestQueryLabel('created'), filter: 'created' },
+    { id: 'assigned', label: defaultPullRequestQueryLabel('assigned'), filter: 'assigned' },
+    { id: 'all', label: defaultPullRequestQueryLabel('all'), filter: 'all' }
+];
+
 /**
  * Centralises all reads and writes to the extension's VS Code configuration.
  * Settings are stored under the "adoext" namespace in workspace/user settings.
@@ -111,48 +125,60 @@ export class ConfigManager {
         await this.config.update('project', firstProject, vscode.ConfigurationTarget.Global);
     }
 
-    get workItemQueries(): SavedWorkItemQuery[] {
-        const queries = this.normalizeWorkItemQueries(
+    get savedWorkItemQueries(): SavedWorkItemQuery[] {
+        return this.normalizeWorkItemQueries(
             this.config.get<Partial<SavedWorkItemQuery>[]>('workItemQueries', [])
         );
-        if (queries.length > 0) {
-            return queries;
-        }
+    }
 
-        return [this.createLegacyWorkItemQuery(this.getLegacyWorkItemQuery())];
+    get availableWorkItemQueries(): SavedWorkItemQuery[] {
+        return mergeQueries(DEFAULT_WORK_ITEM_QUERIES, this.savedWorkItemQueries);
+    }
+
+    get workItemQueries(): SavedWorkItemQuery[] {
+        return this.availableWorkItemQueries;
     }
 
     get activeWorkItemQueryId(): string {
-        return this.resolveActiveQuery(
-            this.config.get<string>('activeWorkItemQueryId', ''),
-            this.workItemQueries
-        ).id;
+        const configuredId = this.config.get<string>('activeWorkItemQueryId', '').trim();
+        if (configuredId) {
+            return this.resolveActiveQuery(configuredId, this.availableWorkItemQueries).id;
+        }
+
+        return this.resolveQueryByFilter(this.getLegacyWorkItemQuery(), this.availableWorkItemQueries).id;
     }
 
     get activeWorkItemQuery(): SavedWorkItemQuery {
-        return this.resolveActiveQuery(
-            this.config.get<string>('activeWorkItemQueryId', ''),
-            this.workItemQueries
-        );
+        const configuredId = this.config.get<string>('activeWorkItemQueryId', '').trim();
+        if (configuredId) {
+            return this.resolveActiveQuery(configuredId, this.availableWorkItemQueries);
+        }
+
+        return this.resolveQueryByFilter(this.getLegacyWorkItemQuery(), this.availableWorkItemQueries);
     }
 
     async setWorkItemQueries(queries: SavedWorkItemQuery[], activeId?: string): Promise<void> {
         const normalized = this.normalizeWorkItemQueries(queries);
-        const activeQuery = normalized.length > 0
-            ? this.resolveActiveQuery(activeId ?? '', normalized)
-            : this.createLegacyWorkItemQuery(this.getLegacyWorkItemQuery());
+        const availableQueries = mergeQueries(DEFAULT_WORK_ITEM_QUERIES, normalized);
+        const configuredActiveId = (activeId ?? this.config.get<string>('activeWorkItemQueryId', '')).trim();
+        const activeQuery = configuredActiveId
+            ? this.resolveActiveQuery(configuredActiveId, availableQueries)
+            : this.resolveQueryByFilter(this.getLegacyWorkItemQuery(), availableQueries);
+        const nextActiveId = configuredActiveId || normalized.length > 0
+            ? activeQuery.id
+            : '';
 
         await this.config.update('workItemQueries', normalized, vscode.ConfigurationTarget.Global);
         await this.config.update(
             'activeWorkItemQueryId',
-            normalized.length > 0 ? activeQuery.id : '',
+            nextActiveId,
             vscode.ConfigurationTarget.Global
         );
         await this.config.update('workItemQuery', activeQuery.filter, vscode.ConfigurationTarget.Global);
     }
 
     async setActiveWorkItemQueryId(id: string): Promise<void> {
-        const activeQuery = this.resolveActiveQuery(id, this.workItemQueries);
+        const activeQuery = this.resolveActiveQuery(id, this.availableWorkItemQueries);
         await this.config.update('activeWorkItemQueryId', activeQuery.id, vscode.ConfigurationTarget.Global);
         await this.config.update('workItemQuery', activeQuery.filter, vscode.ConfigurationTarget.Global);
     }
@@ -161,48 +187,60 @@ export class ConfigManager {
         return this.activeWorkItemQuery.filter;
     }
 
-    get pullRequestQueries(): SavedPullRequestQuery[] {
-        const queries = this.normalizePullRequestQueries(
+    get savedPullRequestQueries(): SavedPullRequestQuery[] {
+        return this.normalizePullRequestQueries(
             this.config.get<Partial<SavedPullRequestQuery>[]>('pullRequestQueries', [])
         );
-        if (queries.length > 0) {
-            return queries;
-        }
+    }
 
-        return [this.createLegacyPullRequestQuery(this.getLegacyPullRequestFilter())];
+    get availablePullRequestQueries(): SavedPullRequestQuery[] {
+        return mergeQueries(DEFAULT_PULL_REQUEST_QUERIES, this.savedPullRequestQueries);
+    }
+
+    get pullRequestQueries(): SavedPullRequestQuery[] {
+        return this.availablePullRequestQueries;
     }
 
     get activePullRequestQueryId(): string {
-        return this.resolveActiveQuery(
-            this.config.get<string>('activePullRequestQueryId', ''),
-            this.pullRequestQueries
-        ).id;
+        const configuredId = this.config.get<string>('activePullRequestQueryId', '').trim();
+        if (configuredId) {
+            return this.resolveActiveQuery(configuredId, this.availablePullRequestQueries).id;
+        }
+
+        return this.resolveQueryByFilter(this.getLegacyPullRequestFilter(), this.availablePullRequestQueries).id;
     }
 
     get activePullRequestQuery(): SavedPullRequestQuery {
-        return this.resolveActiveQuery(
-            this.config.get<string>('activePullRequestQueryId', ''),
-            this.pullRequestQueries
-        );
+        const configuredId = this.config.get<string>('activePullRequestQueryId', '').trim();
+        if (configuredId) {
+            return this.resolveActiveQuery(configuredId, this.availablePullRequestQueries);
+        }
+
+        return this.resolveQueryByFilter(this.getLegacyPullRequestFilter(), this.availablePullRequestQueries);
     }
 
     async setPullRequestQueries(queries: SavedPullRequestQuery[], activeId?: string): Promise<void> {
         const normalized = this.normalizePullRequestQueries(queries);
-        const activeQuery = normalized.length > 0
-            ? this.resolveActiveQuery(activeId ?? '', normalized)
-            : this.createLegacyPullRequestQuery(this.getLegacyPullRequestFilter());
+        const availableQueries = mergeQueries(DEFAULT_PULL_REQUEST_QUERIES, normalized);
+        const configuredActiveId = (activeId ?? this.config.get<string>('activePullRequestQueryId', '')).trim();
+        const activeQuery = configuredActiveId
+            ? this.resolveActiveQuery(configuredActiveId, availableQueries)
+            : this.resolveQueryByFilter(this.getLegacyPullRequestFilter(), availableQueries);
+        const nextActiveId = configuredActiveId || normalized.length > 0
+            ? activeQuery.id
+            : '';
 
         await this.config.update('pullRequestQueries', normalized, vscode.ConfigurationTarget.Global);
         await this.config.update(
             'activePullRequestQueryId',
-            normalized.length > 0 ? activeQuery.id : '',
+            nextActiveId,
             vscode.ConfigurationTarget.Global
         );
         await this.config.update('pullRequestFilter', activeQuery.filter, vscode.ConfigurationTarget.Global);
     }
 
     async setActivePullRequestQueryId(id: string): Promise<void> {
-        const activeQuery = this.resolveActiveQuery(id, this.pullRequestQueries);
+        const activeQuery = this.resolveActiveQuery(id, this.availablePullRequestQueries);
         await this.config.update('activePullRequestQueryId', activeQuery.id, vscode.ConfigurationTarget.Global);
         await this.config.update('pullRequestFilter', activeQuery.filter, vscode.ConfigurationTarget.Global);
     }
@@ -248,22 +286,6 @@ export class ConfigManager {
 
     private getLegacyPullRequestFilter(): PullRequestQueryFilter {
         return this.config.get<PullRequestQueryFilter>('pullRequestFilter', 'mine');
-    }
-
-    private createLegacyWorkItemQuery(filter: WorkItemQueryFilter): SavedWorkItemQuery {
-        return {
-            id: filter,
-            label: defaultWorkItemQueryLabel(filter),
-            filter
-        };
-    }
-
-    private createLegacyPullRequestQuery(filter: PullRequestQueryFilter): SavedPullRequestQuery {
-        return {
-            id: filter,
-            label: defaultPullRequestQueryLabel(filter),
-            filter
-        };
     }
 
     private normalizeWorkItemQueries(values: readonly Partial<SavedWorkItemQuery>[]): SavedWorkItemQuery[] {
@@ -324,6 +346,29 @@ export class ConfigManager {
         const normalizedId = activeId.trim();
         return queries.find(query => query.id === normalizedId) ?? firstQuery;
     }
+
+    private resolveQueryByFilter<TFilter extends string, TQuery extends SavedQueryDefinition<TFilter>>(
+        filter: TFilter,
+        queries: readonly TQuery[]
+    ): TQuery {
+        return queries.find(query => query.filter === filter) ?? this.resolveActiveQuery('', queries);
+    }
+}
+
+function mergeQueries<TFilter extends string, TQuery extends SavedQueryDefinition<TFilter>>(
+    defaults: readonly TQuery[],
+    saved: readonly TQuery[]
+): TQuery[] {
+    const seenIds = new Set(defaults.map(query => query.id));
+    const merged = [...defaults];
+    for (const query of saved) {
+        if (seenIds.has(query.id)) {
+            continue;
+        }
+        seenIds.add(query.id);
+        merged.push(query);
+    }
+    return merged;
 }
 
 function isWorkItemQueryFilter(value: unknown): value is WorkItemQueryFilter {

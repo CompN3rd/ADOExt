@@ -12,7 +12,7 @@ function generateQueryId(prefix: string): string {
  * chosen one.  Returns true when a query was selected and activated.
  */
 export async function selectWorkItemQuery(config: ConfigManager): Promise<boolean> {
-    const queries = config.workItemQueries;
+    const queries = config.availableWorkItemQueries;
     const activeId = config.activeWorkItemQueryId;
 
     const items = queries.map(q => ({
@@ -37,7 +37,7 @@ export async function selectWorkItemQuery(config: ConfigManager): Promise<boolea
  * chosen one.  Returns true when a query was selected and activated.
  */
 export async function selectPullRequestQuery(config: ConfigManager): Promise<boolean> {
-    const queries = config.pullRequestQueries;
+    const queries = config.availablePullRequestQueries;
     const activeId = config.activePullRequestQueryId;
 
     const items = queries.map(q => ({
@@ -90,7 +90,7 @@ export async function saveWorkItemQuery(config: ConfigManager): Promise<boolean>
 
     const id = generateQueryId(`wi-${selectedFilter.filter}`);
     const newQuery: SavedWorkItemQuery = { id, label: label.trim(), filter: selectedFilter.filter };
-    const existing = config.workItemQueries;
+    const existing = config.savedWorkItemQueries;
     await config.setWorkItemQueries([...existing, newQuery], id);
     return true;
 }
@@ -128,7 +128,7 @@ export async function savePullRequestQuery(config: ConfigManager): Promise<boole
 
     const id = generateQueryId(`pr-${selectedFilter.filter}`);
     const newQuery: SavedPullRequestQuery = { id, label: label.trim(), filter: selectedFilter.filter };
-    const existing = config.pullRequestQueries;
+    const existing = config.savedPullRequestQueries;
     await config.setPullRequestQueries([...existing, newQuery], id);
     return true;
 }
