@@ -1,4 +1,5 @@
 import type { Build } from '../api/adoClient';
+import { BuildStatus, BuildResult } from 'azure-devops-node-api/interfaces/BuildInterfaces';
 
 /**
  * Escapes HTML special characters in a string.
@@ -29,7 +30,7 @@ export const BUILD_SUMMARY_CSS = `
  * Renders a single build as an HTML row with a status badge, build number,
  * pipeline name, requester, start time, and an "Open" button.
  */
-export function buildSummaryHtml(build: Build, organization: string, project: string): string {
+export function buildSummaryHtml(build: Build): string {
     const buildId = build.id ?? 0;
     const buildNumber = esc(build.buildNumber ?? `#${buildId}`);
     const definitionName = esc(build.definition?.name ?? 'Unknown pipeline');
@@ -41,24 +42,24 @@ export function buildSummaryHtml(build: Build, organization: string, project: st
     let statusClass: string;
     const status = build.status;
     const result = build.result;
-    if (status === 2 /* Completed */) {
-        if (result === 2 /* Succeeded */) {
+    if (status === BuildStatus.Completed) {
+        if (result === BuildResult.Succeeded) {
             statusLabel = 'Succeeded';
             statusClass = 'build-status-succeeded';
-        } else if (result === 4 /* PartiallySucceeded */) {
+        } else if (result === BuildResult.PartiallySucceeded) {
             statusLabel = 'Partially Succeeded';
             statusClass = 'build-status-other';
-        } else if (result === 8 /* Failed */) {
+        } else if (result === BuildResult.Failed) {
             statusLabel = 'Failed';
             statusClass = 'build-status-failed';
         } else {
             statusLabel = 'Canceled';
             statusClass = 'build-status-other';
         }
-    } else if (status === 1 /* InProgress */) {
+    } else if (status === BuildStatus.InProgress) {
         statusLabel = 'In Progress';
         statusClass = 'build-status-inprogress';
-    } else if (status === 32 /* NotStarted */) {
+    } else if (status === BuildStatus.NotStarted) {
         statusLabel = 'Queued';
         statusClass = 'build-status-other';
     } else {
@@ -66,12 +67,8 @@ export function buildSummaryHtml(build: Build, organization: string, project: st
         statusClass = 'build-status-other';
     }
 
-    const buildUrl = organization && project
-        ? `https://dev.azure.com/${encodeURIComponent(organization)}/${encodeURIComponent(project)}/_build/results?buildId=${buildId}`
-        : '';
-
-    const openBtn = buildUrl
-        ? `<button class="btn btn-secondary" data-action="open-build" data-url="${esc(buildUrl)}">Open</button>`
+    const openBtn = buildId
+        ? `<button class="btn btn-secondary" data-action="open-build" data-build-id="${buildId}">Open</button>`
         : '';
 
     const metaParts = [definitionName, requestedFor, startTime].filter(Boolean);

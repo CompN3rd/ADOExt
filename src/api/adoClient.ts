@@ -1012,12 +1012,11 @@ export class AdoClient {
     ): Promise<Build[]> {
         const relations = workItem.relations ?? [];
         const buildIds = relations
-            .filter(r => r.rel === 'ArtifactLink' && typeof r.url === 'string' && /vstfs:\/\/\/Build\/Build\/\d+/i.test(r.url))
-            .map(r => {
-                const match = /\/(\d+)$/.exec(r.url ?? '');
-                return match ? Number(match[1]) : NaN;
-            })
-            .filter(id => !isNaN(id));
+            .flatMap(r => {
+                if (r.rel !== 'ArtifactLink') { return []; }
+                const match = /vstfs:\/\/\/Build\/Build\/(\d+)/i.exec(r.url ?? '');
+                return match ? [Number(match[1])] : [];
+            });
 
         if (buildIds.length === 0) {
             return [];

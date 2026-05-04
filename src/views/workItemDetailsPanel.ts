@@ -162,7 +162,7 @@ export class WorkItemDetailsPanel {
             // show panel anyway, builds will just be empty
         }
 
-        this._panel.webview.html = this._buildHtml(fullItem, comments, builds, organization, project);
+        this._panel.webview.html = this._buildHtml(fullItem, comments, builds);
     }
 
     private async _handleMessage(msg: {
@@ -170,6 +170,7 @@ export class WorkItemDetailsPanel {
         content?: string;
         state?: string;
         url?: string;
+        buildId?: number;
     }): Promise<void> {
         const id = this._workItemId;
         const project = this._project ?? this._config.project;
@@ -206,8 +207,15 @@ export class WorkItemDetailsPanel {
                 }
                 const url = `https://dev.azure.com/${encodeURIComponent(org)}/${encodeURIComponent(project)}/_workitems/edit/${id}`;
                 void vscode.env.openExternal(vscode.Uri.parse(url));
-            } else if (msg.type === 'openBuild' && msg.url) {
-                void vscode.env.openExternal(vscode.Uri.parse(msg.url));
+            } else if (msg.type === 'openBuild' && msg.buildId) {
+                if (!org || !project) {
+                    showWarningMessage(
+                        'Unable to open build because organization or project is missing.'
+                    );
+                    return;
+                }
+                const buildUrl = `https://dev.azure.com/${encodeURIComponent(org)}/${encodeURIComponent(project)}/_build/results?buildId=${msg.buildId}`;
+                void vscode.env.openExternal(vscode.Uri.parse(buildUrl));
             } else if (msg.type === 'setState' && msg.state) {
                 if (!org || !project) {
                     showWarningMessage(
@@ -244,7 +252,7 @@ export class WorkItemDetailsPanel {
         }
     }
 
-    private _buildHtml(item: WorkItem, comments: WorkItemComment[], builds: Build[] = [], organization?: string, project?: string): string {
+    private _buildHtml(item: WorkItem, comments: WorkItemComment[], builds: Build[] = []): string {
         const webview = this._panel.webview;
         const nonce = this._createNonce();
         const id = item.id ?? 0;
@@ -282,7 +290,7 @@ export class WorkItemDetailsPanel {
 
         const buildsHtml = builds.length === 0
             ? '<p class="empty">No linked builds.</p>'
-            : builds.map(b => buildSummaryHtml(b, organization ?? '', project ?? '')).join('');
+            : builds.map(b => buildSummaryHtml(b)).join('');
 
         const metaRows = [
             ['Assigned To', assignedTo],
@@ -472,8 +480,8 @@ document.querySelectorAll('[data-action="open-linked-item"]').forEach(btn => {
 
 document.querySelectorAll('[data-action="open-build"]').forEach(button => {
     button.addEventListener('click', () => {
-        const url = button.getAttribute('data-url');
-        vscode.postMessage({ type: 'openBuild', url });
+        const buildId = Number(button.getAttribute('data-build-id'));
+        vscode.postMessage({ type: 'openBuild', buildId });
     });
 });
 

@@ -117,7 +117,7 @@ export class PrDetailsPanel {
         const builds = buildsResult.status === 'fulfilled' ? buildsResult.value : [];
 
         this._pr = latestPr;
-        this._panel.webview.html = this._buildHtml(latestPr, threads, statuses, policies, builds, organization, project);
+        this._panel.webview.html = this._buildHtml(latestPr, threads, statuses, policies, builds);
     }
 
     private async _handleMessage(msg: {
@@ -126,7 +126,7 @@ export class PrDetailsPanel {
         content?: string;
         status?: number;
         vote?: number;
-        url?: string;
+        buildId?: number;
     }): Promise<void> {
         const repoId = this._pr.repository?.id ?? '';
         const prId = this._pr.pullRequestId!;
@@ -181,8 +181,15 @@ export class PrDetailsPanel {
 
                 const url = `https://dev.azure.com/${encodeURIComponent(org)}/${encodeURIComponent(projectName)}/_git/${encodeURIComponent(repoName)}/pullrequest/${prId}`;
                 void vscode.env.openExternal(vscode.Uri.parse(url));
-            } else if (msg.type === 'openBuild' && msg.url) {
-                void vscode.env.openExternal(vscode.Uri.parse(msg.url));
+            } else if (msg.type === 'openBuild' && msg.buildId) {
+                if (!organization || !project) {
+                    showWarningMessage(
+                        'Unable to open build because organization or project is missing.'
+                    );
+                    return;
+                }
+                const buildUrl = `https://dev.azure.com/${encodeURIComponent(organization)}/${encodeURIComponent(project)}/_build/results?buildId=${msg.buildId}`;
+                void vscode.env.openExternal(vscode.Uri.parse(buildUrl));
             } else if (msg.type === 'openDiff') {
                 await vscode.commands.executeCommand('adoext.viewPullRequestDiff', {
                     pr: this._pr,
@@ -228,9 +235,7 @@ export class PrDetailsPanel {
         threads: GitPullRequestCommentThread[],
         statuses: GitPullRequestStatus[] = [],
         policies: PolicyEvaluationRecord[] = [],
-        builds: Build[] = [],
-        organization?: string,
-        project?: string
+        builds: Build[] = []
     ): string {
         const webview = this._panel.webview;
         const nonce = this._createNonce();
@@ -267,7 +272,7 @@ export class PrDetailsPanel {
 
         const buildsHtml = builds.length === 0
             ? '<p class="empty">No builds found.</p>'
-            : builds.map(b => buildSummaryHtml(b, organization ?? '', project ?? '')).join('');
+            : builds.map(b => buildSummaryHtml(b)).join('');
 
         return /* html */`<!DOCTYPE html>
 <html lang="en">
@@ -400,8 +405,8 @@ document.querySelector('[data-action="add-comment"]')?.addEventListener('click',
 
 document.querySelectorAll('[data-action="open-build"]').forEach(button => {
     button.addEventListener('click', () => {
-        const url = button.getAttribute('data-url');
-        vscode.postMessage({ type: 'openBuild', url });
+        const buildId = Number(button.getAttribute('data-build-id'));
+        vscode.postMessage({ type: 'openBuild', buildId });
     });
 });
 
