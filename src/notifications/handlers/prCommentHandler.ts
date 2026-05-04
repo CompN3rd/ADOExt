@@ -1,9 +1,9 @@
 import * as vscode from 'vscode';
-import type { AdoClient, GitPullRequest, GitPullRequestCommentThread } from '../api/adoClient';
-import type { ConfigManager } from '../config/configManager';
-import { resolveProjectScopes, type ProjectScope } from '../providers/projectScopes';
-import { mapWithConcurrencyLimit } from '../utils/async';
-import { showErrorMessage, showInformationMessage, showWarningMessage } from '../utils/notifications';
+import type { AdoClient, GitPullRequestCommentThread } from '../../api/adoClient';
+import type { ConfigManager } from '../../config/configManager';
+import { mapWithConcurrencyLimit } from '../../utils/async';
+import { showErrorMessage, showInformationMessage, showWarningMessage } from '../../utils/notifications';
+import type { INotificationHandler, PrWithScope } from '../iNotificationHandler';
 
 const STATE_KEY = 'adoext.lastSeenPrCommentIds';
 const MAX_CONCURRENT_REQUESTS = 4;
@@ -17,19 +17,19 @@ interface PrIdentity {
 }
 
 /**
- * Polls tracked pull requests for new comments and surfaces a small
- * notification when one appears. The poll interval and a master toggle are
- * controlled by the `adoext.notifyOnNewPullRequestComments` and
+ * Notification handler for new PR comments. Polls tracked pull requests for
+ * new comments and surfaces a small notification when one appears.
+ *
+ * The poll interval and a master toggle are controlled by the
+ * `adoext.notifyOnNewPullRequestComments` and
  * `adoext.pullRequestCommentPollIntervalSeconds` settings.
  *
  * Baseline state (the highest comment id seen per PR) is persisted to the
  * extension's `globalState` so reloads or restarts don't replay old comments.
  */
-export class PrCommentNotifier implements vscode.Disposable {
-    private _timer: NodeJS.Timeout | undefined;
-    private _polling = false;
-    private _disposed = false;
+export class PrCommentHandler implements INotificationHandler {
     private _lastSeen: Record<string, number>;
+    private _disposed = false;
 
     constructor(
         private readonly _client: AdoClient,
@@ -39,88 +39,32 @@ export class PrCommentNotifier implements vscode.Disposable {
         this._lastSeen = { ..._state.get<Record<string, number>>(STATE_KEY, {}) };
     }
 
-    /**
-     * Apply the current configuration: (re)start or stop the poll timer.
-     * Safe to call repeatedly — for instance from an `onDidChangeConfiguration`
-     * listener.
-     */
-    applyConfig(): void {
-        if (this._disposed) { return; }
-        this.stopTimer();
-        if (!this._config.notifyOnNewPullRequestComments) { return; }
-        const intervalMs = this._config.pullRequestCommentPollIntervalSeconds * 1000;
-        this._timer = setInterval(() => { void this.pollOnce(); }, intervalMs);
-        // Establish a baseline soon after startup so we don't notify for
-        // comments that already exist when the extension activates.
-        void this.pollOnce({ baselineOnly: !this.hasBaseline() });
+    get isEnabled(): boolean {
+        return this._config.notifyOnNewPullRequestComments;
     }
 
-    /**
-     * Force a poll (used after a code change such as enabling the feature
-     * or signing in). Public so the extension can trigger it explicitly.
-     */
-    async refresh(): Promise<void> {
-        if (this._config.notifyOnNewPullRequestComments) {
-            await this.pollOnce();
+    async poll(prs: PrWithScope[]): Promise<void> {
+        if (this._disposed) { return; }
+        const baselineOnly = !this.hasBaseline();
+        const stateChanged = await this.pollPullRequests(prs, baselineOnly);
+        if (stateChanged) {
+            await this._state.update(STATE_KEY, this._lastSeen);
         }
     }
 
     dispose(): void {
         this._disposed = true;
-        this.stopTimer();
     }
 
-    // ---------------------------------------------------------------------
+    // -------------------------------------------------------------------------
     // Internals
-    // ---------------------------------------------------------------------
-
-    private stopTimer(): void {
-        if (this._timer) {
-            clearInterval(this._timer);
-            this._timer = undefined;
-        }
-    }
+    // -------------------------------------------------------------------------
 
     private hasBaseline(): boolean {
         return Object.keys(this._lastSeen).length > 0;
     }
-
-    private async pollOnce(options: { baselineOnly?: boolean } = {}): Promise<void> {
-        if (this._disposed || this._polling) { return; }
-        if (!this._client.isConnected) { return; }
-        this._polling = true;
-        try {
-            const scopes = await resolveProjectScopes(this._client, this._config);
-            if (scopes.length === 0) { return; }
-
-            const query = this._config.activePullRequestQuery;
-            const prsByScope = await mapWithConcurrencyLimit(scopes, MAX_CONCURRENT_REQUESTS, async scope => {
-                try {
-                    const prs = await this._client.getPullRequests(
-                        scope.project,
-                        query.filter,
-                        undefined,
-                        scope.organization
-                    );
-                    return prs.map(pr => ({ pr, scope }));
-                } catch {
-                    return [] as Array<{ pr: GitPullRequest; scope: ProjectScope }>;
-                }
-            });
-            const prs = prsByScope.flat();
-            if (prs.length === 0) { return; }
-
-            const stateChanged = await this.pollPullRequests(prs, options.baselineOnly === true);
-            if (stateChanged) {
-                await this._state.update(STATE_KEY, this._lastSeen);
-            }
-        } finally {
-            this._polling = false;
-        }
-    }
-
     private async pollPullRequests(
-        prs: Array<{ pr: GitPullRequest; scope: ProjectScope }>,
+        prs: PrWithScope[],
         baselineOnly: boolean
     ): Promise<boolean> {
         let changed = false;

@@ -254,7 +254,17 @@ export class ConfigManager {
         return this.config.get<boolean>('notifyOnNewPullRequestComments', true);
     }
 
-    /** Poll interval for the new-comment notifier, in seconds (minimum 60). */
+    /** Whether to show a toast when the user is added as a reviewer on a PR. */
+    get notifyOnPullRequestReviewRequests(): boolean {
+        return this.config.get<boolean>('notifyOnPullRequestReviewRequests', true);
+    }
+
+    /** Whether to show a toast when a reviewer votes on a PR created by the user. */
+    get notifyOnPullRequestStatusChanges(): boolean {
+        return this.config.get<boolean>('notifyOnPullRequestStatusChanges', true);
+    }
+
+    /** Poll interval for the notification service, in seconds (minimum 60). */
     get pullRequestCommentPollIntervalSeconds(): number {
         const raw = this.config.get<number>('pullRequestCommentPollIntervalSeconds', 300);
         return Math.max(60, Math.floor(raw));
