@@ -93,11 +93,12 @@ export class PrCommentNotifier implements vscode.Disposable {
             const scopes = await resolveProjectScopes(this._client, this._config);
             if (scopes.length === 0) { return; }
 
+            const query = this._config.activePullRequestQuery;
             const prsByScope = await mapWithConcurrencyLimit(scopes, MAX_CONCURRENT_REQUESTS, async scope => {
                 try {
                     const prs = await this._client.getPullRequests(
                         scope.project,
-                        this._config.pullRequestFilter,
+                        query.filter,
                         undefined,
                         scope.organization
                     );

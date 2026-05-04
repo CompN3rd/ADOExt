@@ -482,6 +482,49 @@
           "default": {},
           "description": "Project selections by organization for aggregated views. Use [\"*\"] to include all projects in an organization."
         },
+        "adoext.workItemQueries": {
+          "type": "array",
+          "default": [],
+          "description": "Saved work item query definitions. When empty, ADOExt falls back to adoext.workItemQuery for compatibility.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "label",
+              "filter"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Stable identifier for the saved work item query."
+              },
+              "label": {
+                "type": "string",
+                "description": "Label shown for the saved work item query."
+              },
+              "filter": {
+                "type": "string",
+                "enum": [
+                  "assigned",
+                  "created",
+                  "mentioned",
+                  "all"
+                ],
+                "description": "Built-in work item filter backing this saved query."
+              },
+              "description": {
+                "type": "string",
+                "description": "Optional description for the saved work item query."
+              }
+            }
+          }
+        },
+        "adoext.activeWorkItemQueryId": {
+          "type": "string",
+          "default": "",
+          "description": "Active saved work item query ID. When empty or invalid, ADOExt falls back to the first saved query or derives one from adoext.workItemQuery."
+        },
         "adoext.workItemQuery": {
           "type": "string",
           "default": "assigned",
@@ -497,7 +540,50 @@
             "Work items where I was mentioned",
             "All active work items"
           ],
-          "description": "Which work items to show"
+          "description": "Legacy default work item filter. Used when adoext.workItemQueries is empty."
+        },
+        "adoext.pullRequestQueries": {
+          "type": "array",
+          "default": [],
+          "description": "Saved pull request query definitions. When empty, ADOExt falls back to adoext.pullRequestFilter for compatibility.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "label",
+              "filter"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Stable identifier for the saved pull request query."
+              },
+              "label": {
+                "type": "string",
+                "description": "Label shown for the saved pull request query."
+              },
+              "filter": {
+                "type": "string",
+                "enum": [
+                  "mine",
+                  "created",
+                  "assigned",
+                  "all"
+                ],
+                "description": "Built-in pull request filter backing this saved query."
+              },
+              "description": {
+                "type": "string",
+                "description": "Optional description for the saved pull request query."
+              }
+            }
+          }
+        },
+        "adoext.activePullRequestQueryId": {
+          "type": "string",
+          "default": "",
+          "description": "Active saved pull request query ID. When empty or invalid, ADOExt falls back to the first saved query or derives one from adoext.pullRequestFilter."
         },
         "adoext.pullRequestFilter": {
           "type": "string",
@@ -514,7 +600,7 @@
             "PRs assigned to me for review",
             "All active PRs"
           ],
-          "description": "Which pull requests to show"
+          "description": "Legacy default pull request filter. Used when adoext.pullRequestQueries is empty."
         },
         "adoext.notifyOnNewPullRequestComments": {
           "type": "boolean",

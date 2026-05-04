@@ -63,8 +63,12 @@ ADOExt is a full-featured Azure DevOps integration for Visual Studio Code, provi
 | `adoext.project` | *(empty)* | ADO project name |
 | `adoext.organizations` | `[]` | Organizations selected for aggregated views |
 | `adoext.projectsByOrganization` | `{}` | Project selections by organization; `["*"]` means all projects |
-| `adoext.workItemQuery` | `assigned` | Which work items to show: `assigned`, `created`, `mentioned`, `all` |
-| `adoext.pullRequestFilter` | `mine` | Which PRs to show: `mine`, `created`, `assigned`, `all` |
+| `adoext.workItemQueries` | `[]` | Saved work item query definitions. When empty, ADOExt falls back to `adoext.workItemQuery`. |
+| `adoext.activeWorkItemQueryId` | `""` | Active saved work item query ID. Falls back to the first saved query or the legacy query setting. |
+| `adoext.workItemQuery` | `assigned` | Legacy work item filter used when no saved work item queries are defined. |
+| `adoext.pullRequestQueries` | `[]` | Saved pull request query definitions. When empty, ADOExt falls back to `adoext.pullRequestFilter`. |
+| `adoext.activePullRequestQueryId` | `""` | Active saved pull request query ID. Falls back to the first saved query or the legacy filter setting. |
+| `adoext.pullRequestFilter` | `mine` | Legacy pull request filter used when no saved pull request queries are defined. |
 
 ## Development
 

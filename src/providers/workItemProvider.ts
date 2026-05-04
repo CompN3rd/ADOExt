@@ -216,10 +216,11 @@ export class WorkItemProvider implements vscode.TreeDataProvider<WorkItemTreeNod
     }
 
     private async loadWorkItems(scopes: ProjectScope[]): Promise<ScopedWorkItem[]> {
+        const query = this.config.activeWorkItemQuery;
         const results = await mapWithConcurrencyLimit(scopes, MAX_CONCURRENT_SCOPE_REQUESTS, async scope => {
             const workItems = await this.client.getWorkItems(
                 scope.project,
-                this.config.workItemQuery,
+                query.filter,
                 scope.organization
             );
             return workItems.map(workItem => ({ workItem, scope }));
