@@ -480,7 +480,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 refreshAllViews();
                 if (
                     e.affectsConfiguration('adoext.notifyOnNewPullRequestComments') ||
-                    e.affectsConfiguration('adoext.pullRequestCommentPollIntervalSeconds')
+                    e.affectsConfiguration('adoext.pullRequestCommentPollIntervalSeconds') ||
+                    e.affectsConfiguration('adoext.pullRequestFilter') ||
+                    e.affectsConfiguration('adoext.pullRequestQueries') ||
+                    e.affectsConfiguration('adoext.activePullRequestQueryId')
                 ) {
                     prCommentNotifier.applyConfig();
                 }
