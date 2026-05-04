@@ -169,6 +169,12 @@
         "icon": "$(edit)"
       },
       {
+        "command": "adoext.startWorkingOnWorkItem",
+        "title": "Start Working",
+        "category": "ADOExt",
+        "icon": "$(git-branch)"
+      },
+      {
         "command": "adoext.refreshPullRequests",
         "title": "Refresh Pull Requests",
         "category": "ADOExt",
@@ -416,6 +422,11 @@
         },
         {
           "command": "adoext.changeWorkItemState",
+          "when": "viewItem == workItem",
+          "group": "inline"
+        },
+        {
+          "command": "adoext.startWorkingOnWorkItem",
           "when": "viewItem == workItem",
           "group": "inline"
         },
