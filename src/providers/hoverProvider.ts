@@ -4,7 +4,7 @@ import type { ConfigManager } from '../config/configManager';
 import { resolveProjectScopes } from './projectScopes';
 
 // ---------------------------------------------------------------------------
-// Regex patterns for recognising Azure DevOps references
+// Regex patterns for recognizing Azure DevOps references
 // ---------------------------------------------------------------------------
 
 /**
