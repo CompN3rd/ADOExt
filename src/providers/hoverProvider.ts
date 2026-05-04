@@ -69,7 +69,7 @@ function matchRange(
         while ((match = pattern.exec(line)) !== null) {
             const start = match.index;
             const end = start + match[0].length;
-            if (position.character >= start && position.character <= end) {
+            if (position.character >= start && position.character < end) {
                 const id = parseInt(match[1], 10);
                 return {
                     range: new vscode.Range(position.line, start, position.line, end),
@@ -135,14 +135,16 @@ export class WorkItemHoverProvider implements vscode.HoverProvider {
                     return { item, scope };
                 })
             );
-            for (const result of results) {
-                if (result.status === 'fulfilled' && result.value.item) {
-                    workItem = result.value.item;
-                    matchedOrg = result.value.scope.organization;
-                    matchedProject = result.value.scope.project;
-                    break;
-                }
+            const matches = results.filter(
+                (result): result is PromiseFulfilledResult<{ item: NonNullable<typeof workItem>; scope: typeof scopes[number] }> =>
+                    result.status === 'fulfilled' && !!result.value.item
+            );
+            if (matches.length !== 1) {
+                return undefined;
             }
+            workItem = matches[0].value.item;
+            matchedOrg = matches[0].value.scope.organization;
+            matchedProject = matches[0].value.scope.project;
         }
 
         if (!workItem || token.isCancellationRequested) { return undefined; }
@@ -230,14 +232,16 @@ export class PullRequestHoverProvider implements vscode.HoverProvider {
                     return { found, scope };
                 })
             );
-            for (const result of results) {
-                if (result.status === 'fulfilled' && result.value.found) {
-                    pr = result.value.found;
-                    matchedOrg = result.value.scope.organization;
-                    matchedProject = result.value.scope.project;
-                    break;
-                }
+            const matches = results.filter(
+                (result): result is PromiseFulfilledResult<{ found: NonNullable<typeof pr>; scope: typeof scopes[number] }> =>
+                    result.status === 'fulfilled' && !!result.value.found
+            );
+            if (matches.length !== 1) {
+                return undefined;
             }
+            pr = matches[0].value.found;
+            matchedOrg = matches[0].value.scope.organization;
+            matchedProject = matches[0].value.scope.project;
         }
 
         if (!pr || token.isCancellationRequested) { return undefined; }
