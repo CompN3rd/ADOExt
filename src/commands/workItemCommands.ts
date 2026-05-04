@@ -138,8 +138,10 @@ export function buildWorkItemBranchName(id: number, title: string): string {
  * the standard Git tooling.
  *
  * @param workItem  The ADO work item to start working on.
- * @param _organization  Unused; reserved for future use (e.g. linking back).
- * @param _project       Unused; reserved for future use.
+ * @param organization  Optional ADO organization used to narrow candidate
+ * repositories to those whose remotes match the work item's scope.
+ * @param project       Optional ADO project used alongside organization when
+ * selecting the most likely repository in a multi-repo workspace.
  */
 export async function startWorkingOnWorkItem(
     workItem: WorkItem,
@@ -215,14 +217,14 @@ export async function startWorkingOnWorkItem(
                 // Attempt to create a new local branch and check it out.
                 await repo.createBranch(branchName, true);
                 showInformationMessage(`Created and checked out branch: ${branchName}`);
-            } catch {
+            } catch (createBranchError) {
                 // Branch likely already exists — try checking it out instead.
                 try {
                     await repo.checkout(branchName);
                     showInformationMessage(`Checked out existing branch: ${branchName}`);
                 } catch (err2) {
                     showErrorMessage(
-                        `Failed to create or checkout branch "${branchName}": ${err2}`
+                        `Failed to create branch "${branchName}" (${String(createBranchError)}) or checkout an existing branch (${String(err2)}).`
                     );
                 }
             }
