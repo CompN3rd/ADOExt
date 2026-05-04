@@ -854,13 +854,14 @@ document.addEventListener('keydown', event => {
         const title = (fields['System.Title'] as string | undefined) ?? '(no title)';
         const state = (fields['System.State'] as string | undefined) ?? '';
         const assignee = identityName(fields['System.AssignedTo']) ?? 'Unassigned';
+                const iteration = (fields['System.IterationPath'] as string | undefined) ?? '';
         return `<article class="card">
   <div class="card-title">
     <span class="type ${typeClass(wiType)}">${this.esc(wiType)}</span>
     <span class="id">#${id}</span>
     <button class="btn-link" data-action="open-work-item" data-id="${id}" data-organization="${this.escAttr(item.scope.organization)}" data-project="${this.escAttr(item.scope.project)}"><span class="title">${this.esc(title)}</span></button>
   </div>
-  ${this.buildEditableMetaLink('edit-assignee', id, item.scope, this.esc(assignee))}
+    ${this.buildEditableMetaLink('edit-assignee', id, item.scope, this.esc(assignee))}${iteration ? this.buildEditableMetaLink('edit-iteration', id, item.scope, this.esc(iterationLabel(iteration)), ' · ') : ''}
   <div class="card-footer">
     ${this.buildStateControl(item, state)}
   </div>
