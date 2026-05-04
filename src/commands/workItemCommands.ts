@@ -3,6 +3,7 @@ import type { WorkItemNode } from '../providers/workItemProvider';
 import type { AdoClient } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
 import { WorkItemDetailsPanel } from '../views/workItemDetailsPanel';
+import { showErrorMessage, showInformationMessage, showWarningMessage } from '../utils/notifications';
 
 /**
  * Show the work item details webview panel.
@@ -13,7 +14,7 @@ export async function viewWorkItemDetails(
     config: ConfigManager
 ): Promise<void> {
     if (!node) {
-        vscode.window.showInformationMessage(
+        showInformationMessage(
             'Select a work item first, then run "View Work Item Details".'
         );
         return;
@@ -37,7 +38,7 @@ export function openWorkItem(
     const org = node.organization ?? client.organization ?? config.organization;
     const project = node.project ?? config.project;
     if (!org || !project) {
-        vscode.window.showWarningMessage(
+        showWarningMessage(
             'Please configure your organization and project first.'
         );
         return;
@@ -55,7 +56,7 @@ export async function changeWorkItemState(
     config: ConfigManager
 ): Promise<boolean> {
     if (!node) {
-        vscode.window.showInformationMessage('Select a work item first, then run "Change Work Item State".');
+        showInformationMessage('Select a work item first, then run "Change Work Item State".');
         return false;
     }
 
@@ -65,23 +66,16 @@ export async function changeWorkItemState(
     const organization = node.organization ?? client.organization ?? config.organization;
 
     if (!organization || !project) {
-        vscode.window.showWarningMessage('Unable to change state because organization or project is missing.');
+        showWarningMessage('Unable to change state because organization or project is missing.');
         return false;
     }
 
-    const commonStates = [
-        'New',
-        'Proposed',
-        'Active',
-        'Committed',
-        'In Progress',
-        'Resolved',
-        'Closed',
-        'Done',
-        'Removed'
-    ];
+    const workItemType = (node.workItem.fields?.['System.WorkItemType'] as string | undefined) ?? '';
+    const allowedStates = workItemType
+        ? await client.getWorkItemTypeStates(project, workItemType, organization)
+        : [];
     const quickPickItems = [
-        ...commonStates.map(state => ({
+        ...allowedStates.map(state => ({
             label: state,
             description: state === currentState ? 'Current' : undefined
         })),
@@ -113,10 +107,10 @@ export async function changeWorkItemState(
 
     try {
         await client.updateWorkItemState(project, id, nextState, organization);
-        vscode.window.showInformationMessage(`Work item #${id} moved to ${nextState}.`);
+        showInformationMessage(`Work item #${id} moved to ${nextState}.`);
         return true;
     } catch (err) {
-        vscode.window.showErrorMessage(`Failed to change work item state: ${err}`);
+        showErrorMessage(`Failed to change work item state: ${err}`);
         return false;
     }
 }

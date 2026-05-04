@@ -80,6 +80,7 @@ export class AdoClient {
     private _connectionsByOrganization = new Map<string, azdev.WebApi>();
     private _organization: string | undefined;
     private _currentUserIds = new Map<string, string>();
+    private _workItemStatesByType = new Map<string, string[]>();
 
     constructor(private _accessToken: string) {}
 
@@ -90,6 +91,7 @@ export class AdoClient {
         this._accessToken = token;
         this._currentUserIds.clear();
         this._connectionsByOrganization.clear();
+        this._workItemStatesByType.clear();
 
         if (!token.trim()) {
             this.disconnect();
@@ -122,6 +124,7 @@ export class AdoClient {
         this._connection = undefined;
         this._connectionsByOrganization.clear();
         this._currentUserIds.clear();
+        this._workItemStatesByType.clear();
     }
 
     private get connection(): azdev.WebApi {
@@ -330,6 +333,26 @@ export class AdoClient {
             undefined,
             WorkItemExpand.All
         );
+    }
+
+    async getWorkItemTypeStates(
+        project: string,
+        workItemType: string,
+        organization?: string
+    ): Promise<string[]> {
+        const cacheKey = JSON.stringify([organization ?? this._organization ?? null, project, workItemType]);
+        const cached = this._workItemStatesByType.get(cacheKey);
+        if (cached) {
+            return cached;
+        }
+
+        const witApi: IWorkItemTrackingApi = await this.getConnectionFor(organization).getWorkItemTrackingApi();
+        const states = await witApi.getWorkItemTypeStates(project, workItemType);
+        const names = (states ?? [])
+            .map(state => state.name)
+            .filter((name): name is string => typeof name === 'string' && name.trim().length > 0);
+        this._workItemStatesByType.set(cacheKey, names);
+        return names;
     }
 
     // -------------------------------------------------------------------------

@@ -11,6 +11,7 @@ import {
     type ProjectScope
 } from '../providers/projectScopes';
 import { mapWithConcurrencyLimit } from '../utils/async';
+import { showErrorMessage, showInformationMessage, showWarningMessage } from '../utils/notifications';
 
 type PlanningPanelKind = 'backlog' | 'board' | 'sprint';
 
@@ -31,23 +32,12 @@ interface PlanningMessage {
     project?: string;
 }
 
-const COMMON_STATES = [
-    'New',
-    'Proposed',
-    'Active',
-    'Committed',
-    'In Progress',
-    'Resolved',
-    'Closed',
-    'Done',
-    'Removed'
-];
-
 export class PlanningPanel {
     private static readonly _panels = new Map<PlanningPanelKind, PlanningPanel>();
 
     private readonly _panel: vscode.WebviewPanel;
     private readonly _disposables: vscode.Disposable[] = [];
+    private _allowedStatesByItemKey = new Map<string, string[]>();
 
     static async show(
         kind: PlanningPanelKind,
@@ -117,6 +107,7 @@ export class PlanningPanel {
             }
 
             const scopedItems = await this.loadItems(scopes);
+            this._allowedStatesByItemKey = await this.loadAllowedStates(scopedItems);
             this._panel.webview.html = this.buildHtml(scopes, scopedItems);
         } catch (err) {
             this._panel.webview.html = this.buildMessageHtml(`Failed to load planning data: ${this.formatError(err)}`);
@@ -144,7 +135,7 @@ export class PlanningPanel {
         const organization = message.organization ?? this._config.organization;
         const project = message.project ?? this._config.project;
         if (!organization || !project) {
-            vscode.window.showWarningMessage('Unable to complete the action because organization or project is missing.');
+            showWarningMessage('Unable to complete the action because organization or project is missing.');
             return;
         }
 
@@ -152,12 +143,12 @@ export class PlanningPanel {
             try {
                 const workItem = await this._client.getWorkItemById(project, message.id, organization);
                 if (!workItem) {
-                    vscode.window.showWarningMessage(`Work item #${message.id} could not be loaded.`);
+                    showWarningMessage(`Work item #${message.id} could not be loaded.`);
                     return;
                 }
                 await WorkItemDetailsPanel.show(this._client, this._config, workItem, { organization, project });
             } catch (err) {
-                vscode.window.showErrorMessage(`Failed to open work item: ${this.formatError(err)}`);
+                showErrorMessage(`Failed to open work item: ${this.formatError(err)}`);
             }
             return;
         }
@@ -165,13 +156,41 @@ export class PlanningPanel {
         if (message.type === 'setState' && message.state) {
             try {
                 await this._client.updateWorkItemState(project, message.id, message.state, organization);
-                vscode.window.showInformationMessage(`Work item #${message.id} moved to ${message.state}.`);
+                showInformationMessage(`Work item #${message.id} moved to ${message.state}.`);
                 this._onDidUpdate?.();
                 await this.refresh();
             } catch (err) {
-                vscode.window.showErrorMessage(`Failed to update work item state: ${this.formatError(err)}`);
+                showErrorMessage(`Failed to update work item state: ${this.formatError(err)}`);
             }
         }
+    }
+
+    private async loadAllowedStates(items: ScopedWorkItem[]): Promise<Map<string, string[]>> {
+        const allowedStates = new Map<string, string[]>();
+        const requests = new Map<string, { project: string; organization: string; workItemType: string }>();
+
+        for (const item of items) {
+            const workItemType = (item.workItem.fields?.['System.WorkItemType'] as string | undefined) ?? '';
+            if (!workItemType) {
+                continue;
+            }
+
+            const requestKey = JSON.stringify([item.scope.organization, item.scope.project, workItemType]);
+            if (!requests.has(requestKey)) {
+                requests.set(requestKey, {
+                    project: item.scope.project,
+                    organization: item.scope.organization,
+                    workItemType
+                });
+            }
+        }
+
+        await mapWithConcurrencyLimit([...requests.values()], MAX_CONCURRENT_SCOPE_REQUESTS, async request => {
+            const states = await this._client.getWorkItemTypeStates(request.project, request.workItemType, request.organization);
+            allowedStates.set(JSON.stringify([request.organization, request.project, request.workItemType]), states);
+        });
+
+        return allowedStates;
     }
 
     private buildHtml(scopes: ProjectScope[], items: ScopedWorkItem[]): string {
@@ -654,7 +673,12 @@ document.addEventListener('keydown', event => {
 
     private buildStateControl(item: ScopedWorkItem, state: string): string {
         const id = item.workItem.id ?? 0;
-        const states = COMMON_STATES.includes(state) || !state ? COMMON_STATES : [state, ...COMMON_STATES];
+        const workItemType = (item.workItem.fields?.['System.WorkItemType'] as string | undefined) ?? '';
+        const cacheKey = JSON.stringify([item.scope.organization, item.scope.project, workItemType]);
+        const allowedStates = this._allowedStatesByItemKey.get(cacheKey) ?? [];
+        const states = allowedStates.includes(state) || !state
+            ? allowedStates
+            : [state, ...allowedStates];
         const options = states.map(option => `<option value="${this.escAttr(option)}"${option === state ? ' selected' : ''}>${this.esc(option)}</option>`).join('');
         return `<div class="state-control"><select data-id="${id}" aria-label="State for work item ${id}">${options}</select><button class="btn btn-primary" data-action="save-state" data-id="${id}" data-organization="${this.escAttr(item.scope.organization)}" data-project="${this.escAttr(item.scope.project)}">Save</button></div>`;
     }

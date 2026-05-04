@@ -275,6 +275,12 @@
         "command": "adoext.showMcpServerInfo",
         "title": "Show MCP Server Info",
         "category": "ADOExt"
+      },
+      {
+        "command": "adoext.showOutput",
+        "title": "Show Output",
+        "category": "ADOExt",
+        "icon": "$(output)"
       }
     ],
     "menus": {

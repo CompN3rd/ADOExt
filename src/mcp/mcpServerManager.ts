@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import type { ConfigManager } from '../config/configManager';
 import type { AuthProvider } from '../auth/authProvider';
+import { showInformationMessage } from '../utils/notifications';
 
 /**
  * Manages MCP server integration within the VS Code extension.
@@ -116,7 +117,7 @@ export class McpServerManager implements vscode.Disposable {
 
                 const doc = JSON.stringify(config, null, 2);
                 void vscode.env.clipboard.writeText(doc);
-                void vscode.window.showInformationMessage(
+                void showInformationMessage(
                     'Azure DevOps MCP server configuration copied to clipboard. ' +
                     'Paste it into your .vscode/mcp.json file.'
                 );
@@ -127,7 +128,7 @@ export class McpServerManager implements vscode.Disposable {
         this._disposables.push(
             vscode.commands.registerCommand('adoext.showMcpServerInfo', () => {
                 const organization = this._config.organization || '<your-org>';
-                void vscode.window.showInformationMessage(
+                void showInformationMessage(
                     `ADOExt uses the official Microsoft Azure DevOps MCP server (@azure-devops/mcp).\n` +
                     `Run: npx -y @azure-devops/mcp ${organization}\n` +
                     `Auth: interactive (default), --authentication envvar (ADO_MCP_AUTH_TOKEN), ` +

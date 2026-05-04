@@ -7,6 +7,7 @@ import type {
     PullRequestDiffModel
 } from '../api/adoClient';
 import { parsePrDiffUri, PR_DIFF_SCHEME, buildPrDiffUri } from './prContentProvider';
+import { showErrorMessage, showWarningMessage } from '../utils/notifications';
 
 interface PrContext {
     organization: string;
@@ -290,7 +291,7 @@ export class PrCommentController implements vscode.Disposable {
             // from the thread's URI before posting.
             meta = this.deriveMetadataFromUri(reply.thread.uri);
             if (!meta) {
-                vscode.window.showWarningMessage('Cannot post comment because the thread is not associated with a pull request.');
+                showWarningMessage('Cannot post comment because the thread is not associated with a pull request.');
                 return;
             }
             this._threadMetadata.set(reply.thread, meta);
@@ -314,7 +315,7 @@ export class PrCommentController implements vscode.Disposable {
             } else {
                 // Create a brand new thread.
                 if (!reply.thread.range) {
-                    vscode.window.showWarningMessage('Cannot create comment: thread has no source range.');
+                    showWarningMessage('Cannot create comment: thread has no source range.');
                     return;
                 }
                 const line = reply.thread.range.start.line + 1;
@@ -341,7 +342,7 @@ export class PrCommentController implements vscode.Disposable {
             // VS Code clears the reply input automatically once the command resolves.
             void vscode.commands.executeCommand('adoext.refreshPullRequests');
         } catch (err) {
-            vscode.window.showErrorMessage(`Failed to post comment: ${this.formatError(err)}`);
+            showErrorMessage(`Failed to post comment: ${this.formatError(err)}`);
         }
     }
 
@@ -362,7 +363,7 @@ export class PrCommentController implements vscode.Disposable {
             this.applyState(thread, updated.status ?? status);
             void vscode.commands.executeCommand('adoext.refreshPullRequests');
         } catch (err) {
-            vscode.window.showErrorMessage(`Failed to update thread: ${this.formatError(err)}`);
+            showErrorMessage(`Failed to update thread: ${this.formatError(err)}`);
         }
     }
 
@@ -473,7 +474,7 @@ export class PrCommentController implements vscode.Disposable {
                 session.organization
             );
         } catch (err) {
-            vscode.window.showWarningMessage(`Failed to load PR comments: ${this.formatError(err)}`);
+            showWarningMessage(`Failed to load PR comments: ${this.formatError(err)}`);
             return [];
         }
     }

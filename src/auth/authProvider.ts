@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { showErrorMessage } from '../utils/notifications';
 
 /**
  * Azure DevOps resource scope for Microsoft authentication.
@@ -44,7 +45,7 @@ export class AuthProvider {
             );
             return this._session !== undefined;
         } catch (err) {
-            vscode.window.showErrorMessage(`Failed to sign in: ${err}`);
+            showErrorMessage(`Failed to sign in: ${err}`);
             return false;
         }
     }
