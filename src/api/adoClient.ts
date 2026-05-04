@@ -2,7 +2,7 @@ import * as azdev from 'azure-devops-node-api';
 import type { IWorkItemTrackingApi } from 'azure-devops-node-api/WorkItemTrackingApi';
 import type { IGitApi } from 'azure-devops-node-api/GitApi';
 import type { ICoreApi } from 'azure-devops-node-api/CoreApi';
-import { WorkItemExpand } from 'azure-devops-node-api/interfaces/WorkItemTrackingInterfaces';
+import { CommentExpandOptions, WorkItemExpand } from 'azure-devops-node-api/interfaces/WorkItemTrackingInterfaces';
 import { GitVersionType, VersionControlChangeType } from 'azure-devops-node-api/interfaces/GitInterfaces';
 import { Operation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
 import type {
@@ -679,7 +679,7 @@ export class AdoClient {
      */
     async getWorkItemComments(project: string, workItemId: number, organization?: string): Promise<WorkItemComment[]> {
         const witApi: IWorkItemTrackingApi = await this.getConnectionFor(organization).getWorkItemTrackingApi();
-        const result = await witApi.getComments(project, workItemId);
+        const result = await witApi.getComments(project, workItemId, undefined, undefined, false, CommentExpandOptions.RenderedText);
         return (result?.comments ?? []).filter((comment): comment is WorkItemComment => !comment.isDeleted);
     }
 

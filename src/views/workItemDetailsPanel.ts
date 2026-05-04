@@ -233,7 +233,7 @@ export class WorkItemDetailsPanel {
 
         const commentsHtml = comments.length === 0
             ? '<p class="empty">No comments yet.</p>'
-            : comments.map(c => this._buildCommentHtml(c)).join('');
+            : comments.map((c, index) => this._buildCommentHtml(c, index)).join('');
 
         const metaRows = [
             ['Assigned To', assignedTo],
@@ -252,6 +252,7 @@ export class WorkItemDetailsPanel {
         // Embed raw description as JSON so the nonce-protected script can
         // sanitize and render it without any server-side regex manipulation.
         const descriptionJson = JSON.stringify(description);
+        const commentBodiesJson = JSON.stringify(comments.map(comment => comment.renderedText ?? comment.text ?? ''));
 
         return /* html */`<!DOCTYPE html>
 <html lang="en">
@@ -294,7 +295,16 @@ export class WorkItemDetailsPanel {
   .comment-header { display: flex; justify-content: space-between; margin-bottom: 6px; }
   .comment-author { font-weight: bold; font-size: 0.9em; }
   .comment-date { color: var(--vscode-descriptionForeground); font-size: 0.8em; }
-  .comment-text { white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
+    .comment-text { word-break: break-word; line-height: 1.5; }
+    .comment-text p { margin: 0 0 8px; }
+    .comment-text ul, .comment-text ol { padding-left: 24px; margin: 0 0 8px; }
+    .comment-text table { border-collapse: collapse; margin-bottom: 8px; }
+    .comment-text td, .comment-text th { border: 1px solid var(--vscode-panel-border); padding: 4px 8px; }
+    .comment-text a { color: var(--vscode-textLink-foreground); }
+    .comment-text a:hover { color: var(--vscode-textLink-activeForeground); }
+    .comment-text img { max-width: 100%; }
+    .comment-text pre, .comment-text code { background: var(--vscode-textCodeBlock-background); padding: 2px 4px; border-radius: 3px; font-family: var(--vscode-editor-font-family); }
+    .comment-text pre { padding: 8px; overflow-x: auto; }
   .new-comment-form { display: flex; flex-direction: column; gap: 6px; }
   .reply-input { background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); border-radius: 3px; padding: 6px 8px; font-family: inherit; font-size: inherit; resize: vertical; min-height: 60px; width: 100%; box-sizing: border-box; }
   .btn { padding: 4px 12px; border-radius: 3px; border: 1px solid var(--vscode-button-border, transparent); cursor: pointer; font-size: 0.85em; }
@@ -373,9 +383,9 @@ document.querySelector('[data-action="set-state"]')?.addEventListener('click', (
 // The CSP (script-src 'nonce-...') provides an additional layer: even if a
 // script tag somehow survived sanitization it would be blocked by the CSP.
 // ---------------------------------------------------------------------------
-(function renderDescription() {
-    const rawHtml = ${descriptionJson};
-    if (!rawHtml) { return; }
+(function renderRichText() {
+    const rawDescriptionHtml = ${descriptionJson};
+    const rawCommentHtml = ${commentBodiesJson};
 
     const ALLOWED_TAGS = new Set([
         'p', 'br', 'div', 'span',
@@ -471,14 +481,21 @@ document.querySelector('[data-action="set-state"]')?.addEventListener('click', (
         return el;
     }
 
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(rawHtml, 'text/html');
-    const container = document.getElementById('description-content');
-    if (!container) { return; }
+    function renderInto(rawHtml, container) {
+        if (!rawHtml || !container) {
+            return;
+        }
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(rawHtml, 'text/html');
+        Array.from(doc.body.childNodes).forEach(child => {
+            const cleaned = cleanNode(child);
+            if (cleaned) { container.appendChild(cleaned); }
+        });
+    }
 
-    Array.from(doc.body.childNodes).forEach(child => {
-        const cleaned = cleanNode(child);
-        if (cleaned) { container.appendChild(cleaned); }
+    renderInto(rawDescriptionHtml, document.getElementById('description-content'));
+    rawCommentHtml.forEach((rawHtml, index) => {
+        renderInto(rawHtml, document.getElementById('comment-content-' + index));
     });
 }());
 </script>
@@ -486,19 +503,18 @@ document.querySelector('[data-action="set-state"]')?.addEventListener('click', (
 </html>`;
     }
 
-    private _buildCommentHtml(comment: WorkItemComment): string {
+    private _buildCommentHtml(comment: WorkItemComment, index: number): string {
         const author = this._esc(
             (comment.createdBy as { displayName?: string } | undefined)?.displayName ?? 'Unknown'
         );
         const date = this._formatDate(comment.createdDate);
-        const text = this._esc(comment.text ?? '');
         return `
 <div class="comment">
   <div class="comment-header">
     <span class="comment-author">${author}</span>
     <span class="comment-date">${date}</span>
   </div>
-  <div class="comment-text">${text}</div>
+  <div class="comment-text" id="comment-content-${index}"></div>
 </div>`;
     }
 
