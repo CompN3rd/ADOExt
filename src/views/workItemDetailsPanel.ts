@@ -170,6 +170,8 @@ export class WorkItemDetailsPanel {
             ? 'Failed to add work item comment'
             : msg.type === 'setState'
                 ? 'Failed to update work item state'
+                : msg.type === 'openLinkedItem'
+                    ? 'Failed to open linked item'
                 : 'Failed to open work item in browser';
 
         try {
@@ -639,10 +641,34 @@ document.querySelectorAll('[data-action="open-linked-item"]').forEach(btn => {
             .join('');
     }
 
-    /**
-     * Extract Azure DevOps git artifact links (PRs, branches, commits) from
-     * a work item's relations array and build browser-navigable web URLs.
-     */
+    private _parseGitArtifactLink(
+        relation: { rel?: string; url?: string }
+    ): { artifactType: string; repoId: string; identifier: string } | undefined {
+        if (relation.rel !== 'ArtifactLink') { return undefined; }
+        const vstfsUrl = relation.url ?? '';
+        if (!vstfsUrl.startsWith('vstfs:///Git/')) { return undefined; }
+
+        const withoutPrefix = vstfsUrl.slice('vstfs:///Git/'.length);
+        const slashIdx = withoutPrefix.indexOf('/');
+        if (slashIdx === -1) { return undefined; }
+
+        const artifactType = withoutPrefix.slice(0, slashIdx);
+        const encodedPath = withoutPrefix.slice(slashIdx + 1);
+        const parts = encodedPath.split(/%2F/i).map(part => {
+            try { return decodeURIComponent(part); } catch {
+                return part;
+            }
+        });
+        if (parts.length < 3) { return undefined; }
+
+        const [, repoId, ...rest] = parts;
+        return {
+            artifactType,
+            repoId,
+            identifier: rest.join('/')
+        };
+    }
+
     private async _resolveRepositoryNames(
         workItem: WorkItem,
         project: string,
@@ -652,23 +678,9 @@ document.querySelectorAll('[data-action="open-linked-item"]').forEach(btn => {
         const relations = workItem.relations ?? [];
 
         for (const relation of relations) {
-            if (relation.rel !== 'ArtifactLink') { continue; }
-            const vstfsUrl = (relation as { rel?: string; url?: string }).url ?? '';
-            if (!vstfsUrl.startsWith('vstfs:///Git/')) { continue; }
-
-            const withoutPrefix = vstfsUrl.slice('vstfs:///Git/'.length);
-            const slashIdx = withoutPrefix.indexOf('/');
-            if (slashIdx === -1) { continue; }
-
-            const encodedPath = withoutPrefix.slice(slashIdx + 1);
-            const parts = encodedPath.split(/%2F/i).map(p => {
-                try { return decodeURIComponent(p); } catch {
-                    return p;
-                }
-            });
-            if (parts.length < 3) { continue; }
-
-            repositoryIds.add(parts[1]);
+            const artifact = this._parseGitArtifactLink(relation as { rel?: string; url?: string });
+            if (!artifact) { continue; }
+            repositoryIds.add(artifact.repoId);
         }
 
         const names = new Map<string, string>();
@@ -697,28 +709,10 @@ document.querySelectorAll('[data-action="open-linked-item"]').forEach(btn => {
         const relations = workItem.relations ?? [];
 
         for (const relation of relations) {
-            if (relation.rel !== 'ArtifactLink') { continue; }
-            const vstfsUrl = (relation as { rel?: string; url?: string }).url ?? '';
-            if (!vstfsUrl.startsWith('vstfs:///Git/')) { continue; }
+            const artifact = this._parseGitArtifactLink(relation as { rel?: string; url?: string });
+            if (!artifact) { continue; }
 
-            const withoutPrefix = vstfsUrl.slice('vstfs:///Git/'.length);
-            const slashIdx = withoutPrefix.indexOf('/');
-            if (slashIdx === -1) { continue; }
-
-            const artifactType = withoutPrefix.slice(0, slashIdx);
-            const encodedPath = withoutPrefix.slice(slashIdx + 1);
-
-            // Path format: {projectId}%2F{repoId}%2F{identifier}
-            const parts = encodedPath.split(/%2F/i).map(p => {
-                try { return decodeURIComponent(p); } catch {
-                    // Malformed percent-encoding; fall back to the raw segment
-                    return p;
-                }
-            });
-            if (parts.length < 3) { continue; }
-
-            const [, repoId, ...rest] = parts;
-            const identifier = rest.join('/');
+            const { artifactType, repoId, identifier } = artifact;
             const repository = repositoryNames.get(repoId) ?? repoId;
 
             if (artifactType === 'PullRequestId') {

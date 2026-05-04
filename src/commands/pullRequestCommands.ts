@@ -22,6 +22,18 @@ function asPrScope(arg: PullRequestNode | PrScope): PrScope {
     return { pr: arg.pr, organization: arg.organization, project: arg.project };
 }
 
+function getPullRequestWebScope(
+    node: PullRequestNode,
+    client: AdoClient,
+    config: ConfigManager
+): { org?: string; project?: string; repoId: string } {
+    return {
+        org: node.organization ?? client.organization ?? config.organization,
+        project: node.project ?? config.project,
+        repoId: node.pr.repository?.name ?? node.pr.repository?.id ?? ''
+    };
+}
+
 /**
  * Open the source branch of a pull request in the Azure DevOps web UI.
  */
@@ -31,12 +43,10 @@ export function openPullRequestSourceBranch(
     config: ConfigManager
 ): void {
     const pr = node.pr;
-    const org = node.organization ?? client.organization ?? config.organization;
-    const project = node.project ?? config.project;
-    const repoId = pr.repository?.name ?? pr.repository?.id ?? '';
+    const { org, project, repoId } = getPullRequestWebScope(node, client, config);
     const sourceBranch = (pr.sourceRefName ?? '').replace('refs/heads/', '');
 
-    if (!sourceBranch) {
+    if (!org || !project || !repoId || !sourceBranch) {
         showWarningMessage('Unable to determine source branch for this pull request.');
         return;
     }
@@ -55,12 +65,10 @@ export function openPullRequestCommit(
     config: ConfigManager
 ): void {
     const pr = node.pr;
-    const org = node.organization ?? client.organization ?? config.organization;
-    const project = node.project ?? config.project;
-    const repoId = pr.repository?.name ?? pr.repository?.id ?? '';
+    const { org, project, repoId } = getPullRequestWebScope(node, client, config);
     const commitId = pr.lastMergeSourceCommit?.commitId;
 
-    if (!commitId) {
+    if (!org || !project || !repoId || !commitId) {
         showWarningMessage('Unable to determine head commit for this pull request.');
         return;
     }

@@ -13,8 +13,9 @@ export interface RepoContext {
  * Supported formats:
  *  - HTTPS: https://dev.azure.com/{org}/{project}/_git/{repo}
  *  - HTTPS: https://{org}.visualstudio.com/{project}/_git/{repo}
+ *  - HTTPS: https://{org}.visualstudio.com/DefaultCollection/{project}/_git/{repo}
  *  - SSH:   git@ssh.dev.azure.com:v3/{org}/{project}/{repo}
- *  - SSH:   ssh://{org}@vs-ssh.visualstudio.com:22/v3/{project}/{repo}  (legacy)
+ *  - SSH:   ssh://{org}@vs-ssh.visualstudio.com:22/v3/{org}/{project}/{repo}  (legacy)
  */
 export function parseAdoRemoteUrl(url: string): RepoContext | undefined {
     if (!url) { return undefined; }
@@ -33,8 +34,9 @@ export function parseAdoRemoteUrl(url: string): RepoContext | undefined {
     }
 
     // HTTPS: https://{org}.visualstudio.com/{project}/_git/{repo}
+    //     or https://{org}.visualstudio.com/DefaultCollection/{project}/_git/{repo}
     const vscomMatch = url.match(
-        /^https?:\/\/([^.]+)\.visualstudio\.com\/([^/]+)\/_git\/([^/?\s]+?)(?:\.git)?(?:\s|$)/i
+        /^https?:\/\/([^.]+)\.visualstudio\.com\/(?:DefaultCollection\/)?([^/]+)\/_git\/([^/?\s]+?)(?:\.git)?(?:\s|$)/i
     );
     if (vscomMatch) {
         return {
@@ -58,15 +60,15 @@ export function parseAdoRemoteUrl(url: string): RepoContext | undefined {
         };
     }
 
-    // SSH: ssh://{org}@vs-ssh.visualstudio.com:22/v3/{project}/{repo}
+    // SSH: ssh://{org}@vs-ssh.visualstudio.com:22/v3/{org}/{project}/{repo}
     const legacySshMatch = url.match(
-        /^ssh:\/\/([^@]+)@vs-ssh\.visualstudio\.com(?::\d+)?\/v3\/([^/]+)\/([^/\s]+?)(?:\.git)?(?:\s|$)/i
+        /^ssh:\/\/([^@]+)@vs-ssh\.visualstudio\.com(?::\d+)?\/v3\/([^/]+)\/([^/]+)\/([^/\s]+?)(?:\.git)?(?:\s|$)/i
     );
     if (legacySshMatch) {
         return {
             organization: decodeURIComponent(legacySshMatch[1]),
-            project: decodeURIComponent(legacySshMatch[2]),
-            repository: decodeURIComponent(legacySshMatch[3]),
+            project: decodeURIComponent(legacySshMatch[3]),
+            repository: decodeURIComponent(legacySshMatch[4]),
             remoteUrl: url
         };
     }
