@@ -63,13 +63,13 @@ export class McpServerManager implements vscode.Disposable {
                         return;
                     }
 
-                    const cmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+                    const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
                     if (choice.value === 'envvar') {
                         config = {
                             servers: {
                                 'azure-devops': {
                                     type: 'stdio',
-                                    command: cmd,
+                                    command: npxCmd,
                                     args: ['-y', '@azure-devops/mcp', organization, '--authentication', 'envvar'],
                                     env: {
                                         ADO_MCP_AUTH_TOKEN: '${ADO_MCP_AUTH_TOKEN}'
@@ -82,7 +82,7 @@ export class McpServerManager implements vscode.Disposable {
                             servers: {
                                 'azure-devops': {
                                     type: 'stdio',
-                                    command: cmd,
+                                    command: npxCmd,
                                     args: ['-y', '@azure-devops/mcp', organization, '--authentication', 'pat'],
                                     env: {
                                         PERSONAL_ACCESS_TOKEN: '${PERSONAL_ACCESS_TOKEN}'
@@ -95,19 +95,19 @@ export class McpServerManager implements vscode.Disposable {
                             servers: {
                                 'azure-devops': {
                                     type: 'stdio',
-                                    command: cmd,
+                                    command: npxCmd,
                                     args: ['-y', '@azure-devops/mcp', organization]
                                 }
                             }
                         };
                     }
                 } else {
-                    const cmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+                    const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
                     config = {
                         servers: {
                             'azure-devops': {
                                 type: 'stdio',
-                                command: cmd,
+                                command: npxCmd,
                                 args: ['-y', '@azure-devops/mcp', organization]
                             }
                         }
