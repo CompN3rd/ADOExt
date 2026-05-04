@@ -3,32 +3,32 @@ import * as vscode from 'vscode';
 export const ALL_PROJECTS = '*';
 
 export type ProjectSelectionsByOrganization = Record<string, string[]>;
+export type WorkItemQueryFilter = 'assigned' | 'created' | 'mentioned' | 'all';
+export type PullRequestQueryFilter = 'mine' | 'created' | 'assigned' | 'all';
 
-export interface WorkItemQueryDescriptor {
+export interface SavedQueryDefinition<TFilter extends string> {
     id: string;
-    name: string;
-    filter: 'assigned' | 'created' | 'mentioned' | 'all';
+    label: string;
+    filter: TFilter;
+    description?: string;
 }
 
-export interface PullRequestQueryDescriptor {
-    id: string;
-    name: string;
-    filter: 'mine' | 'created' | 'assigned' | 'all';
-}
+export type SavedWorkItemQuery = SavedQueryDefinition<WorkItemQueryFilter>;
+export type SavedPullRequestQuery = SavedQueryDefinition<PullRequestQueryFilter>;
 
-export const DEFAULT_WORK_ITEM_QUERIES: readonly WorkItemQueryDescriptor[] = [
-    { id: 'assigned', name: 'Assigned to Me', filter: 'assigned' },
-    { id: 'created', name: 'Created by Me', filter: 'created' },
-    { id: 'mentioned', name: 'Mentioned in', filter: 'mentioned' },
-    { id: 'all', name: 'All Active', filter: 'all' },
-];
+const WORK_ITEM_QUERY_FILTERS: ReadonlySet<WorkItemQueryFilter> = new Set([
+    'assigned',
+    'created',
+    'mentioned',
+    'all'
+]);
 
-export const DEFAULT_PR_QUERIES: readonly PullRequestQueryDescriptor[] = [
-    { id: 'mine', name: 'Mine (Created or Reviewing)', filter: 'mine' },
-    { id: 'created', name: 'Created by Me', filter: 'created' },
-    { id: 'assigned', name: 'Assigned to Me for Review', filter: 'assigned' },
-    { id: 'all', name: 'All Active', filter: 'all' },
-];
+const PULL_REQUEST_QUERY_FILTERS: ReadonlySet<PullRequestQueryFilter> = new Set([
+    'mine',
+    'created',
+    'assigned',
+    'all'
+]);
 
 /**
  * Centralises all reads and writes to the extension's VS Code configuration.
@@ -111,88 +111,104 @@ export class ConfigManager {
         await this.config.update('project', firstProject, vscode.ConfigurationTarget.Global);
     }
 
-    get workItemQuery(): 'assigned' | 'created' | 'mentioned' | 'all' {
-        return this.config.get<'assigned' | 'created' | 'mentioned' | 'all'>(
-            'workItemQuery',
-            'assigned'
+    get workItemQueries(): SavedWorkItemQuery[] {
+        const queries = this.normalizeWorkItemQueries(
+            this.config.get<Partial<SavedWorkItemQuery>[]>('workItemQueries', [])
         );
-    }
+        if (queries.length > 0) {
+            return queries;
+        }
 
-    get pullRequestFilter(): 'mine' | 'created' | 'assigned' | 'all' {
-        return this.config.get<'mine' | 'created' | 'assigned' | 'all'>(
-            'pullRequestFilter',
-            'mine'
-        );
-    }
-
-    // -------------------------------------------------------------------------
-    // Saved query presets
-    // -------------------------------------------------------------------------
-
-    get workItemQueries(): WorkItemQueryDescriptor[] {
-        return this.config.get<WorkItemQueryDescriptor[]>('workItemQueries', []);
-    }
-
-    async setWorkItemQueries(queries: WorkItemQueryDescriptor[]): Promise<void> {
-        await this.config.update('workItemQueries', queries, vscode.ConfigurationTarget.Global);
-    }
-
-    get pullRequestQueries(): PullRequestQueryDescriptor[] {
-        return this.config.get<PullRequestQueryDescriptor[]>('pullRequestQueries', []);
-    }
-
-    async setPullRequestQueries(queries: PullRequestQueryDescriptor[]): Promise<void> {
-        await this.config.update('pullRequestQueries', queries, vscode.ConfigurationTarget.Global);
+        return [this.createLegacyWorkItemQuery(this.getLegacyWorkItemQuery())];
     }
 
     get activeWorkItemQueryId(): string {
-        return this.config.get<string>('activeWorkItemQueryId', '');
+        return this.resolveActiveQuery(
+            this.config.get<string>('activeWorkItemQueryId', ''),
+            this.workItemQueries
+        ).id;
+    }
+
+    get activeWorkItemQuery(): SavedWorkItemQuery {
+        return this.resolveActiveQuery(
+            this.config.get<string>('activeWorkItemQueryId', ''),
+            this.workItemQueries
+        );
+    }
+
+    async setWorkItemQueries(queries: SavedWorkItemQuery[], activeId?: string): Promise<void> {
+        const normalized = this.normalizeWorkItemQueries(queries);
+        const activeQuery = normalized.length > 0
+            ? this.resolveActiveQuery(activeId ?? '', normalized)
+            : this.createLegacyWorkItemQuery(this.getLegacyWorkItemQuery());
+
+        await this.config.update('workItemQueries', normalized, vscode.ConfigurationTarget.Global);
+        await this.config.update(
+            'activeWorkItemQueryId',
+            normalized.length > 0 ? activeQuery.id : '',
+            vscode.ConfigurationTarget.Global
+        );
+        await this.config.update('workItemQuery', activeQuery.filter, vscode.ConfigurationTarget.Global);
     }
 
     async setActiveWorkItemQueryId(id: string): Promise<void> {
-        await this.config.update('activeWorkItemQueryId', id, vscode.ConfigurationTarget.Global);
+        const activeQuery = this.resolveActiveQuery(id, this.workItemQueries);
+        await this.config.update('activeWorkItemQueryId', activeQuery.id, vscode.ConfigurationTarget.Global);
+        await this.config.update('workItemQuery', activeQuery.filter, vscode.ConfigurationTarget.Global);
+    }
+
+    get workItemQuery(): WorkItemQueryFilter {
+        return this.activeWorkItemQuery.filter;
+    }
+
+    get pullRequestQueries(): SavedPullRequestQuery[] {
+        const queries = this.normalizePullRequestQueries(
+            this.config.get<Partial<SavedPullRequestQuery>[]>('pullRequestQueries', [])
+        );
+        if (queries.length > 0) {
+            return queries;
+        }
+
+        return [this.createLegacyPullRequestQuery(this.getLegacyPullRequestFilter())];
     }
 
     get activePullRequestQueryId(): string {
-        return this.config.get<string>('activePullRequestQueryId', '');
+        return this.resolveActiveQuery(
+            this.config.get<string>('activePullRequestQueryId', ''),
+            this.pullRequestQueries
+        ).id;
+    }
+
+    get activePullRequestQuery(): SavedPullRequestQuery {
+        return this.resolveActiveQuery(
+            this.config.get<string>('activePullRequestQueryId', ''),
+            this.pullRequestQueries
+        );
+    }
+
+    async setPullRequestQueries(queries: SavedPullRequestQuery[], activeId?: string): Promise<void> {
+        const normalized = this.normalizePullRequestQueries(queries);
+        const activeQuery = normalized.length > 0
+            ? this.resolveActiveQuery(activeId ?? '', normalized)
+            : this.createLegacyPullRequestQuery(this.getLegacyPullRequestFilter());
+
+        await this.config.update('pullRequestQueries', normalized, vscode.ConfigurationTarget.Global);
+        await this.config.update(
+            'activePullRequestQueryId',
+            normalized.length > 0 ? activeQuery.id : '',
+            vscode.ConfigurationTarget.Global
+        );
+        await this.config.update('pullRequestFilter', activeQuery.filter, vscode.ConfigurationTarget.Global);
     }
 
     async setActivePullRequestQueryId(id: string): Promise<void> {
-        await this.config.update('activePullRequestQueryId', id, vscode.ConfigurationTarget.Global);
+        const activeQuery = this.resolveActiveQuery(id, this.pullRequestQueries);
+        await this.config.update('activePullRequestQueryId', activeQuery.id, vscode.ConfigurationTarget.Global);
+        await this.config.update('pullRequestFilter', activeQuery.filter, vscode.ConfigurationTarget.Global);
     }
 
-    /**
-     * Returns the active work item query descriptor, falling back to the legacy
-     * `adoext.workItemQuery` setting when no saved preset is selected.
-     */
-    get activeWorkItemQuery(): WorkItemQueryDescriptor {
-        const activeId = this.activeWorkItemQueryId;
-        if (activeId) {
-            const saved = this.workItemQueries.find(q => q.id === activeId);
-            if (saved) { return saved; }
-            const builtIn = DEFAULT_WORK_ITEM_QUERIES.find(q => q.id === activeId);
-            if (builtIn) { return { ...builtIn }; }
-        }
-        // Legacy fallback: honour the plain workItemQuery setting
-        const legacyFilter = this.workItemQuery;
-        return { ...(DEFAULT_WORK_ITEM_QUERIES.find(q => q.filter === legacyFilter) ?? DEFAULT_WORK_ITEM_QUERIES[0]) };
-    }
-
-    /**
-     * Returns the active pull request query descriptor, falling back to the
-     * legacy `adoext.pullRequestFilter` setting when no saved preset is selected.
-     */
-    get activePullRequestQuery(): PullRequestQueryDescriptor {
-        const activeId = this.activePullRequestQueryId;
-        if (activeId) {
-            const saved = this.pullRequestQueries.find(q => q.id === activeId);
-            if (saved) { return saved; }
-            const builtIn = DEFAULT_PR_QUERIES.find(q => q.id === activeId);
-            if (builtIn) { return { ...builtIn }; }
-        }
-        // Legacy fallback: honour the plain pullRequestFilter setting
-        const legacyFilter = this.pullRequestFilter;
-        return { ...(DEFAULT_PR_QUERIES.find(q => q.filter === legacyFilter) ?? DEFAULT_PR_QUERIES[0]) };
+    get pullRequestFilter(): PullRequestQueryFilter {
+        return this.activePullRequestQuery.filter;
     }
 
     /** Whether to show a small toast when new comments appear on tracked PRs. */
@@ -224,5 +240,124 @@ export class ConfigManager {
             normalized.push(value);
         }
         return normalized;
+    }
+
+    private getLegacyWorkItemQuery(): WorkItemQueryFilter {
+        return this.config.get<WorkItemQueryFilter>('workItemQuery', 'assigned');
+    }
+
+    private getLegacyPullRequestFilter(): PullRequestQueryFilter {
+        return this.config.get<PullRequestQueryFilter>('pullRequestFilter', 'mine');
+    }
+
+    private createLegacyWorkItemQuery(filter: WorkItemQueryFilter): SavedWorkItemQuery {
+        return {
+            id: filter,
+            label: defaultWorkItemQueryLabel(filter),
+            filter
+        };
+    }
+
+    private createLegacyPullRequestQuery(filter: PullRequestQueryFilter): SavedPullRequestQuery {
+        return {
+            id: filter,
+            label: defaultPullRequestQueryLabel(filter),
+            filter
+        };
+    }
+
+    private normalizeWorkItemQueries(values: readonly Partial<SavedWorkItemQuery>[]): SavedWorkItemQuery[] {
+        const seenIds = new Set<string>();
+        const normalized: SavedWorkItemQuery[] = [];
+        for (const raw of values) {
+            const id = typeof raw.id === 'string' ? raw.id.trim() : '';
+            const label = typeof raw.label === 'string' ? raw.label.trim() : '';
+            const description = typeof raw.description === 'string' ? raw.description.trim() : undefined;
+            const filter = raw.filter;
+            if (!id || !label || !isWorkItemQueryFilter(filter) || seenIds.has(id)) {
+                continue;
+            }
+
+            seenIds.add(id);
+            normalized.push({
+                id,
+                label,
+                filter,
+                ...(description ? { description } : {})
+            });
+        }
+        return normalized;
+    }
+
+    private normalizePullRequestQueries(values: readonly Partial<SavedPullRequestQuery>[]): SavedPullRequestQuery[] {
+        const seenIds = new Set<string>();
+        const normalized: SavedPullRequestQuery[] = [];
+        for (const raw of values) {
+            const id = typeof raw.id === 'string' ? raw.id.trim() : '';
+            const label = typeof raw.label === 'string' ? raw.label.trim() : '';
+            const description = typeof raw.description === 'string' ? raw.description.trim() : undefined;
+            const filter = raw.filter;
+            if (!id || !label || !isPullRequestQueryFilter(filter) || seenIds.has(id)) {
+                continue;
+            }
+
+            seenIds.add(id);
+            normalized.push({
+                id,
+                label,
+                filter,
+                ...(description ? { description } : {})
+            });
+        }
+        return normalized;
+    }
+
+    private resolveActiveQuery<TFilter extends string, TQuery extends SavedQueryDefinition<TFilter>>(
+        activeId: string,
+        queries: readonly TQuery[]
+    ): TQuery {
+        const [firstQuery] = queries;
+        if (!firstQuery) {
+            throw new Error('At least one saved query must be available.');
+        }
+
+        const normalizedId = activeId.trim();
+        return queries.find(query => query.id === normalizedId) ?? firstQuery;
+    }
+}
+
+function isWorkItemQueryFilter(value: unknown): value is WorkItemQueryFilter {
+    return typeof value === 'string' && WORK_ITEM_QUERY_FILTERS.has(value as WorkItemQueryFilter);
+}
+
+function isPullRequestQueryFilter(value: unknown): value is PullRequestQueryFilter {
+    return typeof value === 'string' && PULL_REQUEST_QUERY_FILTERS.has(value as PullRequestQueryFilter);
+}
+
+function defaultWorkItemQueryLabel(filter: WorkItemQueryFilter): string {
+    switch (filter) {
+        case 'created':
+            return 'Created by me';
+        case 'mentioned':
+            return 'Mentioning me';
+        case 'all':
+            return 'All active items';
+        case 'assigned':
+        default:
+            return 'Assigned to me';
+    }
+}
+
+function defaultPullRequestQueryLabel(filter: PullRequestQueryFilter): string {
+    switch (filter) {
+        case 'created':
+            return 'Created by me';
+        case 'assigned':
+            return 'Assigned to me';
+        case 'all':
+            return 'All open pull requests';
+        case 'mine':
+        default:
+            return 'Mine';
     }
 }

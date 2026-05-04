@@ -231,10 +231,11 @@ export class PullRequestProvider implements vscode.TreeDataProvider<PullRequestT
     }
 
     private async loadPullRequests(scopes: ProjectScope[]): Promise<ScopedPullRequest[]> {
+        const query = this.config.activePullRequestQuery;
         const results = await mapWithConcurrencyLimit(scopes, MAX_CONCURRENT_SCOPE_REQUESTS, async scope => {
             const prs = await this.client.getPullRequests(
                 scope.project,
-                this.config.activePullRequestQuery.filter,
+                query.filter,
                 undefined,
                 scope.organization
             );

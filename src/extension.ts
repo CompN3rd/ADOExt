@@ -33,12 +33,6 @@ import {
     resolveThread,
     reopenThread
 } from './commands/pullRequestCommands';
-import {
-    selectWorkItemQuery,
-    selectPullRequestQuery,
-    saveWorkItemQuery,
-    savePullRequestQuery
-} from './commands/queryCommands';
 import { McpServerManager } from './mcp/mcpServerManager';
 import { installNotificationMirroring, showErrorMessage, showInformationMessage, showOutputChannel } from './utils/notifications';
 
@@ -197,25 +191,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         })
     );
 
-    // Select / save work item query presets
-    context.subscriptions.push(
-        vscode.commands.registerCommand('adoext.selectWorkItemQuery', async () => {
-            const changed = await selectWorkItemQuery(config);
-            if (changed) {
-                workItemProvider.refresh();
-            }
-        })
-    );
-
-    context.subscriptions.push(
-        vscode.commands.registerCommand('adoext.saveWorkItemQuery', async () => {
-            const saved = await saveWorkItemQuery(config);
-            if (saved) {
-                workItemProvider.refresh();
-            }
-        })
-    );
-
     context.subscriptions.push(
         vscode.commands.registerCommand('adoext.refreshBacklog', async () => {
             await ensureSignedIn();
@@ -291,25 +266,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('adoext.refreshPullRequests', async () => {
             await ensureSignedIn();
             pullRequestProvider.refresh();
-        })
-    );
-
-    // Select / save pull request query presets
-    context.subscriptions.push(
-        vscode.commands.registerCommand('adoext.selectPullRequestQuery', async () => {
-            const changed = await selectPullRequestQuery(config);
-            if (changed) {
-                pullRequestProvider.refresh();
-            }
-        })
-    );
-
-    context.subscriptions.push(
-        vscode.commands.registerCommand('adoext.savePullRequestQuery', async () => {
-            const saved = await savePullRequestQuery(config);
-            if (saved) {
-                pullRequestProvider.refresh();
-            }
         })
     );
 
@@ -539,7 +495,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 refreshAllViews();
                 if (
                     e.affectsConfiguration('adoext.notifyOnNewPullRequestComments') ||
-                    e.affectsConfiguration('adoext.pullRequestCommentPollIntervalSeconds')
+                    e.affectsConfiguration('adoext.pullRequestCommentPollIntervalSeconds') ||
+                    e.affectsConfiguration('adoext.pullRequestFilter') ||
+                    e.affectsConfiguration('adoext.pullRequestQueries') ||
+                    e.affectsConfiguration('adoext.activePullRequestQueryId')
                 ) {
                     prCommentNotifier.applyConfig();
                 }
