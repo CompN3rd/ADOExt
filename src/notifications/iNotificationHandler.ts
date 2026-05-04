@@ -1,4 +1,5 @@
 import type { GitPullRequest } from '../api/adoClient';
+import type { PullRequestQueryFilter } from '../config/configManager';
 import type { ProjectScope } from '../providers/projectScopes';
 
 export interface PrWithScope {
@@ -21,6 +22,14 @@ export interface PrWithScope {
 export interface INotificationHandler {
     /** Whether this handler is currently enabled via settings / feature flags. */
     readonly isEnabled: boolean;
+
+    /**
+     * Pull request filters needed for this handler's event detection.
+     *
+     * The notification service unions these across enabled handlers so one
+     * view filter does not accidentally suppress unrelated notification types.
+     */
+    readonly requiredPullRequestFilters: readonly PullRequestQueryFilter[];
 
     /**
      * Process the current list of active pull requests.

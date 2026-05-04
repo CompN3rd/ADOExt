@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
-import type { AdoClient } from '../api/adoClient';
+import type { AdoClient, GitPullRequest } from '../api/adoClient';
+import type { PullRequestQueryFilter } from '../config/configManager';
 import type { ConfigManager } from '../config/configManager';
 import { resolveProjectScopes } from '../providers/projectScopes';
 import { mapWithConcurrencyLimit } from '../utils/async';
@@ -89,31 +90,79 @@ export class NotificationService implements vscode.Disposable {
             const scopes = await resolveProjectScopes(this._client, this._config);
             if (scopes.length === 0) { return; }
 
+            const enabledHandlers = this._handlers.filter(h => h.isEnabled);
+            if (enabledHandlers.length === 0) { return; }
+
+            const requiredFilters = collectRequiredFilters(enabledHandlers);
+
             const prsByScope = await mapWithConcurrencyLimit(
                 scopes,
                 MAX_CONCURRENT_REQUESTS,
                 async scope => {
-                    try {
-                        const query = this._config.activePullRequestQuery;
-                        const prs = await this._client.getPullRequests(
-                            scope.project,
-                            query.filter,
-                            undefined,
-                            scope.organization
-                        );
-                        return prs.map(pr => ({ pr, scope })) as PrWithScope[];
-                    } catch {
-                        return [] as PrWithScope[];
+                    const prsByFilter = await Promise.all(
+                        requiredFilters.map(async filter => {
+                            try {
+                                return await this._client.getPullRequests(
+                                    scope.project,
+                                    filter,
+                                    undefined,
+                                    scope.organization
+                                );
+                            } catch {
+                                return [] as GitPullRequest[];
+                            }
+                        })
+                    );
+
+                    const merged: PrWithScope[] = [];
+                    const seen = new Set<string>();
+                    for (const prs of prsByFilter) {
+                        for (const pr of prs) {
+                            const key = makePullRequestKey(scope.organization, scope.project, pr);
+                            if (!key || seen.has(key)) {
+                                continue;
+                            }
+                            seen.add(key);
+                            merged.push({ pr, scope });
+                        }
                     }
+                    return merged;
                 }
             );
             const prs = prsByScope.flat();
             if (prs.length === 0) { return; }
 
-            const enabledHandlers = this._handlers.filter(h => h.isEnabled);
             await Promise.all(enabledHandlers.map(h => h.poll(prs)));
         } finally {
             this._polling = false;
         }
     }
+}
+
+function collectRequiredFilters(handlers: readonly INotificationHandler[]): PullRequestQueryFilter[] {
+    const seen = new Set<PullRequestQueryFilter>();
+    const filters: PullRequestQueryFilter[] = [];
+    for (const handler of handlers) {
+        for (const filter of handler.requiredPullRequestFilters) {
+            if (seen.has(filter)) {
+                continue;
+            }
+            seen.add(filter);
+            filters.push(filter);
+        }
+    }
+    return filters;
+}
+
+function makePullRequestKey(
+    organization: string,
+    project: string,
+    pr: GitPullRequest
+): string | undefined {
+    const pullRequestId = pr.pullRequestId;
+    if (typeof pullRequestId !== 'number') {
+        return undefined;
+    }
+
+    return `${organization}\u0000${project}\u0000${pr.repository?.id ?? ''}\u0000${pullRequestId}`;
 }

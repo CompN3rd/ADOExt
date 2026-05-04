@@ -56,6 +56,10 @@ export class PrStatusChangeHandler implements INotificationHandler {
         return this._config.notifyOnPullRequestStatusChanges;
     }
 
+    get requiredPullRequestFilters() {
+        return ['created'] as const;
+    }
+
     async poll(prs: PrWithScope[]): Promise<void> {
         if (this._disposed) { return; }
         const baselineOnly = !this.hasBaseline();

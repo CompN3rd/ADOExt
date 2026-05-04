@@ -35,6 +35,10 @@ export class PrReviewRequestHandler implements INotificationHandler {
         return this._config.notifyOnPullRequestReviewRequests;
     }
 
+    get requiredPullRequestFilters() {
+        return ['assigned'] as const;
+    }
+
     async poll(prs: PrWithScope[]): Promise<void> {
         if (this._disposed) { return; }
         const baselineOnly = !this.hasBaseline();

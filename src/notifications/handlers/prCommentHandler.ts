@@ -43,6 +43,10 @@ export class PrCommentHandler implements INotificationHandler {
         return this._config.notifyOnNewPullRequestComments;
     }
 
+    get requiredPullRequestFilters() {
+        return [this._config.activePullRequestQuery.filter] as const;
+    }
+
     async poll(prs: PrWithScope[]): Promise<void> {
         if (this._disposed) { return; }
         const baselineOnly = !this.hasBaseline();
@@ -63,6 +67,7 @@ export class PrCommentHandler implements INotificationHandler {
     private hasBaseline(): boolean {
         return Object.keys(this._lastSeen).length > 0;
     }
+
     private async pollPullRequests(
         prs: PrWithScope[],
         baselineOnly: boolean
