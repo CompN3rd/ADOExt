@@ -252,7 +252,12 @@ export class WorkItemDetailsPanel {
         // Embed raw description as JSON so the nonce-protected script can
         // sanitize and render it without any server-side regex manipulation.
         const descriptionJson = JSON.stringify(description);
-        const commentBodiesJson = JSON.stringify(comments.map(comment => comment.renderedText ?? comment.text ?? ''));
+        const commentBodiesJson = JSON.stringify(
+            comments.map(comment => ({
+                html: comment.renderedText ?? comment.text ?? '',
+                isPlainText: !comment.renderedText
+            }))
+        );
 
         return /* html */`<!DOCTYPE html>
 <html lang="en">
@@ -296,6 +301,7 @@ export class WorkItemDetailsPanel {
   .comment-author { font-weight: bold; font-size: 0.9em; }
   .comment-date { color: var(--vscode-descriptionForeground); font-size: 0.8em; }
     .comment-text { word-break: break-word; line-height: 1.5; }
+    .comment-text.plain-text { white-space: pre-wrap; }
     .comment-text p { margin: 0 0 8px; }
     .comment-text ul, .comment-text ol { padding-left: 24px; margin: 0 0 8px; }
     .comment-text table { border-collapse: collapse; margin-bottom: 8px; }
@@ -385,7 +391,7 @@ document.querySelector('[data-action="set-state"]')?.addEventListener('click', (
 // ---------------------------------------------------------------------------
 (function renderRichText() {
     const rawDescriptionHtml = ${descriptionJson};
-    const rawCommentHtml = ${commentBodiesJson};
+    const rawCommentBodies = ${commentBodiesJson};
 
     const ALLOWED_TAGS = new Set([
         'p', 'br', 'div', 'span',
@@ -494,8 +500,13 @@ document.querySelector('[data-action="set-state"]')?.addEventListener('click', (
     }
 
     renderInto(rawDescriptionHtml, document.getElementById('description-content'));
-    rawCommentHtml.forEach((rawHtml, index) => {
-        renderInto(rawHtml, document.getElementById('comment-content-' + index));
+    rawCommentBodies.forEach((commentBody, index) => {
+        const container = document.getElementById('comment-content-' + index);
+        if (!container) {
+            return;
+        }
+        container.classList.toggle('plain-text', !!commentBody.isPlainText);
+        renderInto(commentBody.html, container);
     });
 }());
 </script>

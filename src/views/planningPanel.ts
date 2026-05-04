@@ -168,6 +168,7 @@ export class PlanningPanel {
     private async loadAllowedStates(items: ScopedWorkItem[]): Promise<Map<string, string[]>> {
         const allowedStates = new Map<string, string[]>();
         const requests = new Map<string, { project: string; organization: string; workItemType: string }>();
+        const failures: string[] = [];
 
         for (const item of items) {
             const workItemType = (item.workItem.fields?.['System.WorkItemType'] as string | undefined) ?? '';
@@ -186,9 +187,21 @@ export class PlanningPanel {
         }
 
         await mapWithConcurrencyLimit([...requests.values()], MAX_CONCURRENT_SCOPE_REQUESTS, async request => {
-            const states = await this._client.getWorkItemTypeStates(request.project, request.workItemType, request.organization);
-            allowedStates.set(JSON.stringify([request.organization, request.project, request.workItemType]), states);
+            try {
+                const states = await this._client.getWorkItemTypeStates(request.project, request.workItemType, request.organization);
+                allowedStates.set(JSON.stringify([request.organization, request.project, request.workItemType]), states);
+            } catch {
+                failures.push(`${request.organization}/${request.project} (${request.workItemType})`);
+            }
         });
+
+        if (failures.length > 0) {
+            const preview = failures.slice(0, 3).join(', ');
+            const suffix = failures.length > 3 ? `, and ${failures.length - 3} more` : '';
+            showWarningMessage(
+                `Some work item state lists could not be loaded. Planning views will still render, but affected items may not offer transitions: ${preview}${suffix}.`
+            );
+        }
 
         return allowedStates;
     }
@@ -434,7 +447,7 @@ document.addEventListener('keydown', event => {
             return row;
         }
         const childRows = children.map(child => this.buildBacklogItemHtml(child, scopedItems, depth + 1, new Set(seen))).join('');
-        const regionId = `children-${this.escAttr(scopeKey(item.scope))}-${id}`;
+        const regionId = backlogRegionId(item);
         return `${row}<div class="children" id="${regionId}" role="group">${childRows}</div>`;
     }
 
@@ -635,7 +648,7 @@ document.addEventListener('keydown', event => {
         const state = (fields['System.State'] as string | undefined) ?? '';
         const iteration = (fields['System.IterationPath'] as string | undefined) ?? '';
         const assignee = identityName(fields['System.AssignedTo']) ?? 'Unassigned';
-        const regionId = `children-${this.escAttr(scopeKey(item.scope))}-${id}`;
+        const regionId = backlogRegionId(item);
         const twisty = hasChildren
             ? `<button class="tree-twisty" type="button" aria-expanded="true" aria-controls="${regionId}" aria-label="Toggle children of work item ${id}"><span class="chev">▾</span></button>`
             : `<span class="tree-twisty placeholder" aria-hidden="true"></span>`;
@@ -800,6 +813,14 @@ function stateSortValue(state: string): number {
 
 function typeClass(wiType: string): string {
     return wiType.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+function scopeDomId(scope: ProjectScope): string {
+    return `${encodeURIComponent(scope.organization)}--${encodeURIComponent(scope.project)}`;
+}
+
+function backlogRegionId(item: ScopedWorkItem): string {
+    return `children-${scopeDomId(item.scope)}-${item.workItem.id ?? 0}`;
 }
 
 function iterationLabel(iterationPath: string): string {
