@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as crypto from 'crypto';
 import type { GitPullRequest, GitPullRequestCommentThread, Comment, PullRequestReviewVote, GitPullRequestStatus, PolicyEvaluationRecord } from '../api/adoClient';
+import type { Build } from '../api/adoClient';
 import { PullRequestReviewVotes, GitStatusState, PolicyEvaluationStatus, PullRequestAsyncStatus, PullRequestMergeFailureType } from '../api/adoClient';
 import type { AdoClient } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
@@ -96,22 +97,26 @@ export class PrDetailsPanel {
         const organization = this._organization ?? client.organization ?? config.organization;
         const projectId = pr.repository?.project?.id;
 
-        const [latestPrResult, threadsResult, statusesResult, policiesResult] = await Promise.allSettled([
+        const [latestPrResult, threadsResult, statusesResult, policiesResult, buildsResult] = await Promise.allSettled([
             client.getPullRequest(project, repoId, prId, organization),
             client.getPullRequestThreads(project, repoId, prId, organization),
             client.getPullRequestStatuses(project, repoId, prId, organization),
             projectId
                 ? client.getPullRequestPolicyEvaluations(project, prId, projectId, organization)
-                : Promise.resolve([] as PolicyEvaluationRecord[])
+                : Promise.resolve([] as PolicyEvaluationRecord[]),
+            project && repoId && pr.sourceRefName
+                ? client.getBuildsForPullRequest(project, repoId, pr.sourceRefName, organization)
+                : Promise.resolve([] as Build[])
         ]);
 
         const latestPr = latestPrResult.status === 'fulfilled' && latestPrResult.value ? latestPrResult.value : pr;
         const threads = threadsResult.status === 'fulfilled' ? threadsResult.value : [];
         const statuses = statusesResult.status === 'fulfilled' ? statusesResult.value : [];
         const policies = policiesResult.status === 'fulfilled' ? policiesResult.value : [];
+        const builds = buildsResult.status === 'fulfilled' ? buildsResult.value : [];
 
         this._pr = latestPr;
-        this._panel.webview.html = this._buildHtml(latestPr, threads, statuses, policies);
+        this._panel.webview.html = this._buildHtml(latestPr, threads, statuses, policies, builds, organization, project);
     }
 
     private async _handleMessage(msg: {
@@ -120,6 +125,7 @@ export class PrDetailsPanel {
         content?: string;
         status?: number;
         vote?: number;
+        url?: string;
     }): Promise<void> {
         const repoId = this._pr.repository?.id ?? '';
         const prId = this._pr.pullRequestId!;
@@ -174,6 +180,8 @@ export class PrDetailsPanel {
 
                 const url = `https://dev.azure.com/${encodeURIComponent(org)}/${encodeURIComponent(projectName)}/_git/${encodeURIComponent(repoName)}/pullrequest/${prId}`;
                 void vscode.env.openExternal(vscode.Uri.parse(url));
+            } else if (msg.type === 'openBuild' && msg.url) {
+                void vscode.env.openExternal(vscode.Uri.parse(msg.url));
             } else if (msg.type === 'openDiff') {
                 await vscode.commands.executeCommand('adoext.viewPullRequestDiff', {
                     pr: this._pr,
@@ -218,7 +226,10 @@ export class PrDetailsPanel {
         pr: GitPullRequest,
         threads: GitPullRequestCommentThread[],
         statuses: GitPullRequestStatus[] = [],
-        policies: PolicyEvaluationRecord[] = []
+        policies: PolicyEvaluationRecord[] = [],
+        builds: Build[] = [],
+        organization?: string,
+        project?: string
     ): string {
         const webview = this._panel.webview;
         const nonce = this._createNonce();
@@ -252,6 +263,10 @@ export class PrDetailsPanel {
 
         const branchStatusHtml = this._buildBranchStatusHtml(pr);
         const checksHtml = this._buildChecksHtml(statuses, policies);
+
+        const buildsHtml = builds.length === 0
+            ? '<p class="empty">No builds found.</p>'
+            : builds.map(b => this._buildBuildSummaryHtml(b, organization ?? '', project ?? '')).join('');
 
         return /* html */`<!DOCTYPE html>
 <html lang="en">
@@ -303,6 +318,14 @@ export class PrDetailsPanel {
   .new-comment-form { display: flex; flex-direction: column; gap: 6px; }
     .toolbar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
     .review-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .build-item { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border: 1px solid var(--vscode-panel-border); border-radius: 4px; margin-bottom: 6px; }
+  .build-status { font-size: 0.8em; font-weight: 600; padding: 2px 7px; border-radius: 10px; white-space: nowrap; }
+  .build-status-succeeded { background: var(--vscode-charts-green); color: #fff; }
+  .build-status-failed { background: var(--vscode-charts-red); color: #fff; }
+  .build-status-inprogress { background: var(--vscode-charts-blue); color: #fff; }
+  .build-status-other { background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
+  .build-name { flex: 1; font-size: 0.9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .build-meta { font-size: 0.8em; color: var(--vscode-descriptionForeground); white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -333,6 +356,11 @@ ${reviewersHtml ? `<div class="section"><h2>Reviewers</h2><ul class="reviewers">
 ${branchStatusHtml}
 
 ${checksHtml}
+
+<div class="section">
+  <h2>Builds</h2>
+  ${buildsHtml}
+</div>
 
 <div class="section">
   <h2>Comment Threads</h2>
@@ -374,6 +402,13 @@ document.querySelector('[data-action="add-comment"]')?.addEventListener('click',
 
     vscode.postMessage({ type: 'addComment', content });
     input.value = '';
+});
+
+document.querySelectorAll('[data-action="open-build"]').forEach(button => {
+    button.addEventListener('click', () => {
+        const url = button.getAttribute('data-url');
+        vscode.postMessage({ type: 'openBuild', url });
+    });
 });
 
 document.querySelectorAll('[data-action="reply"]').forEach(button => {
@@ -544,6 +579,66 @@ document.querySelectorAll('[data-action="set-status"]').forEach(button => {
             default:
                 return 'Unknown';
         }
+    }
+
+    private _buildBuildSummaryHtml(build: Build, organization: string, project: string): string {
+        const buildId = build.id ?? 0;
+        const buildNumber = this._esc(build.buildNumber ?? `#${buildId}`);
+        const definitionName = this._esc(build.definition?.name ?? 'Unknown pipeline');
+        const requestedFor = this._esc(build.requestedFor?.displayName ?? '');
+        const startTime = build.startTime ? new Date(build.startTime).toLocaleString() : '';
+
+        // Determine label and CSS class from build status/result
+        let statusLabel: string;
+        let statusClass: string;
+        const status = build.status;
+        const result = build.result;
+        if (status === 2 /* Completed */) {
+            if (result === 2 /* Succeeded */) {
+                statusLabel = 'Succeeded';
+                statusClass = 'build-status-succeeded';
+            } else if (result === 4 /* PartiallySucceeded */) {
+                statusLabel = 'Partially Succeeded';
+                statusClass = 'build-status-other';
+            } else if (result === 8 /* Failed */) {
+                statusLabel = 'Failed';
+                statusClass = 'build-status-failed';
+            } else {
+                statusLabel = 'Canceled';
+                statusClass = 'build-status-other';
+            }
+        } else if (status === 1 /* InProgress */) {
+            statusLabel = 'In Progress';
+            statusClass = 'build-status-inprogress';
+        } else if (status === 32 /* NotStarted */) {
+            statusLabel = 'Queued';
+            statusClass = 'build-status-other';
+        } else {
+            statusLabel = 'Unknown';
+            statusClass = 'build-status-other';
+        }
+
+        const org = this._esc(organization);
+        const proj = this._esc(project);
+        const buildUrl = org && proj
+            ? `https://dev.azure.com/${encodeURIComponent(organization)}/${encodeURIComponent(project)}/_build/results?buildId=${buildId}`
+            : '';
+
+        const openBtn = buildUrl
+            ? `<button class="btn btn-secondary" data-action="open-build" data-url="${this._esc(buildUrl)}">Open</button>`
+            : '';
+
+        const metaParts = [definitionName, requestedFor, startTime].filter(Boolean);
+        const metaHtml = metaParts.length > 0
+            ? `<span class="build-meta">${metaParts.join(' · ')}</span>`
+            : '';
+
+        return `<div class="build-item">
+  <span class="build-status ${statusClass}">${statusLabel}</span>
+  <span class="build-name">${buildNumber}</span>
+  ${metaHtml}
+  ${openBtn}
+</div>`;
     }
 
     private _buildThreadHtml(thread: GitPullRequestCommentThread): string {

@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import * as crypto from 'crypto';
-import type { WorkItem, WorkItemComment } from '../api/adoClient';
+import type { WorkItem, WorkItemComment, Build } from '../api/adoClient';
 import type { AdoClient } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
 import { showErrorMessage, showInformationMessage, showWarningMessage } from '../utils/notifications';
@@ -154,7 +154,14 @@ export class WorkItemDetailsPanel {
         const repositoryNames = await this._resolveRepositoryNames(fullItem, project, organization);
         this._linkedItems = this._parseLinkedItems(fullItem, organization, project, repositoryNames);
 
-        this._panel.webview.html = this._buildHtml(fullItem, comments);
+        let builds: Build[] = [];
+        try {
+            builds = await client.getBuildsForWorkItem(project, fullItem, organization);
+        } catch (err) {
+            // show panel anyway, builds will just be empty
+        }
+
+        this._panel.webview.html = this._buildHtml(fullItem, comments, builds, organization, project);
     }
 
     private async _handleMessage(msg: {
@@ -170,6 +177,8 @@ export class WorkItemDetailsPanel {
             ? 'Failed to add work item comment'
             : msg.type === 'setState'
                 ? 'Failed to update work item state'
+                : msg.type === 'openBuild'
+                    ? 'Failed to open build'
                 : msg.type === 'openLinkedItem'
                     ? 'Failed to open linked item'
                     : msg.type === 'startWorking'
@@ -196,6 +205,8 @@ export class WorkItemDetailsPanel {
                 }
                 const url = `https://dev.azure.com/${encodeURIComponent(org)}/${encodeURIComponent(project)}/_workitems/edit/${id}`;
                 void vscode.env.openExternal(vscode.Uri.parse(url));
+            } else if (msg.type === 'openBuild' && msg.url) {
+                void vscode.env.openExternal(vscode.Uri.parse(msg.url));
             } else if (msg.type === 'setState' && msg.state) {
                 if (!org || !project) {
                     showWarningMessage(
@@ -232,7 +243,7 @@ export class WorkItemDetailsPanel {
         }
     }
 
-    private _buildHtml(item: WorkItem, comments: WorkItemComment[]): string {
+    private _buildHtml(item: WorkItem, comments: WorkItemComment[], builds: Build[] = [], organization?: string, project?: string): string {
         const webview = this._panel.webview;
         const nonce = this._createNonce();
         const id = item.id ?? 0;
@@ -267,6 +278,10 @@ export class WorkItemDetailsPanel {
         const commentsHtml = comments.length === 0
             ? '<p class="empty">No comments yet.</p>'
             : comments.map((c, index) => this._buildCommentHtml(c, index)).join('');
+
+        const buildsHtml = builds.length === 0
+            ? '<p class="empty">No linked builds.</p>'
+            : builds.map(b => this._buildBuildSummaryHtml(b, organization ?? '', project ?? '')).join('');
 
         const metaRows = [
             ['Assigned To', assignedTo],
@@ -368,6 +383,14 @@ export class WorkItemDetailsPanel {
   .empty { color: var(--vscode-descriptionForeground); font-style: italic; }
   .linked-items-list { display: flex; flex-wrap: wrap; gap: 6px; }
   .linked-item-btn { text-align: left; }
+  .build-item { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border: 1px solid var(--vscode-panel-border); border-radius: 4px; margin-bottom: 6px; }
+  .build-status { font-size: 0.8em; font-weight: 600; padding: 2px 7px; border-radius: 10px; white-space: nowrap; }
+  .build-status-succeeded { background: var(--vscode-charts-green); color: #fff; }
+  .build-status-failed { background: var(--vscode-charts-red); color: #fff; }
+  .build-status-inprogress { background: var(--vscode-charts-blue); color: #fff; }
+  .build-status-other { background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
+  .build-name { flex: 1; font-size: 0.9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .build-meta { font-size: 0.8em; color: var(--vscode-descriptionForeground); white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -401,6 +424,11 @@ export class WorkItemDetailsPanel {
 <div class="section">
   <h2>Linked Items (${linkedItems.length})</h2>
   <div class="linked-items-list">${linkedItemsHtml}</div>
+</div>
+
+<div class="section">
+  <h2>Builds</h2>
+  ${buildsHtml}
 </div>
 
 <div class="section">
@@ -445,6 +473,13 @@ document.querySelectorAll('[data-action="open-linked-item"]').forEach(btn => {
     btn.addEventListener('click', () => {
         const url = btn.getAttribute('data-url');
         if (url) { vscode.postMessage({ type: 'openLinkedItem', url }); }
+    });
+});
+
+document.querySelectorAll('[data-action="open-build"]').forEach(button => {
+    button.addEventListener('click', () => {
+        const url = button.getAttribute('data-url');
+        vscode.postMessage({ type: 'openBuild', url });
     });
 });
 
@@ -578,6 +613,64 @@ document.querySelectorAll('[data-action="open-linked-item"]').forEach(btn => {
 </script>
 </body>
 </html>`;
+    }
+
+    private _buildBuildSummaryHtml(build: Build, organization: string, project: string): string {
+        const buildId = build.id ?? 0;
+        const buildNumber = this._esc(build.buildNumber ?? `#${buildId}`);
+        const definitionName = this._esc(build.definition?.name ?? 'Unknown pipeline');
+        const requestedFor = this._esc(build.requestedFor?.displayName ?? '');
+        const startTime = build.startTime ? new Date(build.startTime).toLocaleString() : '';
+
+        // Determine label and CSS class from build status/result
+        let statusLabel: string;
+        let statusClass: string;
+        const status = build.status;
+        const result = build.result;
+        if (status === 2 /* Completed */) {
+            if (result === 2 /* Succeeded */) {
+                statusLabel = 'Succeeded';
+                statusClass = 'build-status-succeeded';
+            } else if (result === 4 /* PartiallySucceeded */) {
+                statusLabel = 'Partially Succeeded';
+                statusClass = 'build-status-other';
+            } else if (result === 8 /* Failed */) {
+                statusLabel = 'Failed';
+                statusClass = 'build-status-failed';
+            } else {
+                statusLabel = 'Canceled';
+                statusClass = 'build-status-other';
+            }
+        } else if (status === 1 /* InProgress */) {
+            statusLabel = 'In Progress';
+            statusClass = 'build-status-inprogress';
+        } else if (status === 32 /* NotStarted */) {
+            statusLabel = 'Queued';
+            statusClass = 'build-status-other';
+        } else {
+            statusLabel = 'Unknown';
+            statusClass = 'build-status-other';
+        }
+
+        const buildUrl = organization && project
+            ? `https://dev.azure.com/${encodeURIComponent(organization)}/${encodeURIComponent(project)}/_build/results?buildId=${buildId}`
+            : '';
+
+        const openBtn = buildUrl
+            ? `<button class="btn btn-secondary" data-action="open-build" data-url="${this._esc(buildUrl)}">Open</button>`
+            : '';
+
+        const metaParts = [definitionName, requestedFor, startTime].filter(Boolean);
+        const metaHtml = metaParts.length > 0
+            ? `<span class="build-meta">${metaParts.join(' · ')}</span>`
+            : '';
+
+        return `<div class="build-item">
+  <span class="build-status ${statusClass}">${statusLabel}</span>
+  <span class="build-name">${buildNumber}</span>
+  ${metaHtml}
+  ${openBtn}
+</div>`;
     }
 
     private _buildCommentHtml(comment: WorkItemComment, index: number): string {
