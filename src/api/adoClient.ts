@@ -342,6 +342,75 @@ export class AdoClient {
         );
     }
 
+    /**
+     * Create a new work item of the given type in a project.
+     * @param project        The project name/id.
+     * @param title          The title for the new work item.
+     * @param workItemType   The work item type (e.g. 'Task', 'Bug', 'User Story').
+     * @param fields         Optional additional fields to set (field reference name → value).
+     * @param organization   Optional organization override.
+     */
+    async createWorkItem(
+        project: string,
+        title: string,
+        workItemType: string,
+        fields?: Record<string, unknown>,
+        organization?: string
+    ): Promise<WorkItem> {
+        const witApi: IWorkItemTrackingApi = await this.getConnectionFor(organization).getWorkItemTrackingApi();
+        const patch: JsonPatchOperation[] = [
+            { op: Operation.Add, path: '/fields/System.Title', value: title },
+            ...(fields
+                ? Object.entries(fields).map(([key, value]) => ({
+                    op: Operation.Add,
+                    path: `/fields/${key}`,
+                    value
+                }))
+                : [])
+        ];
+        return witApi.createWorkItem(
+            { 'Content-Type': 'application/json-patch+json' },
+            patch as unknown as JsonPatchDocument,
+            project,
+            workItemType,
+            undefined,
+            undefined,
+            undefined,
+            WorkItemExpand.All
+        );
+    }
+
+    /**
+     * Update one or more fields on an existing work item.
+     * @param project        The project name/id.
+     * @param workItemId     The numeric work item id.
+     * @param fields         Map of field reference name → new value.
+     * @param organization   Optional organization override.
+     */
+    async updateWorkItemFields(
+        project: string,
+        workItemId: number,
+        fields: Record<string, unknown>,
+        organization?: string
+    ): Promise<WorkItem> {
+        const witApi: IWorkItemTrackingApi = await this.getConnectionFor(organization).getWorkItemTrackingApi();
+        const patch: JsonPatchOperation[] = Object.entries(fields).map(([key, value]) => ({
+            op: Operation.Add,
+            path: `/fields/${key}`,
+            value
+        }));
+        return witApi.updateWorkItem(
+            { 'Content-Type': 'application/json-patch+json' },
+            patch as unknown as JsonPatchDocument,
+            workItemId,
+            project,
+            undefined,
+            undefined,
+            undefined,
+            WorkItemExpand.All
+        );
+    }
+
     async getWorkItemTypeStates(
         project: string,
         workItemType: string,
