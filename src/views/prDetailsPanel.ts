@@ -6,6 +6,7 @@ import { PullRequestReviewVotes, GitStatusState, PolicyEvaluationStatus, PullReq
 import type { AdoClient } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
 import { showErrorMessage, showInformationMessage, showWarningMessage } from '../utils/notifications';
+import { buildSummaryHtml, BUILD_SUMMARY_CSS } from './buildSummaryHtml';
 // Note: the diff is now opened via VS Code's native diff editor, dispatched
 // through the `adoext.viewPullRequestDiff` command so that the inline
 // comment controller is wired up consistently.
@@ -266,7 +267,7 @@ export class PrDetailsPanel {
 
         const buildsHtml = builds.length === 0
             ? '<p class="empty">No builds found.</p>'
-            : builds.map(b => this._buildBuildSummaryHtml(b, organization ?? '', project ?? '')).join('');
+            : builds.map(b => buildSummaryHtml(b, organization ?? '', project ?? '')).join('');
 
         return /* html */`<!DOCTYPE html>
 <html lang="en">
@@ -318,14 +319,7 @@ export class PrDetailsPanel {
   .new-comment-form { display: flex; flex-direction: column; gap: 6px; }
     .toolbar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
     .review-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-  .build-item { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border: 1px solid var(--vscode-panel-border); border-radius: 4px; margin-bottom: 6px; }
-  .build-status { font-size: 0.8em; font-weight: 600; padding: 2px 7px; border-radius: 10px; white-space: nowrap; }
-  .build-status-succeeded { background: var(--vscode-charts-green); color: #fff; }
-  .build-status-failed { background: var(--vscode-charts-red); color: #fff; }
-  .build-status-inprogress { background: var(--vscode-charts-blue); color: #fff; }
-  .build-status-other { background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
-  .build-name { flex: 1; font-size: 0.9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .build-meta { font-size: 0.8em; color: var(--vscode-descriptionForeground); white-space: nowrap; }
+  ${BUILD_SUMMARY_CSS}
 </style>
 </head>
 <body>
@@ -580,67 +574,6 @@ document.querySelectorAll('[data-action="set-status"]').forEach(button => {
                 return 'Unknown';
         }
     }
-
-    private _buildBuildSummaryHtml(build: Build, organization: string, project: string): string {
-        const buildId = build.id ?? 0;
-        const buildNumber = this._esc(build.buildNumber ?? `#${buildId}`);
-        const definitionName = this._esc(build.definition?.name ?? 'Unknown pipeline');
-        const requestedFor = this._esc(build.requestedFor?.displayName ?? '');
-        const startTime = build.startTime ? new Date(build.startTime).toLocaleString() : '';
-
-        // Determine label and CSS class from build status/result
-        let statusLabel: string;
-        let statusClass: string;
-        const status = build.status;
-        const result = build.result;
-        if (status === 2 /* Completed */) {
-            if (result === 2 /* Succeeded */) {
-                statusLabel = 'Succeeded';
-                statusClass = 'build-status-succeeded';
-            } else if (result === 4 /* PartiallySucceeded */) {
-                statusLabel = 'Partially Succeeded';
-                statusClass = 'build-status-other';
-            } else if (result === 8 /* Failed */) {
-                statusLabel = 'Failed';
-                statusClass = 'build-status-failed';
-            } else {
-                statusLabel = 'Canceled';
-                statusClass = 'build-status-other';
-            }
-        } else if (status === 1 /* InProgress */) {
-            statusLabel = 'In Progress';
-            statusClass = 'build-status-inprogress';
-        } else if (status === 32 /* NotStarted */) {
-            statusLabel = 'Queued';
-            statusClass = 'build-status-other';
-        } else {
-            statusLabel = 'Unknown';
-            statusClass = 'build-status-other';
-        }
-
-        const org = this._esc(organization);
-        const proj = this._esc(project);
-        const buildUrl = org && proj
-            ? `https://dev.azure.com/${encodeURIComponent(organization)}/${encodeURIComponent(project)}/_build/results?buildId=${buildId}`
-            : '';
-
-        const openBtn = buildUrl
-            ? `<button class="btn btn-secondary" data-action="open-build" data-url="${this._esc(buildUrl)}">Open</button>`
-            : '';
-
-        const metaParts = [definitionName, requestedFor, startTime].filter(Boolean);
-        const metaHtml = metaParts.length > 0
-            ? `<span class="build-meta">${metaParts.join(' · ')}</span>`
-            : '';
-
-        return `<div class="build-item">
-  <span class="build-status ${statusClass}">${statusLabel}</span>
-  <span class="build-name">${buildNumber}</span>
-  ${metaHtml}
-  ${openBtn}
-</div>`;
-    }
-
     private _buildThreadHtml(thread: GitPullRequestCommentThread): string {
         const threadId = thread.id ?? 0;
         const isResolved =
