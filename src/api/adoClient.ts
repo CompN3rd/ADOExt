@@ -743,6 +743,20 @@ export class AdoClient {
         return repo?.remoteUrl;
     }
 
+    /**
+     * Returns the name of a repository given its ID or name.
+     * Useful for resolving vstfs artifact link GUIDs to human-readable names.
+     */
+    async getRepositoryName(
+        project: string,
+        repositoryId: string,
+        organization?: string
+    ): Promise<string | undefined> {
+        const gitApi: IGitApi = await this.getConnectionFor(organization).getGitApi();
+        const repo = await gitApi.getRepository(repositoryId, project);
+        return repo?.name;
+    }
+
     get organization(): string | undefined {
         return this._organization;
     }

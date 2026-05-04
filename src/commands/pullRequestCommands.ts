@@ -22,9 +22,62 @@ function asPrScope(arg: PullRequestNode | PrScope): PrScope {
     return { pr: arg.pr, organization: arg.organization, project: arg.project };
 }
 
+function getPullRequestWebScope(
+    node: PullRequestNode,
+    client: AdoClient,
+    config: ConfigManager
+): { org?: string; project?: string; repoId: string } {
+    return {
+        org: node.organization ?? client.organization ?? config.organization,
+        project: node.project ?? config.project,
+        repoId: node.pr.repository?.name ?? node.pr.repository?.id ?? ''
+    };
+}
+
 /**
- * Open a pull request in the browser.
+ * Open the source branch of a pull request in the Azure DevOps web UI.
  */
+export function openPullRequestSourceBranch(
+    node: PullRequestNode,
+    client: AdoClient,
+    config: ConfigManager
+): void {
+    const pr = node.pr;
+    const { org, project, repoId } = getPullRequestWebScope(node, client, config);
+    const sourceBranch = (pr.sourceRefName ?? '').replace('refs/heads/', '');
+
+    if (!org || !project || !repoId || !sourceBranch) {
+        showWarningMessage('Unable to determine source branch for this pull request.');
+        return;
+    }
+
+    const url = `https://dev.azure.com/${encodeURIComponent(org)}/${encodeURIComponent(project)}/_git/${encodeURIComponent(repoId)}?version=GB${encodeURIComponent(sourceBranch)}`;
+    void vscode.env.openExternal(vscode.Uri.parse(url));
+}
+
+/**
+ * Open the head commit (last merge source commit) of a pull request in the
+ * Azure DevOps web UI.
+ */
+export function openPullRequestCommit(
+    node: PullRequestNode,
+    client: AdoClient,
+    config: ConfigManager
+): void {
+    const pr = node.pr;
+    const { org, project, repoId } = getPullRequestWebScope(node, client, config);
+    const commitId = pr.lastMergeSourceCommit?.commitId;
+
+    if (!org || !project || !repoId || !commitId) {
+        showWarningMessage('Unable to determine head commit for this pull request.');
+        return;
+    }
+
+    const url = `https://dev.azure.com/${encodeURIComponent(org)}/${encodeURIComponent(project)}/_git/${encodeURIComponent(repoId)}/commit/${encodeURIComponent(commitId)}`;
+    void vscode.env.openExternal(vscode.Uri.parse(url));
+}
+
+
 export function openPullRequest(
     node: PullRequestNode,
     client: AdoClient,

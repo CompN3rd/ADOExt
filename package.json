@@ -305,6 +305,24 @@
         "title": "Show Output",
         "category": "ADOExt",
         "icon": "$(output)"
+      },
+      {
+        "command": "adoext.detectRepoContext",
+        "title": "Detect Repository Context from Workspace",
+        "category": "ADOExt",
+        "icon": "$(search)"
+      },
+      {
+        "command": "adoext.openPullRequestSourceBranch",
+        "title": "Open Source Branch in Browser",
+        "category": "ADOExt",
+        "icon": "$(git-branch)"
+      },
+      {
+        "command": "adoext.openPullRequestCommit",
+        "title": "Open Head Commit in Browser",
+        "category": "ADOExt",
+        "icon": "$(git-commit)"
       }
     ],
     "menus": {
@@ -356,6 +374,11 @@
         },
         {
           "command": "adoext.selectOrganization",
+          "when": "view == adoext.workItems || view == adoext.backlog || view == adoext.sprints || view == adoext.boards || view == adoext.pullRequests",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.detectRepoContext",
           "when": "view == adoext.workItems || view == adoext.backlog || view == adoext.sprints || view == adoext.boards || view == adoext.pullRequests",
           "group": "navigation"
         },
@@ -438,6 +461,16 @@
         },
         {
           "command": "adoext.openPullRequest",
+          "when": "viewItem == pullRequest",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.openPullRequestSourceBranch",
+          "when": "viewItem == pullRequest",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.openPullRequestCommit",
           "when": "viewItem == pullRequest",
           "group": "navigation"
         },

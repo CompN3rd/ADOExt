@@ -3,6 +3,7 @@ import type { AdoClient } from '../api/adoClient';
 import { ALL_PROJECTS, type ConfigManager, type ProjectSelectionsByOrganization } from '../config/configManager';
 import type { AuthProvider } from '../auth/authProvider';
 import { showWarningMessage } from '../utils/notifications';
+import { detectAdoRepoContexts } from '../utils/repoContext';
 
 interface OrganizationPickItem extends vscode.QuickPickItem {
     organization?: string;
@@ -174,5 +175,51 @@ export async function selectProject(
     }
 
     await config.setProjectSelections(selections);
+    return true;
+}
+
+/**
+ * Inspect the active workspace's Git remotes for Azure DevOps URLs and offer
+ * to apply the detected org/project as the extension's configuration.
+ *
+ * Returns `true` if the user accepted a detected context (and config was
+ * updated), or `false` if nothing was detected or the user dismissed the
+ * prompt.
+ */
+export async function detectAndSuggestRepoContext(
+    config: ConfigManager
+): Promise<boolean> {
+    const contexts = await detectAdoRepoContexts();
+
+    if (contexts.length === 0) {
+        showWarningMessage(
+            'No Azure DevOps repositories found in the current workspace. ' +
+            'Open a workspace that contains a Git repository with an ADO remote first.'
+        );
+        return false;
+    }
+
+    interface ContextPickItem extends vscode.QuickPickItem {
+        org: string;
+        project: string;
+    }
+
+    const items: ContextPickItem[] = contexts.map(ctx => ({
+        label: `$(organization) ${ctx.organization} / $(folder) ${ctx.project}`,
+        description: ctx.repository,
+        detail: ctx.remoteUrl,
+        org: ctx.organization,
+        project: ctx.project
+    }));
+
+    const picked = await vscode.window.showQuickPick<ContextPickItem>(items, {
+        placeHolder: 'Select an Azure DevOps context detected from the workspace remotes',
+        title: 'Detected Azure DevOps Repositories'
+    });
+
+    if (!picked) { return false; }
+
+    await config.setSelectedOrganizations([picked.org]);
+    await config.setProjectSelections({ [picked.org]: [picked.project] });
     return true;
 }
