@@ -19,7 +19,8 @@ import { PrReviewRequestHandler } from './notifications/handlers/prReviewRequest
 import { PrStatusChangeHandler } from './notifications/handlers/prStatusChangeHandler';
 import {
     selectOrganization,
-    selectProject
+    selectProject,
+    detectAndSuggestRepoContext
 } from './commands/accountCommands';
 import { changeWorkItemState, openWorkItem, viewWorkItemDetails } from './commands/workItemCommands';
 import {
@@ -34,7 +35,9 @@ import {
     checkoutPullRequest,
     replyToComment,
     resolveThread,
-    reopenThread
+    reopenThread,
+    openPullRequestSourceBranch,
+    openPullRequestCommit
 } from './commands/pullRequestCommands';
 import {
     selectWorkItemQuery,
@@ -185,6 +188,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         })
     );
 
+    // Detect and suggest org/project from the active workspace's git remotes
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adoext.detectRepoContext', async () => {
+            const ok = await detectAndSuggestRepoContext(config);
+            if (ok) {
+                if (auth.isSignedIn && config.organization) {
+                    client.connect(config.organization);
+                }
+                refreshAllViews();
+            }
+        })
+    );
+
     // Select project
     context.subscriptions.push(
         vscode.commands.registerCommand('adoext.selectProject', async () => {
@@ -315,6 +331,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand(
             'adoext.openPullRequest',
             (node: PullRequestNode) => openPullRequest(node, client, config)
+        )
+    );
+
+    // Open pull request source branch in browser
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.openPullRequestSourceBranch',
+            (node: PullRequestNode) => openPullRequestSourceBranch(node, client, config)
+        )
+    );
+
+    // Open pull request head commit in browser
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.openPullRequestCommit',
+            (node: PullRequestNode) => openPullRequestCommit(node, client, config)
         )
     );
 
@@ -521,6 +553,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         rebuildClient();
         if (config.isConfigured) {
             refreshAllViews();
+        } else {
+            // Offer to infer org/project from workspace ADO remotes when the
+            // extension is authenticated but not yet configured.
+            const { detectAdoRepoContexts } = await import('./utils/repoContext');
+            const detected = detectAdoRepoContexts();
+            if (detected.length > 0) {
+                const org = detected[0].organization.replace(/[<>&"]/g, '');
+                const proj = detected[0].project.replace(/[<>&"]/g, '');
+                const choice = await vscode.window.showInformationMessage(
+                    `ADOExt detected an Azure DevOps repository (${org}/${proj}) in your workspace. Use it?`,
+                    'Yes',
+                    'Choose…',
+                    'Dismiss'
+                );
+                if (choice === 'Yes' && detected[0]) {
+                    await config.setSelectedOrganizations([detected[0].organization]);
+                    await config.setProjectSelections({ [detected[0].organization]: [detected[0].project] });
+                    client.connect(detected[0].organization);
+                    refreshAllViews();
+                } else if (choice === 'Choose…') {
+                    await vscode.commands.executeCommand('adoext.detectRepoContext');
+                }
+            }
         }
     }
     updateSignedInContext();

@@ -10,6 +10,14 @@ interface WorkItemPanelScope {
     project?: string;
 }
 
+/** Parsed Azure DevOps artifact link extracted from a work item relation. */
+interface LinkedItem {
+    type: 'pr' | 'branch' | 'commit';
+    label: string;
+    /** https://dev.azure.com/… URL for opening in the browser. */
+    webUrl: string;
+}
+
 /**
  * Renders a work item's details (title, description, fields, comment
  * discussion) in a VS Code webview panel.  The user can add comments
@@ -25,6 +33,7 @@ export class WorkItemDetailsPanel {
     private readonly _project?: string;
     private _disposables: vscode.Disposable[] = [];
     private _allowedStates: string[] = [];
+    private _linkedItems: LinkedItem[] = [];
 
     static async show(
         client: AdoClient,
@@ -142,6 +151,8 @@ export class WorkItemDetailsPanel {
             showWarningMessage(`Failed to load work item states: ${this._formatError(err)}`);
         }
 
+        this._linkedItems = this._parseLinkedItems(fullItem, organization, project);
+
         this._panel.webview.html = this._buildHtml(fullItem, comments);
     }
 
@@ -149,6 +160,7 @@ export class WorkItemDetailsPanel {
         type: string;
         content?: string;
         state?: string;
+        url?: string;
     }): Promise<void> {
         const id = this._workItemId;
         const project = this._project ?? this._config.project;
@@ -193,6 +205,15 @@ export class WorkItemDetailsPanel {
                 void vscode.commands.executeCommand('adoext.refreshSprints');
                 void vscode.commands.executeCommand('adoext.refreshBoards');
                 await this._refresh(this._client, this._config, this._workItem);
+            } else if (msg.type === 'openLinkedItem' && msg.url) {
+                // Only open https://dev.azure.com/ or https://*.visualstudio.com/ URLs
+                const safeUrl = msg.url;
+                if (
+                    safeUrl.startsWith('https://dev.azure.com/') ||
+                    /^https:\/\/[^/]+\.visualstudio\.com\//.test(safeUrl)
+                ) {
+                    void vscode.env.openExternal(vscode.Uri.parse(safeUrl));
+                }
             }
         } catch (err) {
             showErrorMessage(`${action}: ${this._formatError(err)}`);
@@ -259,6 +280,20 @@ export class WorkItemDetailsPanel {
             }))
         );
 
+        const linkedItems = this._linkedItems;
+        // ↙ PR icon (↙ U+2198), ⎇ branch icon (U+2387), ◆ commit icon (U+25C6)
+        const LINKED_ITEM_ICONS: Record<LinkedItem['type'], string> = {
+            pr: '&#x2198;',     // ↙  pull-request arrow
+            branch: '&#x2387;', // ⎇  branch symbol
+            commit: '&#x25C6;'  // ◆  filled diamond (commit dot)
+        };
+        const linkedItemsHtml = linkedItems.length === 0
+            ? '<p class="empty">No linked branches, commits, or pull requests.</p>'
+            : linkedItems.map(li => {
+                const icon = LINKED_ITEM_ICONS[li.type];
+                return `<div class="linked-item"><button class="btn btn-secondary linked-item-btn" data-action="open-linked-item" data-url="${this._esc(li.webUrl)}">${icon} ${this._esc(li.label)}</button></div>`;
+            }).join('\n');
+
         return /* html */`<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -319,6 +354,8 @@ export class WorkItemDetailsPanel {
   .btn-secondary { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
   .btn-secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
   .empty { color: var(--vscode-descriptionForeground); font-style: italic; }
+  .linked-items-list { display: flex; flex-wrap: wrap; gap: 6px; }
+  .linked-item-btn { text-align: left; }
 </style>
 </head>
 <body>
@@ -346,6 +383,11 @@ export class WorkItemDetailsPanel {
 <div class="section">
   <h2>Description</h2>
   <div class="description">${descriptionPlaceholder}</div>
+</div>
+
+<div class="section">
+  <h2>Linked Items (${linkedItems.length})</h2>
+  <div class="linked-items-list">${linkedItemsHtml}</div>
 </div>
 
 <div class="section">
@@ -380,6 +422,13 @@ document.querySelector('[data-action="set-state"]')?.addEventListener('click', (
     const select = /** @type {HTMLSelectElement} */ (document.getElementById('stateSelect'));
     if (!select.value) { return; }
     vscode.postMessage({ type: 'setState', state: select.value });
+});
+
+document.querySelectorAll('[data-action="open-linked-item"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const url = btn.getAttribute('data-url');
+        if (url) { vscode.postMessage({ type: 'openLinkedItem', url }); }
+    });
 });
 
 // ---------------------------------------------------------------------------
@@ -587,6 +636,58 @@ document.querySelector('[data-action="set-state"]')?.addEventListener('click', (
         return options
             .map(state => `<option value="${this._esc(state)}"${state === currentState ? ' selected' : ''}>${this._esc(state)}</option>`)
             .join('');
+    }
+
+    /**
+     * Extract Azure DevOps git artifact links (PRs, branches, commits) from
+     * a work item's relations array and build browser-navigable web URLs.
+     */
+    private _parseLinkedItems(workItem: WorkItem, organization: string, project: string): LinkedItem[] {
+        const items: LinkedItem[] = [];
+        const relations = workItem.relations ?? [];
+
+        for (const relation of relations) {
+            if (relation.rel !== 'ArtifactLink') { continue; }
+            const vstfsUrl = (relation as { rel?: string; url?: string }).url ?? '';
+            if (!vstfsUrl.startsWith('vstfs:///Git/')) { continue; }
+
+            const withoutPrefix = vstfsUrl.slice('vstfs:///Git/'.length);
+            const slashIdx = withoutPrefix.indexOf('/');
+            if (slashIdx === -1) { continue; }
+
+            const artifactType = withoutPrefix.slice(0, slashIdx);
+            const encodedPath = withoutPrefix.slice(slashIdx + 1);
+
+            // Path format: {projectId}%2F{repoId}%2F{identifier}
+            const parts = encodedPath.split(/%2F/i).map(p => {
+                try { return decodeURIComponent(p); } catch {
+                    // Malformed percent-encoding; fall back to the raw segment
+                    return p;
+                }
+            });
+            if (parts.length < 3) { continue; }
+
+            const [, repoId, ...rest] = parts;
+            const identifier = rest.join('/');
+
+            if (artifactType === 'PullRequestId') {
+                const prId = parseInt(identifier, 10);
+                if (!isFinite(prId)) { continue; }
+                const webUrl = `https://dev.azure.com/${encodeURIComponent(organization)}/${encodeURIComponent(project)}/_git/${encodeURIComponent(repoId)}/pullrequest/${prId}`;
+                items.push({ type: 'pr', label: `Pull Request #${prId}`, webUrl });
+            } else if (artifactType === 'Ref') {
+                // Branch names carry a 'GB' prefix (GB = Git Branch)
+                const branchName = identifier.startsWith('GB') ? identifier.slice(2) : identifier;
+                const webUrl = `https://dev.azure.com/${encodeURIComponent(organization)}/${encodeURIComponent(project)}/_git/${encodeURIComponent(repoId)}?version=GB${encodeURIComponent(branchName)}`;
+                items.push({ type: 'branch', label: `Branch: ${branchName}`, webUrl });
+            } else if (artifactType === 'Commit') {
+                const shortId = identifier.slice(0, 8);
+                const webUrl = `https://dev.azure.com/${encodeURIComponent(organization)}/${encodeURIComponent(project)}/_git/${encodeURIComponent(repoId)}/commit/${encodeURIComponent(identifier)}`;
+                items.push({ type: 'commit', label: `Commit: ${shortId}`, webUrl });
+            }
+        }
+
+        return items;
     }
 
     private _dispose(): void {

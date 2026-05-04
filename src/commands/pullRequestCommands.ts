@@ -23,8 +23,53 @@ function asPrScope(arg: PullRequestNode | PrScope): PrScope {
 }
 
 /**
- * Open a pull request in the browser.
+ * Open the source branch of a pull request in the Azure DevOps web UI.
  */
+export function openPullRequestSourceBranch(
+    node: PullRequestNode,
+    client: AdoClient,
+    config: ConfigManager
+): void {
+    const pr = node.pr;
+    const org = node.organization ?? client.organization ?? config.organization;
+    const project = node.project ?? config.project;
+    const repoId = pr.repository?.name ?? pr.repository?.id ?? '';
+    const sourceBranch = (pr.sourceRefName ?? '').replace('refs/heads/', '');
+
+    if (!sourceBranch) {
+        showWarningMessage('Unable to determine source branch for this pull request.');
+        return;
+    }
+
+    const url = `https://dev.azure.com/${encodeURIComponent(org)}/${encodeURIComponent(project)}/_git/${encodeURIComponent(repoId)}?version=GB${encodeURIComponent(sourceBranch)}`;
+    void vscode.env.openExternal(vscode.Uri.parse(url));
+}
+
+/**
+ * Open the head commit (last merge source commit) of a pull request in the
+ * Azure DevOps web UI.
+ */
+export function openPullRequestCommit(
+    node: PullRequestNode,
+    client: AdoClient,
+    config: ConfigManager
+): void {
+    const pr = node.pr;
+    const org = node.organization ?? client.organization ?? config.organization;
+    const project = node.project ?? config.project;
+    const repoId = pr.repository?.name ?? pr.repository?.id ?? '';
+    const commitId = pr.lastMergeSourceCommit?.commitId;
+
+    if (!commitId) {
+        showWarningMessage('Unable to determine head commit for this pull request.');
+        return;
+    }
+
+    const url = `https://dev.azure.com/${encodeURIComponent(org)}/${encodeURIComponent(project)}/_git/${encodeURIComponent(repoId)}/commit/${encodeURIComponent(commitId)}`;
+    void vscode.env.openExternal(vscode.Uri.parse(url));
+}
+
+
 export function openPullRequest(
     node: PullRequestNode,
     client: AdoClient,
