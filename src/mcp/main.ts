@@ -71,13 +71,14 @@ function main(): void {
         }
     }
 
-    // Resolve npx path
+    // Resolve npx path — on Windows, .cmd files require shell: true
     const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
 
     // Spawn the official server, piping stdio through for MCP protocol
     const child = spawn(npxCmd, args, {
         stdio: 'inherit',
-        env: childEnv
+        env: childEnv,
+        shell: process.platform === 'win32'
     });
 
     child.on('error', (err) => {
