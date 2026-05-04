@@ -5,13 +5,14 @@ import type { AuthProvider } from '../auth/authProvider';
 /**
  * Manages MCP server integration within the VS Code extension.
  *
- * Delegates to the official Microsoft Azure DevOps MCP server
- * (@azure-devops/mcp) so that updates from Microsoft flow through
- * automatically. ADOExt provides convenience commands for configuration
- * and can pass the extension's OAuth token for seamless auth.
+ * Registers as a native VS Code MCP server definition provider so the
+ * Azure DevOps MCP server appears in "MCP: List Servers" alongside
+ * Azure MCP and Foundry MCP. Delegates to the official Microsoft
+ * Azure DevOps MCP server (@azure-devops/mcp).
  */
 export class McpServerManager implements vscode.Disposable {
     private _disposables: vscode.Disposable[] = [];
+    private readonly _onDidChange = new vscode.EventEmitter<void>();
 
     constructor(
         private readonly _config: ConfigManager,
@@ -19,17 +20,34 @@ export class McpServerManager implements vscode.Disposable {
     ) {}
 
     /**
-     * Register commands that help the user configure the official
-     * Azure DevOps MCP server with their current ADOExt credentials.
+     * Register the MCP server definition provider and helper commands.
      */
     register(): void {
+        // Register as a native MCP server definition provider so the server
+        // shows up in "MCP: List Servers" without any manual mcp.json config.
+        this._disposables.push(
+            vscode.lm.registerMcpServerDefinitionProvider('adoextMcpProvider', {
+                onDidChangeMcpServerDefinitions: this._onDidChange.event,
+                provideMcpServerDefinitions: (_token) => this._getServerDefinitions(),
+                resolveMcpServerDefinition: async (server, _token) => server
+            })
+        );
+
+        // Re-emit when configuration changes (organization, auth state)
+        this._disposables.push(
+            vscode.workspace.onDidChangeConfiguration(e => {
+                if (e.affectsConfiguration('adoext.organization') ||
+                    e.affectsConfiguration('adoext.organizations')) {
+                    this._onDidChange.fire();
+                }
+            })
+        );
+
         // Copy a ready-to-paste MCP configuration for .vscode/mcp.json
         this._disposables.push(
             vscode.commands.registerCommand('adoext.getMcpServerConfig', async () => {
                 const organization = this._config.organization || '${input:ado_org}';
 
-                // If the user is signed in, offer to use the extension's token
-                // Otherwise default to interactive (browser-based) auth
                 let config: object;
                 if (this._auth.isSignedIn && this._auth.accessToken) {
                     const choice = await vscode.window.showQuickPick(
@@ -42,7 +60,7 @@ export class McpServerManager implements vscode.Disposable {
                     );
 
                     if (!choice) {
-                        return; // User cancelled
+                        return;
                     }
 
                     if (choice.value === 'envvar') {
@@ -72,7 +90,6 @@ export class McpServerManager implements vscode.Disposable {
                             }
                         };
                     } else {
-                        // interactive (default)
                         config = {
                             servers: {
                                 'azure-devops': {
@@ -84,7 +101,6 @@ export class McpServerManager implements vscode.Disposable {
                         };
                     }
                 } else {
-                    // Not signed in — use interactive auth (browser-based OAuth, no PAT needed)
                     config = {
                         servers: {
                             'azure-devops': {
@@ -119,7 +135,40 @@ export class McpServerManager implements vscode.Disposable {
         );
     }
 
+    /**
+     * Signal that the server definitions have changed (e.g. after sign-in
+     * or org change) so VS Code picks up the new configuration.
+     */
+    refresh(): void {
+        this._onDidChange.fire();
+    }
+
+    private _getServerDefinitions(): vscode.McpServerDefinition[] {
+        const organizations = this._config.selectedOrganizations;
+        if (organizations.length === 0) {
+            return [];
+        }
+
+        return organizations.map(org => {
+            const args = ['-y', '@azure-devops/mcp', org];
+            const env: Record<string, string> = {};
+
+            if (this._auth.isSignedIn && this._auth.accessToken) {
+                args.push('--authentication', 'envvar');
+                env['ADO_MCP_AUTH_TOKEN'] = this._auth.accessToken;
+            }
+
+            const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+            const label = organizations.length > 1
+                ? `Azure DevOps (${org})`
+                : 'Azure DevOps';
+
+            return new vscode.McpStdioServerDefinition(label, npxCmd, args, env);
+        });
+    }
+
     dispose(): void {
+        this._onDidChange.dispose();
         for (const d of this._disposables) {
             d.dispose();
         }

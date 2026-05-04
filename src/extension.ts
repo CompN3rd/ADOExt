@@ -64,6 +64,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         updateSignedInContext();
         // Re-prime the notifier (also captures the brand-new sign-in case).
         prCommentNotifier.applyConfig();
+        // Notify MCP provider of new auth/org state
+        mcpManager.refresh();
     }
 
     function updateSignedInContext(): void {

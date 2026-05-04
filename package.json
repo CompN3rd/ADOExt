@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "publisher": "CompN3rd",
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.101.0"
   },
   "categories": [
     "Other"
@@ -22,6 +22,12 @@
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "adoextMcpProvider",
+        "label": "Azure DevOps (ADOExt)"
+      }
+    ],
     "viewsContainers": {
       "activitybar": [
         {
@@ -515,7 +521,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "@types/vscode": "1.85.0",
+    "@types/vscode": "^1.101.0",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
     "eslint": "^8.56.0",
