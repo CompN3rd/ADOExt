@@ -47,7 +47,7 @@ export type {
     CommentThreadStatus,
     IdentityRefWithVote,
     TeamProject,
-    Build
+    Build,
     PolicyEvaluationRecord
 };
 export { GitStatusState, PolicyEvaluationStatus, PullRequestAsyncStatus, PullRequestMergeFailureType };
