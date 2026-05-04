@@ -30,7 +30,7 @@ import type {
 } from 'azure-devops-node-api/interfaces/GitInterfaces';
 import type { Build } from 'azure-devops-node-api/interfaces/BuildInterfaces';
 import type { TeamProject } from 'azure-devops-node-api/interfaces/CoreInterfaces';
-import type { JsonPatchDocument, JsonPatchOperation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
+import type { IdentityRef, JsonPatchDocument, JsonPatchOperation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
 import type { PolicyEvaluationRecord } from 'azure-devops-node-api/interfaces/PolicyInterfaces';
 import { PolicyEvaluationStatus } from 'azure-devops-node-api/interfaces/PolicyInterfaces';
 
@@ -46,6 +46,7 @@ export type {
     Comment,
     CommentThreadStatus,
     IdentityRefWithVote,
+    IdentityRef,
     TeamProject,
     Build,
     PolicyEvaluationRecord
@@ -214,6 +215,35 @@ export class AdoClient {
         const coreApi: ICoreApi = await this.getConnectionFor(organization).getCoreApi();
         const projects = await coreApi.getProjects();
         return projects ?? [];
+    }
+
+    /**
+     * List team members for the given project.
+     * Queries up to the first 20 teams in the project and deduplicates members
+     * by identity id. Returns an empty array when the API is unavailable or
+     * the caller lacks permission.
+     */
+    async listProjectTeamMembers(project: string, organization?: string): Promise<IdentityRef[]> {
+        const coreApi: ICoreApi = await this.getConnectionFor(organization).getCoreApi();
+        const teams = await coreApi.getTeams(project, false, 20) ?? [];
+
+        const membersById = new Map<string, IdentityRef>();
+        await Promise.all(teams.map(async team => {
+            if (!team.id) { return; }
+            try {
+                const teamMembers = await coreApi.getTeamMembersWithExtendedProperties(project, team.id);
+                for (const member of teamMembers ?? []) {
+                    const identity = member.identity;
+                    if (identity?.id) {
+                        membersById.set(identity.id, identity);
+                    }
+                }
+            } catch {
+                // Ignore errors for individual teams (e.g. permission denied)
+            }
+        }));
+
+        return Array.from(membersById.values());
     }
 
     // -------------------------------------------------------------------------

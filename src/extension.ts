@@ -56,6 +56,7 @@ import {
 } from './commands/queryCommands';
 import { McpServerManager } from './mcp/mcpServerManager';
 import { TodoCodeActionProvider } from './views/todoCodeActionProvider';
+import { AdoCompletionProvider } from './providers/completionProvider';
 import { installNotificationMirroring, showErrorMessage, showInformationMessage, showOutputChannel } from './utils/notifications';
 import { WorkItemHoverProvider, PullRequestHoverProvider } from './providers/hoverProvider';
 
@@ -623,6 +624,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const mcpManager = new McpServerManager(config, auth);
     mcpManager.register();
     context.subscriptions.push(mcpManager);
+
+    // Completion providers (work item references and user @-mentions)
+    // -------------------------------------------------------------------------
+    const completionProvider = new AdoCompletionProvider(client, config);
+    completionProvider.register();
+    context.subscriptions.push(completionProvider);
 
     // -------------------------------------------------------------------------
     // Hover providers (work items + pull requests)
