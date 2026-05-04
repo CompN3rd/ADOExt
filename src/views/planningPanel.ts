@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import * as crypto from 'crypto';
-import type { WorkItem } from '../api/adoClient';
+import type { WorkItem, WorkItemType } from '../api/adoClient';
 import type { AdoClient } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
 import { WorkItemDetailsPanel } from './workItemDetailsPanel';
@@ -189,15 +189,16 @@ export class PlanningPanel {
     }
 
     private async handleQuickCreate(orgHint?: string, projectHint?: string): Promise<void> {
-        let organization = orgHint ?? this._config.organization;
-        let project = projectHint ?? this._config.project;
+        const scopes = await resolveProjectScopes(this._client, this._config);
+        if (scopes.length === 0) {
+            showWarningMessage('No projects are configured. Please select an organization and project first.');
+            return;
+        }
+
+        let organization = orgHint;
+        let project = projectHint;
 
         if (!organization || !project) {
-            const scopes = await resolveProjectScopes(this._client, this._config);
-            if (scopes.length === 0) {
-                showWarningMessage('No projects are configured. Please select an organization and project first.');
-                return;
-            }
             if (scopes.length === 1) {
                 organization = scopes[0].organization;
                 project = scopes[0].project;
@@ -216,6 +217,11 @@ export class PlanningPanel {
             }
         }
 
+        if (!organization || !project) {
+            showWarningMessage('Unable to determine the target project for the new work item.');
+            return;
+        }
+
         const title = await vscode.window.showInputBox({
             prompt: `New work item in ${project}`,
             placeHolder: 'Enter title...',
@@ -223,10 +229,26 @@ export class PlanningPanel {
         });
         if (!title?.trim()) { return; }
 
-        const workItemType = await vscode.window.showQuickPick(
-            ['Task', 'Bug', 'User Story', 'Feature', 'Epic'],
-            { placeHolder: 'Select work item type' }
-        );
+        let workItemTypes: WorkItemType[];
+        try {
+            workItemTypes = await this._client.getWorkItemTypes(project, organization);
+        } catch (err) {
+            showErrorMessage(`Failed to load work item types: ${this.formatError(err)}`);
+            return;
+        }
+
+        const typeItems = workItemTypes
+            .map(type => type.name)
+            .filter((name): name is string => typeof name === 'string' && name.trim().length > 0)
+            .sort((left, right) => left.localeCompare(right));
+        if (typeItems.length === 0) {
+            showWarningMessage(`No work item types are available for ${project}.`);
+            return;
+        }
+
+        const workItemType = await vscode.window.showQuickPick(typeItems, {
+            placeHolder: 'Select work item type'
+        });
         if (!workItemType) { return; }
 
         try {
@@ -271,7 +293,7 @@ export class PlanningPanel {
     private async handleEditIteration(id: number, organization: string, project: string): Promise<void> {
         const value = await vscode.window.showInputBox({
             prompt: `New iteration path for work item #${id}`,
-            placeHolder: 'Project/Iteration/Sprint'
+            placeHolder: 'Project\\Iteration\\Sprint'
         });
         if (value === undefined) { return; }
 
@@ -744,7 +766,7 @@ document.addEventListener('keydown', event => {
     <span class="type ${typeClass(wiType)}">${this.esc(wiType)}</span>
     <span class="id">#${id}</span>
     <button class="btn-link" data-action="open-work-item" data-id="${id}" data-organization="${this.escAttr(item.scope.organization)}" data-project="${this.escAttr(item.scope.project)}"><span class="title">${this.esc(title)}</span></button>
-    ${this.buildEditableMetaLink('edit-assignee', id, item.scope, this.esc(assignee), '· ')}${iteration ? this.buildEditableMetaLink('edit-iteration', id, item.scope, this.esc(iterationLabel(iteration)), ' · ') : ''}
+    ${this.buildEditableMetaLink('edit-assignee', id, item.scope, this.esc(assignee), '· ')}${this.buildEditableMetaLink('edit-iteration', id, item.scope, this.iterationMetaLabel(iteration), ' · ')}
   </div>
   ${this.buildStateControl(item, state)}
 </div>`;
@@ -841,7 +863,7 @@ document.addEventListener('keydown', event => {
     <span class="type ${typeClass(wiType)}">${this.esc(wiType)}</span>
     <span class="id">#${id}</span>
     <button class="btn-link" data-action="open-work-item" data-id="${id}" data-organization="${this.escAttr(item.scope.organization)}" data-project="${this.escAttr(item.scope.project)}"><span class="title">${this.esc(title)}</span></button>
-    ${this.buildEditableMetaLink('edit-assignee', id, item.scope, this.esc(assignee), '· ')}${iteration ? this.buildEditableMetaLink('edit-iteration', id, item.scope, this.esc(iterationLabel(iteration)), ' · ') : ''}
+    ${this.buildEditableMetaLink('edit-assignee', id, item.scope, this.esc(assignee), '· ')}${this.buildEditableMetaLink('edit-iteration', id, item.scope, this.iterationMetaLabel(iteration), ' · ')}
   </div>
   ${this.buildStateControl(item, state)}
 </div>`;
@@ -853,7 +875,7 @@ document.addEventListener('keydown', event => {
         const wiType = (fields['System.WorkItemType'] as string | undefined) ?? 'Work Item';
         const title = (fields['System.Title'] as string | undefined) ?? '(no title)';
         const state = (fields['System.State'] as string | undefined) ?? '';
-        const assignee = identityName(fields['System.AssignedTo']) ?? 'Unassigned';
+                const assignee = identityName(fields['System.AssignedTo']) ?? 'Unassigned';
                 const iteration = (fields['System.IterationPath'] as string | undefined) ?? '';
         return `<article class="card">
   <div class="card-title">
@@ -861,12 +883,16 @@ document.addEventListener('keydown', event => {
     <span class="id">#${id}</span>
     <button class="btn-link" data-action="open-work-item" data-id="${id}" data-organization="${this.escAttr(item.scope.organization)}" data-project="${this.escAttr(item.scope.project)}"><span class="title">${this.esc(title)}</span></button>
   </div>
-    ${this.buildEditableMetaLink('edit-assignee', id, item.scope, this.esc(assignee))}${iteration ? this.buildEditableMetaLink('edit-iteration', id, item.scope, this.esc(iterationLabel(iteration)), ' · ') : ''}
+    ${this.buildEditableMetaLink('edit-assignee', id, item.scope, this.esc(assignee))}${this.buildEditableMetaLink('edit-iteration', id, item.scope, this.iterationMetaLabel(iteration), ' · ')}
   <div class="card-footer">
     ${this.buildStateControl(item, state)}
   </div>
 </article>`;
     }
+
+        private iterationMetaLabel(iteration: string): string {
+                return this.esc(iteration ? iterationLabel(iteration) : 'No iteration');
+        }
 
     private buildStateControl(item: ScopedWorkItem, state: string): string {
         const id = item.workItem.id ?? 0;

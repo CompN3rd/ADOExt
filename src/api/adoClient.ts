@@ -411,6 +411,19 @@ export class AdoClient {
         );
     }
 
+    /**
+     * Fetch available work item types for a project.
+     * @param project        The project name/id.
+     * @param organization   Optional organization override.
+     */
+    async getWorkItemTypes(
+        project: string,
+        organization?: string
+    ): Promise<WorkItemType[]> {
+        const witApi: IWorkItemTrackingApi = await this.getConnectionFor(organization).getWorkItemTrackingApi();
+        return (await witApi.getWorkItemTypes(project)) ?? [];
+    }
+
     async getWorkItemTypeStates(
         project: string,
         workItemType: string,
