@@ -10,6 +10,7 @@ import type { ConfigManager } from '../config/configManager';
 import { PrDetailsPanel } from '../views/prDetailsPanel';
 import type { PrCommentController } from '../views/prCommentController';
 import type { PrDiffCache } from '../views/prContentProvider';
+import { showErrorMessage, showInformationMessage, showWarningMessage } from '../utils/notifications';
 
 export interface PrScope {
     pr: GitPullRequest;
@@ -67,7 +68,7 @@ export async function viewPullRequestDiff(
     diffCache: PrDiffCache
 ): Promise<void> {
     if (!nodeOrScope) {
-        vscode.window.showInformationMessage('Select a pull request first, then run "View Pull Request Diff".');
+        showInformationMessage('Select a pull request first, then run "View Pull Request Diff".');
         return;
     }
     const scope = asPrScope(nodeOrScope);
@@ -78,7 +79,7 @@ export async function viewPullRequestDiff(
     const organization = scope.organization ?? client.organization ?? config.organization;
 
     if (!repoId || !project || !organization || !prId) {
-        vscode.window.showWarningMessage(
+        showWarningMessage(
             'Unable to load diff because organization, project, repository, or pull request ID is missing.'
         );
         return;
@@ -88,7 +89,7 @@ export async function viewPullRequestDiff(
         { location: vscode.ProgressLocation.Notification, title: `Loading PR #${prId} diff…` },
         () => client.getPullRequestDiff(project, repoId, pr, organization)
     ).then(model => model, err => {
-        vscode.window.showErrorMessage(`Failed to load pull request diff: ${err instanceof Error ? err.message : String(err)}`);
+        showErrorMessage(`Failed to load pull request diff: ${err instanceof Error ? err.message : String(err)}`);
         return undefined;
     });
     if (!diff) { return; }
@@ -97,7 +98,7 @@ export async function viewPullRequestDiff(
     const fileEntries = await commentController.loadDiff(pr, diff, { organization, project });
 
     if (fileEntries.length === 0) {
-        vscode.window.showInformationMessage(`Pull request #${prId} has no changed files to display.`);
+        showInformationMessage(`Pull request #${prId} has no changed files to display.`);
         return;
     }
 
@@ -118,7 +119,7 @@ export async function viewPullRequestDiff(
         // Older VS Code builds may not have `vscode.changes`; fall back to
         // opening the files sequentially as side-by-side diffs so the user
         // still gets something usable.
-        vscode.window.showWarningMessage(
+        showWarningMessage(
             `Multi-diff editor unavailable (${err instanceof Error ? err.message : String(err)}); opening diffs individually.`
         );
         for (const entry of fileEntries) {
@@ -141,7 +142,7 @@ export async function setPullRequestReviewVote(
     label: string
 ): Promise<boolean> {
     if (!node) {
-        vscode.window.showInformationMessage('Select a pull request first, then run a review action.');
+        showInformationMessage('Select a pull request first, then run a review action.');
         return false;
     }
 
@@ -152,7 +153,7 @@ export async function setPullRequestReviewVote(
     const organization = node.organization ?? client.organization ?? config.organization;
 
     if (!organization || !project || !repositoryId || typeof pullRequestId !== 'number') {
-        vscode.window.showWarningMessage(
+        showWarningMessage(
             'Unable to set review vote because organization, project, repository, or pull request ID is missing.'
         );
         return false;
@@ -160,10 +161,10 @@ export async function setPullRequestReviewVote(
 
     try {
         await client.setPullRequestReviewVote(project, repositoryId, pullRequestId, vote, organization);
-        vscode.window.showInformationMessage(`Review vote set to ${label}.`);
+        showInformationMessage(`Review vote set to ${label}.`);
         return true;
     } catch (err) {
-        vscode.window.showErrorMessage(`Failed to set review vote: ${err}`);
+        showErrorMessage(`Failed to set review vote: ${err}`);
         return false;
     }
 }
@@ -237,7 +238,7 @@ export async function checkoutPullRequest(
     const branchName = branchRef.replace('refs/heads/', '');
 
     if (!branchName) {
-        vscode.window.showWarningMessage('Could not determine branch name for this PR.');
+        showWarningMessage('Could not determine branch name for this PR.');
         return;
     }
 
@@ -245,7 +246,7 @@ export async function checkoutPullRequest(
         vscode.extensions.getExtension<GitExtension>('vscode.git');
 
     if (!gitExtension) {
-        vscode.window.showWarningMessage(
+        showWarningMessage(
             'The built-in Git extension is not available.'
         );
         return;
@@ -256,13 +257,13 @@ export async function checkoutPullRequest(
         : await gitExtension.activate();
     const gitApi = git.getAPI(1);
     if (!gitApi) {
-        vscode.window.showWarningMessage('Git API is not available.');
+        showWarningMessage('Git API is not available.');
         return;
     }
 
     const repos = gitApi.repositories;
     if (repos.length === 0) {
-        vscode.window.showWarningMessage(
+        showWarningMessage(
             'No Git repositories found in the current workspace.'
         );
         return;
@@ -311,7 +312,7 @@ export async function checkoutPullRequest(
                 // Use the VS Code Git API checkout command
                 await repo.checkout(branchName);
                 checkoutSucceeded = true;
-                vscode.window.showInformationMessage(
+                showInformationMessage(
                     `Checked out branch: ${branchName} (from ${remoteName})`
                 );
             } catch (err) {
@@ -323,11 +324,11 @@ export async function checkoutPullRequest(
                         remotes[0]?.name ?? 'origin';
                     await repo.checkout(`${remoteName}/${branchName}`);
                     checkoutSucceeded = true;
-                    vscode.window.showInformationMessage(
+                    showInformationMessage(
                         `Checked out branch: ${branchName}`
                     );
                 } catch (innerErr) {
-                    vscode.window.showErrorMessage(
+                    showErrorMessage(
                         `Failed to checkout branch "${branchName}": ${innerErr}`
                     );
                 }
@@ -346,12 +347,12 @@ export async function checkoutPullRequest(
         try {
             const count = await commentController.attachCheckout(pr, repo.rootUri, { organization, project });
             if (count > 0) {
-                vscode.window.showInformationMessage(
+                showInformationMessage(
                     `Loaded ${count} pull request comment thread${count === 1 ? '' : 's'} inline. New comments can be added from the gutter.`
                 );
             }
         } catch (err) {
-            vscode.window.showWarningMessage(
+            showWarningMessage(
                 `Branch checked out, but inline comments could not be loaded: ${err instanceof Error ? err.message : String(err)}`
             );
         }
@@ -388,9 +389,9 @@ export async function replyToComment(
             content,
             organization
         );
-        vscode.window.showInformationMessage('Reply posted.');
+        showInformationMessage('Reply posted.');
     } catch (err) {
-        vscode.window.showErrorMessage(`Failed to post reply: ${err}`);
+        showErrorMessage(`Failed to post reply: ${err}`);
     }
 }
 
@@ -411,9 +412,9 @@ export async function resolveThread(
 
     try {
         await client.updateThreadStatus(project, repoId, prId, threadId, 2 /* Fixed */, organization);
-        vscode.window.showInformationMessage('Thread resolved.');
+        showInformationMessage('Thread resolved.');
     } catch (err) {
-        vscode.window.showErrorMessage(`Failed to resolve thread: ${err}`);
+        showErrorMessage(`Failed to resolve thread: ${err}`);
     }
 }
 
@@ -434,9 +435,9 @@ export async function reopenThread(
 
     try {
         await client.updateThreadStatus(project, repoId, prId, threadId, 1 /* Active */, organization);
-        vscode.window.showInformationMessage('Thread reopened.');
+        showInformationMessage('Thread reopened.');
     } catch (err) {
-        vscode.window.showErrorMessage(`Failed to reopen thread: ${err}`);
+        showErrorMessage(`Failed to reopen thread: ${err}`);
     }
 }
 

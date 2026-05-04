@@ -34,8 +34,10 @@ import {
     reopenThread
 } from './commands/pullRequestCommands';
 import { McpServerManager } from './mcp/mcpServerManager';
+import { installNotificationMirroring, showErrorMessage, showInformationMessage, showOutputChannel } from './utils/notifications';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
+    installNotificationMirroring();
     const auth = new AuthProvider();
     const config = new ConfigManager();
     const client = new AdoClient('');  // token will be set after sign-in
@@ -125,11 +127,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     // Sign in
     context.subscriptions.push(
+        vscode.commands.registerCommand('adoext.showOutput', () => {
+            showOutputChannel();
+        })
+    );
+
+    context.subscriptions.push(
         vscode.commands.registerCommand('adoext.signIn', async () => {
             const ok = await auth.signIn();
             if (ok) {
                 rebuildClient();
-                vscode.window.showInformationMessage(
+                showInformationMessage(
                     `Signed in as ${auth.accountName}`
                 );
                 refreshAllViews();
@@ -144,7 +152,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             client.updateToken('');
             updateSignedInContext();
             mcpManager.refresh();
-            vscode.window.showInformationMessage('Signed out from Azure DevOps.');
+            showInformationMessage('Signed out from Azure DevOps.');
             refreshAllViews();
         })
     );
@@ -215,6 +223,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('adoext.openBoardView', async () => {
             if (!(await ensureSignedIn())) { return; }
             await PlanningPanel.show('board', client, config, refreshAllViews);
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adoext.openSprintView', async () => {
+            if (!(await ensureSignedIn())) { return; }
+            await PlanningPanel.show('sprint', client, config, refreshAllViews);
         })
     );
 
@@ -441,10 +456,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         content,
                         organization
                     );
-                    vscode.window.showInformationMessage('Comment added.');
+                    showInformationMessage('Comment added.');
                     pullRequestProvider.refresh();
                 } catch (err) {
-                    vscode.window.showErrorMessage(`Failed to add comment: ${err}`);
+                    showErrorMessage(`Failed to add comment: ${err}`);
                 }
             }
         )

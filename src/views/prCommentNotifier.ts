@@ -3,6 +3,7 @@ import type { AdoClient, GitPullRequest, GitPullRequestCommentThread } from '../
 import type { ConfigManager } from '../config/configManager';
 import { resolveProjectScopes, type ProjectScope } from '../providers/projectScopes';
 import { mapWithConcurrencyLimit } from '../utils/async';
+import { showErrorMessage, showInformationMessage, showWarningMessage } from '../utils/notifications';
 
 const STATE_KEY = 'adoext.lastSeenPrCommentIds';
 const MAX_CONCURRENT_REQUESTS = 4;
@@ -217,7 +218,7 @@ export class PrCommentNotifier implements vscode.Disposable {
         const message = `PR #${identity.pullRequestId} "${shortTitle}" — ${count} new ${plural}${authorPart}.`;
         const openAction = 'Open Pull Request';
         const muteAction = 'Mute Notifications';
-        void vscode.window.showInformationMessage(message, openAction, muteAction).then(async choice => {
+        void showInformationMessage(message, openAction, muteAction).then(async choice => {
             if (choice === openAction) {
                 try {
                     const pr = await this._client.getPullRequest(
@@ -227,7 +228,7 @@ export class PrCommentNotifier implements vscode.Disposable {
                         identity.organization
                     );
                     if (!pr) {
-                        vscode.window.showWarningMessage(`Pull request #${identity.pullRequestId} could not be loaded.`);
+                        showWarningMessage(`Pull request #${identity.pullRequestId} could not be loaded.`);
                         return;
                     }
                     void vscode.commands.executeCommand('adoext.viewPullRequestDetails', {
@@ -236,7 +237,7 @@ export class PrCommentNotifier implements vscode.Disposable {
                         project: identity.project
                     });
                 } catch (err) {
-                    vscode.window.showErrorMessage(`Failed to open pull request: ${err instanceof Error ? err.message : String(err)}`);
+                    showErrorMessage(`Failed to open pull request: ${err instanceof Error ? err.message : String(err)}`);
                 }
             } else if (choice === muteAction) {
                 void vscode.workspace.getConfiguration('adoext')
