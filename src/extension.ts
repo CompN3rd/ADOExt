@@ -143,6 +143,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             auth.signOut();
             client.updateToken('');
             updateSignedInContext();
+            mcpManager.refresh();
             vscode.window.showInformationMessage('Signed out from Azure DevOps.');
             refreshAllViews();
         })

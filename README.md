@@ -98,6 +98,8 @@ Use the **ADOExt: Copy MCP Server Configuration** command to get a ready-to-past
 }
 ```
 
+> **Windows note:** If not using VS Code's native MCP provider (which handles this automatically), replace `"npx"` with `"npx.cmd"` in the command field.
+
 **Bearer token via environment variable (e.g. from ADOExt sign-in session):**
 ```json
 {

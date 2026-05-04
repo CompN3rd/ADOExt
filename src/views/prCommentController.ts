@@ -313,7 +313,11 @@ export class PrCommentController implements vscode.Disposable {
                 ];
             } else {
                 // Create a brand new thread.
-                const line = (reply.thread.range?.start.line ?? 0) + 1;
+                if (!reply.thread.range) {
+                    vscode.window.showWarningMessage('Cannot create comment: thread has no source range.');
+                    return;
+                }
+                const line = reply.thread.range.start.line + 1;
                 const iterationId = meta.iterationId ?? meta.pr.iterationId ?? 1;
                 const baseIterationId = meta.baseIterationId ?? meta.pr.baseIterationId ?? 0;
                 const newThread = await this._client.addPullRequestLineComment(

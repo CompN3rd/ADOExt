@@ -81,6 +81,13 @@ function main(): void {
         shell: process.platform === 'win32'
     });
 
+    // Forward termination signals to the child process
+    const forwardSignal = (sig: NodeJS.Signals) => {
+        child.kill(sig);
+    };
+    process.on('SIGINT', forwardSignal);
+    process.on('SIGTERM', forwardSignal);
+
     child.on('error', (err) => {
         process.stderr.write(`Failed to start Azure DevOps MCP server: ${err.message}\n`);
         process.stderr.write('Ensure @azure-devops/mcp is available (npx will download it automatically).\n');
@@ -88,6 +95,8 @@ function main(): void {
     });
 
     child.on('exit', (code, signal) => {
+        process.removeListener('SIGINT', forwardSignal);
+        process.removeListener('SIGTERM', forwardSignal);
         if (signal) {
             process.stderr.write(`Azure DevOps MCP server terminated by signal: ${signal}\n`);
             process.exit(1);
