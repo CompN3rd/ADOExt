@@ -725,7 +725,7 @@ export class AdoClient {
         organization?: string
     ): Promise<PolicyEvaluationRecord[]> {
         const policyApi: IPolicyApi = await this.getConnectionFor(organization).getPolicyApi();
-        const artifactId = `vstfs:///CodeReview/CodeReviewId/${encodeURIComponent(projectId)}/${pullRequestId}`;
+        const artifactId = `vstfs:///CodeReview/CodeReviewId/${encodeURIComponent(projectId)}/${encodeURIComponent(String(pullRequestId))}`;
         const evaluations = await policyApi.getPolicyEvaluations(project, artifactId, false);
         return evaluations ?? [];
     }
