@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import type { AdoClient, GitPullRequest } from '../api/adoClient';
-import type { PullRequestQueryFilter } from '../config/configManager';
-import type { ConfigManager } from '../config/configManager';
+import type { ConfigManager, PullRequestQueryFilter } from '../config/configManager';
 import { resolveProjectScopes } from '../providers/projectScopes';
 import { mapWithConcurrencyLimit } from '../utils/async';
 import type { INotificationHandler, PrWithScope } from './iNotificationHandler';

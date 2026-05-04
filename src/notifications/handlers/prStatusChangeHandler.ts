@@ -62,7 +62,6 @@ export class PrStatusChangeHandler implements INotificationHandler {
 
     async poll(prs: PrWithScope[]): Promise<void> {
         if (this._disposed) { return; }
-        const baselineOnly = !this.hasBaseline();
 
         // Resolve current user ID per organisation (cached per poll cycle).
         const currentUserByOrg = new Map<string, string | undefined>();
@@ -100,9 +99,18 @@ export class PrStatusChangeHandler implements INotificationHandler {
                 }
             }
 
+            const hasPrBaseline = prKey in this._lastVotes;
             const previousVotes = this._lastVotes[prKey] ?? {};
 
-            if (!baselineOnly) {
+            if (!hasPrBaseline) {
+                // First time seeing this PR — record the current snapshot as a
+                // baseline without sending any notification, regardless of the
+                // current vote values.  This avoids replaying pre-existing votes
+                // when the extension starts for the first time.
+                this._lastVotes[prKey] = currentVotes;
+                stateChanged = true;
+            } else if (!votesEqual(previousVotes, currentVotes)) {
+                // Votes have changed since the last poll — notify and persist.
                 for (const [reviewerId, currentVote] of Object.entries(currentVotes)) {
                     const previousVote = previousVotes[reviewerId] ?? 0;
                     // Only notify when the vote is non-zero and has changed.
@@ -110,9 +118,6 @@ export class PrStatusChangeHandler implements INotificationHandler {
                         this.showNotification(pr, scope, reviewerNames[reviewerId], currentVote);
                     }
                 }
-            }
-
-            if (!votesEqual(previousVotes, currentVotes)) {
                 this._lastVotes[prKey] = currentVotes;
                 stateChanged = true;
             }
@@ -130,10 +135,6 @@ export class PrStatusChangeHandler implements INotificationHandler {
     // -------------------------------------------------------------------------
     // Internals
     // -------------------------------------------------------------------------
-
-    private hasBaseline(): boolean {
-        return Object.keys(this._lastVotes).length > 0;
-    }
 
     private showNotification(
         pr: GitPullRequest,
