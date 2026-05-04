@@ -6,6 +6,7 @@ import { WorkItemDetailsPanel } from '../views/workItemDetailsPanel';
 import { parseAdoRemoteUrl } from '../utils/repoContext';
 import { showErrorMessage, showInformationMessage, showWarningMessage } from '../utils/notifications';
 import { resolveProjectScopes } from '../providers/projectScopes';
+import { TODO_COMMENT_PATTERN } from '../utils/todoPattern';
 
 function formatUnknownError(err: unknown): string {
     return err instanceof Error ? err.message : String(err);
@@ -118,6 +119,224 @@ export async function changeWorkItemState(
     } catch (err) {
         showErrorMessage(`Failed to change work item state: ${err}`);
         return false;
+    }
+}
+
+/**
+ * Helper: ask the user to pick a work item type from the project, falling back
+ * to a short static list when the API call fails.
+ */
+async function pickWorkItemType(
+    client: AdoClient,
+    project: string,
+    organization: string
+): Promise<string | undefined> {
+    let types: string[] = [];
+    try {
+        types = (await client.getWorkItemTypes(project, organization))
+            .map(type => type.name ?? '')
+            .filter((name): name is string => name.trim().length > 0);
+    } catch {
+        // fall back to common defaults
+        types = ['Task', 'Bug', 'User Story', 'Feature', 'Epic'];
+    }
+
+    return vscode.window.showQuickPick(types, {
+        placeHolder: 'Select work item type'
+    });
+}
+
+/**
+ * Build an HTML description that links back to the source file location.
+ */
+function buildFileContextDescription(
+    fileUri: vscode.Uri,
+    lineNumber: number,
+    contextText?: string
+): string {
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    let displayPath = fileUri.fsPath;
+    if (workspaceFolders?.length) {
+        const root = workspaceFolders[0].uri.fsPath;
+        if (displayPath.startsWith(root)) {
+            displayPath = displayPath.slice(root.length).replace(/^[\\/]/, '');
+        }
+    }
+    // Normalize to forward slashes for display
+    displayPath = displayPath.replace(/\\/g, '/');
+
+    const sourceRef = `${displayPath}:${lineNumber + 1}`;
+    const escapedRef = sourceRef.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    let html = `<p><strong>Source:</strong> <code>${escapedRef}</code></p>`;
+    if (contextText) {
+        const escapedContext = contextText
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+        html += `<pre>${escapedContext}</pre>`;
+    }
+    return html;
+}
+
+/**
+ * Create a work item from the currently selected text (or a prompted title
+ * when there is no selection).
+ */
+export async function createWorkItemFromSelection(
+    client: AdoClient,
+    config: ConfigManager
+): Promise<void> {
+    const organization = client.organization ?? config.organization;
+    const project = config.project;
+
+    if (!organization || !project) {
+        showWarningMessage('Please configure your organization and project first.');
+        return;
+    }
+
+    const editor = vscode.window.activeTextEditor;
+    const selectedText = editor && !editor.selection.isEmpty
+        ? editor.document.getText(editor.selection).trim()
+        : '';
+    const firstLine = editor?.selection.start.line ?? 0;
+
+    const title = await vscode.window.showInputBox({
+        prompt: 'Work item title',
+        value: selectedText.split('\n')[0].slice(0, 255),
+        placeHolder: 'Enter a title for the new work item'
+    });
+    if (!title?.trim()) {
+        return;
+    }
+
+    const workItemType = await pickWorkItemType(client, project, organization);
+    if (!workItemType) {
+        return;
+    }
+
+    const description = editor
+        ? buildFileContextDescription(editor.document.uri, firstLine, selectedText || undefined)
+        : undefined;
+
+    try {
+        const workItem = await client.createWorkItem(
+            project,
+            title.trim(),
+            workItemType,
+            description ? { 'System.Description': description } : undefined,
+            organization
+        );
+        showInformationMessage(`Work item #${workItem.id} created.`);
+        await WorkItemDetailsPanel.show(client, config, workItem, { organization, project });
+    } catch (err) {
+        showErrorMessage(`Failed to create work item: ${formatUnknownError(err)}`);
+    }
+}
+
+/**
+ * Create a work item from a TODO comment in the active editor.
+ *
+ * When `todoText` and `lineNumber` are supplied (e.g. from a code action) the
+ * function skips the scanning/selection step and goes straight to prompting for
+ * the work item type.  When called from the command palette without arguments
+ * it scans the current file for TODO comments and presents a quick-pick.
+ */
+export async function createWorkItemFromTodo(
+    client: AdoClient,
+    config: ConfigManager,
+    todoText?: string,
+    lineNumber?: number
+): Promise<void> {
+    const organization = client.organization ?? config.organization;
+    const project = config.project;
+
+    if (!organization || !project) {
+        showWarningMessage('Please configure your organization and project first.');
+        return;
+    }
+
+    const editor = vscode.window.activeTextEditor;
+
+    let resolvedTitle = todoText;
+    let resolvedLine = lineNumber ?? 0;
+
+    if (!resolvedTitle) {
+        // Scan the active file for TODO comments
+        if (!editor) {
+            showWarningMessage('Open a file in the editor to scan for TODO comments.');
+            return;
+        }
+
+        interface TodoItem {
+            label: string;
+            description: string;
+            line: number;
+            text: string;
+        }
+        const todos: TodoItem[] = [];
+        const doc = editor.document;
+        for (let i = 0; i < doc.lineCount; i++) {
+            const lineText = doc.lineAt(i).text;
+            const match = TODO_COMMENT_PATTERN.exec(lineText);
+            if (match) {
+                todos.push({
+                    label: match[1].trim(),
+                    description: `Line ${i + 1}`,
+                    line: i,
+                    text: match[1].trim()
+                });
+            }
+        }
+
+        if (todos.length === 0) {
+            showInformationMessage('No TODO comments found in the active file.');
+            return;
+        }
+
+        const picked = await vscode.window.showQuickPick(todos, {
+            placeHolder: 'Select a TODO comment to create a work item from'
+        });
+        if (!picked) {
+            return;
+        }
+        resolvedTitle = picked.text;
+        resolvedLine = picked.line;
+    }
+
+    const title = await vscode.window.showInputBox({
+        prompt: 'Work item title',
+        value: resolvedTitle,
+        placeHolder: 'Enter a title for the new work item'
+    });
+    if (!title?.trim()) {
+        return;
+    }
+
+    const workItemType = await pickWorkItemType(client, project, organization);
+    if (!workItemType) {
+        return;
+    }
+
+    const lineContext = editor && resolvedLine < editor.document.lineCount
+        ? editor.document.lineAt(resolvedLine).text.trim()
+        : resolvedTitle;
+    const description = editor
+        ? buildFileContextDescription(editor.document.uri, resolvedLine, lineContext)
+        : undefined;
+
+    try {
+        const workItem = await client.createWorkItem(
+            project,
+            title.trim(),
+            workItemType,
+            description ? { 'System.Description': description } : undefined,
+            organization
+        );
+        showInformationMessage(`Work item #${workItem.id} created.`);
+        await WorkItemDetailsPanel.show(client, config, workItem, { organization, project });
+    } catch (err) {
+        showErrorMessage(`Failed to create work item: ${formatUnknownError(err)}`);
     }
 }
 

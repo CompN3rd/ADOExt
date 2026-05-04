@@ -185,8 +185,20 @@
         "title": "Create Work Item",
         "category": "ADOExt",
         "icon": "$(add)"
+            },
+            {
+        "command": "adoext.createWorkItemFromSelection",
+        "title": "Create Work Item from Selection",
+        "category": "ADOExt",
+        "icon": "$(add)"
       },
       {
+        "command": "adoext.createWorkItemFromTodo",
+        "title": "Create Work Item from TODO Comment",
+        "category": "ADOExt",
+        "icon": "$(tasklist)"
+      },
+            {
         "command": "adoext.refreshPullRequests",
         "title": "Refresh Pull Requests",
         "category": "ADOExt",
@@ -545,6 +557,18 @@
           "command": "adoext.prComment.reopen",
           "group": "inline@1",
           "when": "commentController == adoext.prComments && commentThread == prThreadResolved"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "adoext.createWorkItemFromSelection",
+          "when": "editorHasSelection && adoext.isSignedIn",
+          "group": "adoext@1"
+        },
+        {
+          "command": "adoext.createWorkItemFromTodo",
+          "when": "adoext.isSignedIn",
+          "group": "adoext@2"
         }
       ],
       "commandPalette": [
