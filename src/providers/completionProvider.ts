@@ -70,19 +70,24 @@ export class AdoCompletionProvider implements vscode.CompletionItemProvider, vsc
         // Work item reference: AB#123 or #123.
         // 'AB' (Azure Boards) is the standard ADO work-item prefix used in rich
         // text and commit messages; plain '#NNN' references are also widely used.
-        if (/(?:AB)?#\d*$/.test(textBeforeCursor)) {
-            return this._getWorkItemCompletions(token);
+        const workItemMatch = textBeforeCursor.match(/(?:AB)?#\d*$/);
+        if (workItemMatch) {
+            return this._getWorkItemCompletions(document, position, workItemMatch[0], token);
         }
 
         // User mention: @word
-        if (/@\w*$/.test(textBeforeCursor)) {
-            return this._getUserCompletions(token);
+        const userMentionMatch = textBeforeCursor.match(/@\w*$/);
+        if (userMentionMatch) {
+            return this._getUserCompletions(document, position, userMentionMatch[0], token);
         }
 
         return undefined;
     }
 
     private async _getWorkItemCompletions(
+        document: vscode.TextDocument,
+        position: vscode.Position,
+        typedReference: string,
         token: vscode.CancellationToken
     ): Promise<vscode.CompletionItem[]> {
         let scopes: { organization: string; project: string }[];
@@ -94,6 +99,10 @@ export class AdoCompletionProvider implements vscode.CompletionItemProvider, vsc
 
         if (token.isCancellationRequested) { return []; }
 
+        const replacementRange = this._createReplacementRange(position, typedReference);
+        const insertText = typedReference.startsWith('AB#')
+            ? (id: number) => `AB#${id}`
+            : (id: number) => `#${id}`;
         const allItems: vscode.CompletionItem[] = [];
 
         for (const scope of scopes) {
@@ -122,7 +131,8 @@ export class AdoCompletionProvider implements vscode.CompletionItemProvider, vsc
                         vscode.CompletionItemKind.Reference
                     );
                     item.detail = type && state ? `${type} · ${state}` : undefined;
-                    item.insertText = `#${id}`;
+                    item.insertText = insertText(id);
+                    item.range = replacementRange;
                     // filterText lets VS Code narrow the list as the user types digits or title words
                     item.filterText = `#${id} ${title}`;
                     item.documentation = new vscode.MarkdownString(`**#${id}** — ${title}\n\n*${type}* | ${state}`);
@@ -142,6 +152,9 @@ export class AdoCompletionProvider implements vscode.CompletionItemProvider, vsc
     }
 
     private async _getUserCompletions(
+        document: vscode.TextDocument,
+        position: vscode.Position,
+        typedMention: string,
         token: vscode.CancellationToken
     ): Promise<vscode.CompletionItem[]> {
         let scopes: { organization: string; project: string }[];
@@ -153,6 +166,7 @@ export class AdoCompletionProvider implements vscode.CompletionItemProvider, vsc
 
         if (token.isCancellationRequested) { return []; }
 
+    const replacementRange = this._createReplacementRange(position, typedMention);
         const allItems: vscode.CompletionItem[] = [];
         // Track which (org, project) combinations we've already fetched to avoid
         // duplicate API calls when the same project appears under multiple orgs.
@@ -184,6 +198,7 @@ export class AdoCompletionProvider implements vscode.CompletionItemProvider, vsc
                         vscode.CompletionItemKind.User
                     );
                     item.insertText = `@${displayName}`;
+                    item.range = replacementRange;
                     // filterText enables matching by display name or email prefix
                     item.filterText = `@${displayName} ${uniqueName}`;
                     item.documentation = new vscode.MarkdownString(`**${displayName}**\n\n${uniqueName}`);
@@ -198,6 +213,16 @@ export class AdoCompletionProvider implements vscode.CompletionItemProvider, vsc
         }
 
         return allItems;
+    }
+
+    private _createReplacementRange(
+        position: vscode.Position,
+        typedText: string
+    ): vscode.Range {
+        return new vscode.Range(
+            new vscode.Position(position.line, position.character - typedText.length),
+            position
+        );
     }
 
     dispose(): void {
