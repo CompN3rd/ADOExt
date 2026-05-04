@@ -22,7 +22,7 @@ import {
     selectProject,
     detectAndSuggestRepoContext
 } from './commands/accountCommands';
-import { changeWorkItemState, openWorkItem, viewWorkItemDetails, startWorkingOnWorkItem } from './commands/workItemCommands';
+import { changeWorkItemState, openWorkItem, viewWorkItemDetails, startWorkingOnWorkItem, openSavedQuery, createWorkItem } from './commands/workItemCommands';
 import {
     openPullRequest,
     viewPullRequestDetails,
@@ -323,6 +323,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 await startWorkingOnWorkItem(workItem, org, proj);
             }
         )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adoext.openSavedQuery', async () => {
+            if (!(await ensureSignedIn())) { return; }
+            await openSavedQuery(client, config);
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adoext.createWorkItem', async () => {
+            if (!(await ensureSignedIn())) { return; }
+            const created = await createWorkItem(client, config);
+            if (created) {
+                refreshAllViews();
+            }
+        })
     );
 
     // Refresh pull requests

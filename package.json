@@ -175,6 +175,18 @@
         "icon": "$(git-branch)"
       },
       {
+        "command": "adoext.openSavedQuery",
+        "title": "Open Saved Query",
+        "category": "ADOExt",
+        "icon": "$(search)"
+      },
+      {
+        "command": "adoext.createWorkItem",
+        "title": "Create Work Item",
+        "category": "ADOExt",
+        "icon": "$(add)"
+      },
+      {
         "command": "adoext.refreshPullRequests",
         "title": "Refresh Pull Requests",
         "category": "ADOExt",
@@ -344,7 +356,17 @@
           "group": "navigation"
         },
         {
+          "command": "adoext.openSavedQuery",
+          "when": "view == adoext.workItems",
+          "group": "navigation"
+        },
+        {
           "command": "adoext.saveWorkItemQuery",
+          "when": "view == adoext.workItems",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.createWorkItem",
           "when": "view == adoext.workItems",
           "group": "navigation"
         },
