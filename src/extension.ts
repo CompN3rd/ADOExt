@@ -536,16 +536,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 refreshAllViews();
                 if (
                     e.affectsConfiguration('adoext.notifyOnNewPullRequestComments') ||
-<<<<<<< HEAD
+                    e.affectsConfiguration('adoext.notifyOnPullRequestReviewRequests') ||
+                    e.affectsConfiguration('adoext.notifyOnPullRequestStatusChanges') ||
                     e.affectsConfiguration('adoext.pullRequestCommentPollIntervalSeconds') ||
                     e.affectsConfiguration('adoext.pullRequestFilter') ||
                     e.affectsConfiguration('adoext.pullRequestQueries') ||
                     e.affectsConfiguration('adoext.activePullRequestQueryId')
-=======
-                    e.affectsConfiguration('adoext.notifyOnPullRequestReviewRequests') ||
-                    e.affectsConfiguration('adoext.notifyOnPullRequestStatusChanges') ||
-                    e.affectsConfiguration('adoext.pullRequestCommentPollIntervalSeconds')
->>>>>>> 1ea896c (feat: generalize PR comment polling into a shared NotificationService)
                 ) {
                     notificationService.applyConfig();
                 }

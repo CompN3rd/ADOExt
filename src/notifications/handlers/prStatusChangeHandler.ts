@@ -10,6 +10,16 @@ const STATE_KEY = 'adoext.lastSeenPrVotes';
 /** Maps reviewer id → vote value. */
 type VoteSnapshot = Record<string, number>;
 
+function votesEqual(a: VoteSnapshot, b: VoteSnapshot): boolean {
+    const keysA = Object.keys(a);
+    const keysB = Object.keys(b);
+    if (keysA.length !== keysB.length) { return false; }
+    for (const key of keysA) {
+        if (!(key in b) || a[key] !== b[key]) { return false; }
+    }
+    return true;
+}
+
 function voteLabel(vote: number): string {
     switch (vote) {
         case 10:  return 'approved';
@@ -87,8 +97,6 @@ export class PrStatusChangeHandler implements INotificationHandler {
             }
 
             const previousVotes = this._lastVotes[prKey] ?? {};
-            this._lastVotes[prKey] = currentVotes;
-            stateChanged = true;
 
             if (!baselineOnly) {
                 for (const [reviewerId, currentVote] of Object.entries(currentVotes)) {
@@ -98,6 +106,11 @@ export class PrStatusChangeHandler implements INotificationHandler {
                         this.showNotification(pr, scope, reviewerNames[reviewerId], currentVote);
                     }
                 }
+            }
+
+            if (!votesEqual(previousVotes, currentVotes)) {
+                this._lastVotes[prKey] = currentVotes;
+                stateChanged = true;
             }
         }
 
