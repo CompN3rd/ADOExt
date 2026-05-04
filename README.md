@@ -70,6 +70,10 @@ ADOExt is a full-featured Azure DevOps integration for Visual Studio Code, provi
 | `adoext.activePullRequestQueryId` | `""` | Active saved pull request query ID. Falls back to the first saved query or the legacy filter setting. |
 | `adoext.pullRequestFilter` | `mine` | Legacy pull request filter used when no saved pull request queries are defined. |
 
+### Switching the active query
+
+Use the **ADOExt: Select Work Item Query** or **ADOExt: Select Pull Request Query** commands (also available as toolbar icons in each view) to pick from the available built-in and saved presets. Use **ADOExt: Save Work Item Query Preset** / **ADOExt: Save Pull Request Query Preset** to name a new preset and persist it to your settings.
+
 ## Development
 
 ```bash

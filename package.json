@@ -103,6 +103,18 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "adoext.selectWorkItemQuery",
+        "title": "Select Work Item Query",
+        "category": "ADOExt",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "adoext.saveWorkItemQuery",
+        "title": "Save Work Item Query Preset",
+        "category": "ADOExt",
+        "icon": "$(save)"
+      },
+      {
         "command": "adoext.refreshBacklog",
         "title": "Refresh Backlog",
         "category": "ADOExt",
@@ -161,6 +173,18 @@
         "title": "Refresh Pull Requests",
         "category": "ADOExt",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "adoext.selectPullRequestQuery",
+        "title": "Select Pull Request Query",
+        "category": "ADOExt",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "adoext.savePullRequestQuery",
+        "title": "Save Pull Request Query Preset",
+        "category": "ADOExt",
+        "icon": "$(save)"
       },
       {
         "command": "adoext.openPullRequest",
@@ -291,6 +315,16 @@
           "group": "navigation"
         },
         {
+          "command": "adoext.selectWorkItemQuery",
+          "when": "view == adoext.workItems",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.saveWorkItemQuery",
+          "when": "view == adoext.workItems",
+          "group": "navigation"
+        },
+        {
           "command": "adoext.openBacklogView",
           "when": "view == adoext.backlog",
           "group": "navigation"
@@ -332,6 +366,16 @@
         },
         {
           "command": "adoext.refreshPullRequests",
+          "when": "view == adoext.pullRequests",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.selectPullRequestQuery",
+          "when": "view == adoext.pullRequests",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.savePullRequestQuery",
           "when": "view == adoext.pullRequests",
           "group": "navigation"
         }
