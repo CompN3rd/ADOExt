@@ -4,6 +4,7 @@ import type { GitPullRequest, GitPullRequestCommentThread, Comment, PullRequestR
 import { PullRequestReviewVotes } from '../api/adoClient';
 import type { AdoClient } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
+import { showErrorMessage, showInformationMessage, showWarningMessage } from '../utils/notifications';
 // Note: the diff is now opened via VS Code's native diff editor, dispatched
 // through the `adoext.viewPullRequestDiff` command so that the inline
 // comment controller is wired up consistently.
@@ -124,7 +125,7 @@ export class PrDetailsPanel {
                     msg.content,
                     organization
                 );
-                vscode.window.showInformationMessage('Reply posted.');
+                showInformationMessage('Reply posted.');
                 await this._refresh(this._client, this._config, this._pr);
             } else if (msg.type === 'setStatus' && msg.threadId !== undefined && msg.status !== undefined) {
                 await this._client.updateThreadStatus(
@@ -136,7 +137,7 @@ export class PrDetailsPanel {
                     organization
                 );
                 const label = msg.status === 2 ? 'resolved' : 'reopened';
-                vscode.window.showInformationMessage(`Thread ${label}.`);
+                showInformationMessage(`Thread ${label}.`);
                 await this._refresh(this._client, this._config, this._pr);
             } else if (msg.type === 'addComment' && msg.content) {
                 await this._client.addPullRequestComment(
@@ -146,7 +147,7 @@ export class PrDetailsPanel {
                     msg.content,
                     organization
                 );
-                vscode.window.showInformationMessage('Comment added.');
+                showInformationMessage('Comment added.');
                 await this._refresh(this._client, this._config, this._pr);
             } else if (msg.type === 'openInBrowser') {
                 const org = organization;
@@ -154,7 +155,7 @@ export class PrDetailsPanel {
                 const repoName = this._pr.repository?.name;
 
                 if (!org || !projectName || !repoName) {
-                    vscode.window.showWarningMessage(
+                    showWarningMessage(
                         'Unable to open pull request in browser because organization, project, or repository name is missing.'
                     );
                     return;
@@ -170,7 +171,7 @@ export class PrDetailsPanel {
                 });
             } else if (msg.type === 'setVote' && this._isReviewVote(msg.vote)) {
                 if (!organization || !project || !repoId) {
-                    vscode.window.showWarningMessage(
+                    showWarningMessage(
                         'Unable to set review vote because organization, project, or repository is missing.'
                     );
                     return;
@@ -183,7 +184,7 @@ export class PrDetailsPanel {
                     msg.vote,
                     organization
                 );
-                vscode.window.showInformationMessage(`Review vote set to ${this._reviewVoteLabel(msg.vote)}.`);
+                showInformationMessage(`Review vote set to ${this._reviewVoteLabel(msg.vote)}.`);
 
                 try {
                     const refreshedPr = await this._client.getPullRequest(project, repoId, prId, organization);
@@ -198,7 +199,7 @@ export class PrDetailsPanel {
                 void vscode.commands.executeCommand('adoext.refreshPullRequests');
             }
         } catch (err) {
-            vscode.window.showErrorMessage(`Error: ${err}`);
+            showErrorMessage(`Error: ${err}`);
         }
     }
 

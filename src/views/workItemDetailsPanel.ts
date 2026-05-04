@@ -3,6 +3,7 @@ import * as crypto from 'crypto';
 import type { WorkItem, WorkItemComment } from '../api/adoClient';
 import type { AdoClient } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
+import { showErrorMessage, showInformationMessage, showWarningMessage } from '../utils/notifications';
 
 interface WorkItemPanelScope {
     organization?: string;
@@ -23,6 +24,7 @@ export class WorkItemDetailsPanel {
     private readonly _organization?: string;
     private readonly _project?: string;
     private _disposables: vscode.Disposable[] = [];
+    private _allowedStates: string[] = [];
 
     static async show(
         client: AdoClient,
@@ -32,7 +34,7 @@ export class WorkItemDetailsPanel {
     ): Promise<void> {
         const id = workItem.id;
         if (typeof id !== 'number') {
-            vscode.window.showErrorMessage(
+            showErrorMessage(
                 'Unable to show work item details because the work item ID is missing.'
             );
             return;
@@ -101,7 +103,7 @@ export class WorkItemDetailsPanel {
         const organization = this._organization ?? client.organization ?? config.organization;
 
         if (!organization || !project) {
-            vscode.window.showWarningMessage(
+            showWarningMessage(
                 'Unable to load work item details because the organization or project is missing.'
             );
             return;
@@ -117,7 +119,7 @@ export class WorkItemDetailsPanel {
                 this._workItem = fullItem;
             }
         } catch (err) {
-            vscode.window.showWarningMessage(
+            showWarningMessage(
                 `Failed to load the latest work item details: ${this._formatError(err)}`
             );
         }
@@ -125,9 +127,19 @@ export class WorkItemDetailsPanel {
         try {
             comments = await client.getWorkItemComments(project, id, organization);
         } catch (err) {
-            vscode.window.showWarningMessage(
+            showWarningMessage(
                 `Failed to load work item comments: ${this._formatError(err)}`
             );
+        }
+
+        try {
+            const workItemType = (fullItem.fields?.['System.WorkItemType'] as string | undefined) ?? '';
+            this._allowedStates = workItemType
+                ? await client.getWorkItemTypeStates(project, workItemType, organization)
+                : [];
+        } catch (err) {
+            this._allowedStates = [];
+            showWarningMessage(`Failed to load work item states: ${this._formatError(err)}`);
         }
 
         this._panel.webview.html = this._buildHtml(fullItem, comments);
@@ -150,17 +162,17 @@ export class WorkItemDetailsPanel {
         try {
             if (msg.type === 'addComment' && msg.content) {
                 if (!org || !project) {
-                    vscode.window.showWarningMessage(
+                    showWarningMessage(
                         'Unable to add comment because organization or project is missing.'
                     );
                     return;
                 }
                 await this._client.addWorkItemComment(project, id, msg.content, org);
-                vscode.window.showInformationMessage('Comment added.');
+                showInformationMessage('Comment added.');
                 await this._refresh(this._client, this._config, this._workItem);
             } else if (msg.type === 'openInBrowser') {
                 if (!org || !project) {
-                    vscode.window.showWarningMessage(
+                    showWarningMessage(
                         'Unable to open work item in browser because organization or project is missing.'
                     );
                     return;
@@ -169,13 +181,13 @@ export class WorkItemDetailsPanel {
                 void vscode.env.openExternal(vscode.Uri.parse(url));
             } else if (msg.type === 'setState' && msg.state) {
                 if (!org || !project) {
-                    vscode.window.showWarningMessage(
+                    showWarningMessage(
                         'Unable to update state because organization or project is missing.'
                     );
                     return;
                 }
                 await this._client.updateWorkItemState(project, id, msg.state, org);
-                vscode.window.showInformationMessage(`Work item #${id} moved to ${msg.state}.`);
+                showInformationMessage(`Work item #${id} moved to ${msg.state}.`);
                 void vscode.commands.executeCommand('adoext.refreshWorkItems');
                 void vscode.commands.executeCommand('adoext.refreshBacklog');
                 void vscode.commands.executeCommand('adoext.refreshSprints');
@@ -183,7 +195,7 @@ export class WorkItemDetailsPanel {
                 await this._refresh(this._client, this._config, this._workItem);
             }
         } catch (err) {
-            vscode.window.showErrorMessage(`${action}: ${this._formatError(err)}`);
+            showErrorMessage(`${action}: ${this._formatError(err)}`);
         }
     }
 
@@ -221,7 +233,7 @@ export class WorkItemDetailsPanel {
 
         const commentsHtml = comments.length === 0
             ? '<p class="empty">No comments yet.</p>'
-            : comments.map(c => this._buildCommentHtml(c)).join('');
+            : comments.map((c, index) => this._buildCommentHtml(c, index)).join('');
 
         const metaRows = [
             ['Assigned To', assignedTo],
@@ -240,6 +252,12 @@ export class WorkItemDetailsPanel {
         // Embed raw description as JSON so the nonce-protected script can
         // sanitize and render it without any server-side regex manipulation.
         const descriptionJson = JSON.stringify(description);
+        const commentBodiesJson = JSON.stringify(
+            comments.map(comment => ({
+                html: comment.renderedText ?? comment.text ?? '',
+                isPlainText: !comment.renderedText
+            }))
+        );
 
         return /* html */`<!DOCTYPE html>
 <html lang="en">
@@ -282,7 +300,17 @@ export class WorkItemDetailsPanel {
   .comment-header { display: flex; justify-content: space-between; margin-bottom: 6px; }
   .comment-author { font-weight: bold; font-size: 0.9em; }
   .comment-date { color: var(--vscode-descriptionForeground); font-size: 0.8em; }
-  .comment-text { white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
+    .comment-text { word-break: break-word; line-height: 1.5; }
+    .comment-text.plain-text { white-space: pre-wrap; }
+    .comment-text p { margin: 0 0 8px; }
+    .comment-text ul, .comment-text ol { padding-left: 24px; margin: 0 0 8px; }
+    .comment-text table { border-collapse: collapse; margin-bottom: 8px; }
+    .comment-text td, .comment-text th { border: 1px solid var(--vscode-panel-border); padding: 4px 8px; }
+    .comment-text a { color: var(--vscode-textLink-foreground); }
+    .comment-text a:hover { color: var(--vscode-textLink-activeForeground); }
+    .comment-text img { max-width: 100%; }
+    .comment-text pre, .comment-text code { background: var(--vscode-textCodeBlock-background); padding: 2px 4px; border-radius: 3px; font-family: var(--vscode-editor-font-family); }
+    .comment-text pre { padding: 8px; overflow-x: auto; }
   .new-comment-form { display: flex; flex-direction: column; gap: 6px; }
   .reply-input { background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); border-radius: 3px; padding: 6px 8px; font-family: inherit; font-size: inherit; resize: vertical; min-height: 60px; width: 100%; box-sizing: border-box; }
   .btn { padding: 4px 12px; border-radius: 3px; border: 1px solid var(--vscode-button-border, transparent); cursor: pointer; font-size: 0.85em; }
@@ -361,9 +389,9 @@ document.querySelector('[data-action="set-state"]')?.addEventListener('click', (
 // The CSP (script-src 'nonce-...') provides an additional layer: even if a
 // script tag somehow survived sanitization it would be blocked by the CSP.
 // ---------------------------------------------------------------------------
-(function renderDescription() {
-    const rawHtml = ${descriptionJson};
-    if (!rawHtml) { return; }
+(function renderRichText() {
+    const rawDescriptionHtml = ${descriptionJson};
+    const rawCommentBodies = ${commentBodiesJson};
 
     const ALLOWED_TAGS = new Set([
         'p', 'br', 'div', 'span',
@@ -459,14 +487,26 @@ document.querySelector('[data-action="set-state"]')?.addEventListener('click', (
         return el;
     }
 
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(rawHtml, 'text/html');
-    const container = document.getElementById('description-content');
-    if (!container) { return; }
+    function renderInto(rawHtml, container) {
+        if (!rawHtml || !container) {
+            return;
+        }
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(rawHtml, 'text/html');
+        Array.from(doc.body.childNodes).forEach(child => {
+            const cleaned = cleanNode(child);
+            if (cleaned) { container.appendChild(cleaned); }
+        });
+    }
 
-    Array.from(doc.body.childNodes).forEach(child => {
-        const cleaned = cleanNode(child);
-        if (cleaned) { container.appendChild(cleaned); }
+    renderInto(rawDescriptionHtml, document.getElementById('description-content'));
+    rawCommentBodies.forEach((commentBody, index) => {
+        const container = document.getElementById('comment-content-' + index);
+        if (!container) {
+            return;
+        }
+        container.classList.toggle('plain-text', !!commentBody.isPlainText);
+        renderInto(commentBody.html, container);
     });
 }());
 </script>
@@ -474,19 +514,18 @@ document.querySelector('[data-action="set-state"]')?.addEventListener('click', (
 </html>`;
     }
 
-    private _buildCommentHtml(comment: WorkItemComment): string {
+    private _buildCommentHtml(comment: WorkItemComment, index: number): string {
         const author = this._esc(
             (comment.createdBy as { displayName?: string } | undefined)?.displayName ?? 'Unknown'
         );
         const date = this._formatDate(comment.createdDate);
-        const text = this._esc(comment.text ?? '');
         return `
 <div class="comment">
   <div class="comment-header">
     <span class="comment-author">${author}</span>
     <span class="comment-date">${date}</span>
   </div>
-  <div class="comment-text">${text}</div>
+  <div class="comment-text" id="comment-content-${index}"></div>
 </div>`;
     }
 
@@ -541,17 +580,7 @@ document.querySelector('[data-action="set-state"]')?.addEventListener('click', (
     }
 
     private _stateOptions(currentState: string): string {
-        const states = [
-            'New',
-            'Proposed',
-            'Active',
-            'Committed',
-            'In Progress',
-            'Resolved',
-            'Closed',
-            'Done',
-            'Removed'
-        ];
+        const states = this._allowedStates;
         const options = states.includes(currentState) || !currentState
             ? states
             : [currentState, ...states];

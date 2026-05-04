@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import type { AdoClient } from '../api/adoClient';
 import { ALL_PROJECTS, type ConfigManager, type ProjectSelectionsByOrganization } from '../config/configManager';
 import type { AuthProvider } from '../auth/authProvider';
+import { showWarningMessage } from '../utils/notifications';
 
 interface OrganizationPickItem extends vscode.QuickPickItem {
     organization?: string;
@@ -101,7 +102,7 @@ export async function selectProject(
     organizations: string[] = config.selectedOrganizations
 ): Promise<boolean> {
     if (organizations.length === 0) {
-        vscode.window.showWarningMessage('Select at least one organization first.');
+        showWarningMessage('Select at least one organization first.');
         return false;
     }
 
