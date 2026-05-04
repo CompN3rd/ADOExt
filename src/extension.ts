@@ -33,6 +33,7 @@ import {
     resolveThread,
     reopenThread
 } from './commands/pullRequestCommands';
+import { McpServerManager } from './mcp/mcpServerManager';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
     const auth = new AuthProvider();
@@ -63,6 +64,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         updateSignedInContext();
         // Re-prime the notifier (also captures the brand-new sign-in case).
         prCommentNotifier.applyConfig();
+        // Notify MCP provider of new auth/org state
+        mcpManager.refresh();
     }
 
     function updateSignedInContext(): void {
@@ -140,6 +143,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             auth.signOut();
             client.updateToken('');
             updateSignedInContext();
+            mcpManager.refresh();
             vscode.window.showInformationMessage('Signed out from Azure DevOps.');
             refreshAllViews();
         })
@@ -445,6 +449,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         )
     );
+
+    // -------------------------------------------------------------------------
+    // MCP Server
+    // -------------------------------------------------------------------------
+    const mcpManager = new McpServerManager(config, auth);
+    mcpManager.register();
+    context.subscriptions.push(mcpManager);
 
     // -------------------------------------------------------------------------
     // Auto-restore session on activation

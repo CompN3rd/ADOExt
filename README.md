@@ -77,3 +77,104 @@ npm run watch
 
 Press `F5` in VS Code to launch the Extension Development Host.
 
+## MCP Server Integration
+
+ADOExt integrates with the official [Microsoft Azure DevOps MCP server](https://github.com/microsoft/azure-devops-mcp) (`@azure-devops/mcp`), providing a single-install experience with shared configuration. Updates to the official server flow through automatically.
+
+### Quick Setup
+
+Use the **ADOExt: Copy MCP Server Configuration** command to get a ready-to-paste configuration for `.vscode/mcp.json`. The command offers multiple authentication options:
+
+**Interactive (browser-based, default — no PAT needed):**
+```json
+{
+  "servers": {
+    "azure-devops": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@azure-devops/mcp", "your-org"]
+    }
+  }
+}
+```
+
+> **Windows note:** If not using VS Code's native MCP provider (which handles this automatically), replace `"npx"` with `"npx.cmd"` in the command field.
+
+**Bearer token via environment variable (e.g. from ADOExt sign-in session):**
+```json
+{
+  "servers": {
+    "azure-devops": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@azure-devops/mcp", "your-org", "--authentication", "envvar"],
+      "env": {
+        "ADO_MCP_AUTH_TOKEN": "${ADO_MCP_AUTH_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+**PAT via environment variable:**
+```json
+{
+  "servers": {
+    "azure-devops": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@azure-devops/mcp", "your-org", "--authentication", "pat"],
+      "env": {
+        "PERSONAL_ACCESS_TOKEN": "${PERSONAL_ACCESS_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+### Available Tools
+
+The official Azure DevOps MCP server provides tools across multiple domains:
+- **Core** — Projects, teams, iterations
+- **Work Items** — Query, create, update work items
+- **Work** — Boards, sprints, backlogs
+- **Repositories** — Repos, pull requests, branches
+- **Pipelines** — Builds, releases
+- **Wiki** — Pages, content
+- **Search** — Code and work item search
+- **Test Plans** — Test suites and results
+- **Advanced Security** — Alerts and scanning
+
+Use the `--domains` (`-d`) flag to load only specific domains. See the [official toolset docs](https://github.com/microsoft/azure-devops-mcp/blob/main/docs/TOOLSET.md) for the full list.
+
+### Development Wrapper
+
+For development/testing purposes, the repository includes a wrapper script that bridges environment variables to the official server CLI:
+
+```bash
+# Interactive browser-based auth (default, no env vars needed)
+npx -y @azure-devops/mcp your-org
+
+# Development wrapper (run from repo after `npm run compile`)
+export ADO_ORGANIZATION="your-org"
+node out/mcp/main.js                              # interactive (browser)
+
+export ADO_ACCESS_TOKEN="bearer-token-here"       # maps to ADO_MCP_AUTH_TOKEN
+node out/mcp/main.js                              # uses --authentication envvar
+
+export AZURE_DEVOPS_PAT="your-pat-here"           # maps to PERSONAL_ACCESS_TOKEN
+node out/mcp/main.js                              # uses --authentication pat
+```
+
+> **Note:** The `node out/mcp/main.js` path is only valid when running from the source repository after compilation. End users should use the `npx @azure-devops/mcp` configurations above.
+
+### Authentication
+
+The MCP server supports multiple authentication methods (checked in order by the wrapper):
+
+1. **Interactive (browser)** — Default. Opens a browser for Microsoft OAuth sign-in. No environment variables needed.
+2. **Bearer token** (`ADO_MCP_AUTH_TOKEN`) — Pass a bearer token via the `--authentication envvar` method. The wrapper maps `ADO_ACCESS_TOKEN` → `ADO_MCP_AUTH_TOKEN`.
+3. **PAT** (`PERSONAL_ACCESS_TOKEN`) — Personal access token for automation scenarios. The wrapper maps `AZURE_DEVOPS_PAT` → `PERSONAL_ACCESS_TOKEN`.
+
+The **ADOExt: Copy MCP Server Configuration** command generates env-var-based configurations that reference `${ADO_MCP_AUTH_TOKEN}` or `${PERSONAL_ACCESS_TOKEN}` — tokens are never embedded directly in the config file.
+
