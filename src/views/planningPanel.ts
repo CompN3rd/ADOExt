@@ -257,6 +257,7 @@ export class PlanningPanel {
   /* Sprint */
   .sprint { margin-bottom: 18px; border: 1px solid var(--vscode-panel-border); border-radius: 4px; }
   .sprint-head { padding: 8px 10px; display: flex; align-items: center; justify-content: space-between; gap: 8px; background: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-sideBar-background)); border-bottom: 1px solid var(--vscode-panel-border); cursor: pointer; }
+    .sprint-head[aria-expanded="false"] .chev { transform: rotate(-90deg); }
   .sprint-head h3 { margin: 0; font-size: 0.95rem; font-weight: 600; display: flex; align-items: center; gap: 8px; }
   .sprint-body { padding: 6px 0; }
   .sprint-body.collapsed { display: none; }
@@ -301,6 +302,7 @@ document.querySelector('[data-action="expand-all"]')?.addEventListener('click', 
         if (!controls) { return; }
         document.getElementById(controls)?.classList.remove('collapsed');
     });
+    document.querySelectorAll('.sprint-head').forEach(head => head.setAttribute('aria-expanded', 'true'));
     document.querySelectorAll('.sprint-body').forEach(el => el.classList.remove('collapsed'));
 });
 
@@ -311,6 +313,7 @@ document.querySelector('[data-action="collapse-all"]')?.addEventListener('click'
         if (!controls) { return; }
         document.getElementById(controls)?.classList.add('collapsed');
     });
+    document.querySelectorAll('.sprint-head').forEach(head => head.setAttribute('aria-expanded', 'false'));
     document.querySelectorAll('.sprint-body').forEach(el => el.classList.add('collapsed'));
 });
 
@@ -332,7 +335,9 @@ document.addEventListener('click', event => {
     const sprintHead = target.closest('.sprint-head');
     if (sprintHead) {
         const region = sprintHead.parentElement?.querySelector('.sprint-body');
-        region?.classList.toggle('collapsed');
+        const expanded = sprintHead.getAttribute('aria-expanded') !== 'false';
+        sprintHead.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+        region?.classList.toggle('collapsed', expanded);
         return;
     }
 
@@ -360,6 +365,19 @@ document.addEventListener('click', event => {
             project: stateButton.getAttribute('data-project') || undefined
         });
     }
+});
+
+document.addEventListener('keydown', event => {
+    const target = /** @type {HTMLElement} */ (event.target);
+    const sprintHead = target.closest('.sprint-head');
+    if (!sprintHead) {
+        return;
+    }
+    if (event.key !== 'Enter' && event.key !== ' ') {
+        return;
+    }
+    event.preventDefault();
+    sprintHead.click();
 });
 </script>
 </body>
@@ -479,7 +497,7 @@ document.addEventListener('click', event => {
 
             const sortedIterations = [...byIteration.entries()].sort((a, b) => a[0].localeCompare(b[0]));
             const sprintBlocks = sortedIterations.map(([iteration, iterationItems]) => {
-                const lanes = this.boardLanes(scope, iterationItems);
+                const lanes = this.boardLanes(scope, iterationItems, scopedItems);
                 const body = lanes.map(lane => {
                     const headerHtml = lane.parent
                         ? this.buildSprintParentHeader(lane.parent)
@@ -492,7 +510,7 @@ document.addEventListener('click', event => {
                 }).join('');
 
                 return `<section class="sprint">
-  <header class="sprint-head" role="button" tabindex="0">
+    <header class="sprint-head" role="button" tabindex="0" aria-expanded="true">
     <h3><span class="chev">▾</span>${this.esc(iterationLabel(iteration))}</h3>
     <span class="meta">${iterationItems.length} item${iterationItems.length !== 1 ? 's' : ''} · ${this.esc(iteration)}</span>
   </header>
@@ -536,9 +554,13 @@ document.addEventListener('click', event => {
 </div>`;
     }
 
-    private boardLanes(scope: ProjectScope, items: ScopedWorkItem[]): Array<{ parent: ScopedWorkItem | undefined; cards: ScopedWorkItem[] }> {
+    private boardLanes(
+        scope: ProjectScope,
+        items: ScopedWorkItem[],
+        laneLookupItems: ScopedWorkItem[] = items
+    ): Array<{ parent: ScopedWorkItem | undefined; cards: ScopedWorkItem[] }> {
         const itemsById = new Map<number, ScopedWorkItem>();
-        for (const item of items) {
+        for (const item of laneLookupItems) {
             const id = item.workItem.id;
             if (typeof id === 'number') {
                 itemsById.set(id, item);
