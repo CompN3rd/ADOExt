@@ -440,7 +440,7 @@ document.querySelectorAll('[data-action="set-status"]').forEach(button => {
             rows.push(this._buildStatusRow('Merge bases', { cls: 'check-pending', label: 'Multiple detected' }));
         }
 
-        if ((pr.mergeFailureType !== undefined && pr.mergeFailureType !== PullRequestMergeFailureType.None) || pr.mergeFailureMessage) {
+        if (this._hasMergeFailure(pr)) {
             rows.push(this._buildStatusRow(
                 'Failure reason',
                 { cls: 'check-failure', label: this._mergeFailureLabel(pr.mergeFailureType, pr.mergeFailureMessage) }
@@ -455,6 +455,13 @@ document.querySelectorAll('[data-action="set-status"]').forEach(button => {
         }
 
         return `<div class="section"><h2>Branch Status</h2><ul class="checks-list">${rows.join('')}</ul></div>`;
+    }
+
+    private _hasMergeFailure(pr: GitPullRequest): boolean {
+        return (
+            (pr.mergeFailureType !== undefined && pr.mergeFailureType !== PullRequestMergeFailureType.None) ||
+            !!pr.mergeFailureMessage
+        );
     }
 
     private _buildStatusRow(name: string, badge: { cls: string; label: string }): string {

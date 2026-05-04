@@ -376,7 +376,7 @@ function buildBranchStatusChildren(pr: GitPullRequest): vscode.TreeItem[] {
         items.push(mergeBases);
     }
 
-    if ((pr.mergeFailureType !== undefined && pr.mergeFailureType !== PullRequestMergeFailureType.None) || pr.mergeFailureMessage) {
+    if (hasMergeFailure(pr)) {
         const failureReason = pr.mergeFailureMessage ?? mergeFailureTypeLabel(pr.mergeFailureType) ?? 'Unknown';
         const failure = createLeafItem('Failure reason', failureReason || 'Unknown');
         failure.iconPath = new vscode.ThemeIcon('error', new vscode.ThemeColor('charts.red'));
@@ -397,6 +397,13 @@ function createLeafItem(label: string, description: string): vscode.TreeItem {
     item.description = description;
     item.tooltip = `${label}: ${description}`;
     return item;
+}
+
+function hasMergeFailure(pr: GitPullRequest): boolean {
+    return (
+        (pr.mergeFailureType !== undefined && pr.mergeFailureType !== PullRequestMergeFailureType.None) ||
+        !!pr.mergeFailureMessage
+    );
 }
 
 function branchStatusLabel(pr: GitPullRequest): string {
