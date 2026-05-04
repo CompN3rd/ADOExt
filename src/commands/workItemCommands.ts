@@ -3,6 +3,7 @@ import type { WorkItemNode } from '../providers/workItemProvider';
 import type { AdoClient, WorkItem } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
 import { WorkItemDetailsPanel } from '../views/workItemDetailsPanel';
+import { parseAdoRemoteUrl } from '../utils/repoContext';
 import { showErrorMessage, showInformationMessage, showWarningMessage } from '../utils/notifications';
 
 /**
@@ -142,8 +143,8 @@ export function buildWorkItemBranchName(id: number, title: string): string {
  */
 export async function startWorkingOnWorkItem(
     workItem: WorkItem,
-    _organization?: string,
-    _project?: string
+    organization?: string,
+    project?: string
 ): Promise<void> {
     const id = workItem.id;
     if (!id || id <= 0) {
@@ -177,10 +178,18 @@ export async function startWorkingOnWorkItem(
         return;
     }
 
-    let repo = repos[0];
-    if (repos.length > 1) {
+    let candidateRepos = repos;
+    if (organization && project) {
+        const matchingRepos = repos.filter(repo => repositoryMatchesContext(repo, organization, project));
+        if (matchingRepos.length > 0) {
+            candidateRepos = matchingRepos;
+        }
+    }
+
+    let repo = candidateRepos[0];
+    if (candidateRepos.length > 1) {
         const picked = await vscode.window.showQuickPick(
-            repos.map(r => ({ label: r.rootUri.fsPath, repo: r })),
+            candidateRepos.map(r => ({ label: r.rootUri.fsPath, repo: r })),
             { placeHolder: 'Select the repository to create the branch in' }
         );
         if (!picked) { return; }
@@ -233,8 +242,25 @@ interface GitAPI {
     repositories: Repository[];
 }
 
+interface GitRemote {
+    fetchUrl?: string;
+    pushUrl?: string;
+}
+
 interface Repository {
     rootUri: vscode.Uri;
+    state: { remotes: GitRemote[] };
     checkout(treeish: string): Promise<void>;
     createBranch(name: string, checkout: boolean, ref?: string): Promise<void>;
+}
+
+function repositoryMatchesContext(
+    repository: Repository,
+    organization: string,
+    project: string
+): boolean {
+    return repository.state.remotes.some(remote => {
+        const context = parseAdoRemoteUrl(remote.fetchUrl ?? remote.pushUrl ?? '');
+        return !!context && context.organization === organization && context.project === project;
+    });
 }
