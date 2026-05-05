@@ -21,6 +21,15 @@
     "onStartupFinished"
   ],
   "main": "./out/extension.js",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/CompN3rd/ADOExt.git"
+  },
+  "homepage": "https://github.com/CompN3rd/ADOExt",
+  "bugs": {
+    "url": "https://github.com/CompN3rd/ADOExt/issues"
+  },
   "contributes": {
     "mcpServerDefinitionProviders": [
       {
