@@ -3,8 +3,10 @@ import type { IWorkItemTrackingApi } from 'azure-devops-node-api/WorkItemTrackin
 import type { IGitApi } from 'azure-devops-node-api/GitApi';
 import type { ICoreApi } from 'azure-devops-node-api/CoreApi';
 import type { IPolicyApi } from 'azure-devops-node-api/PolicyApi';
+import type { IBuildApi } from 'azure-devops-node-api/BuildApi';
 import { CommentExpandOptions, QueryExpand, TreeStructureGroup, WorkItemExpand } from 'azure-devops-node-api/interfaces/WorkItemTrackingInterfaces';
 import { GitVersionType, VersionControlChangeType, GitStatusState, PullRequestAsyncStatus, PullRequestMergeFailureType } from 'azure-devops-node-api/interfaces/GitInterfaces';
+import { BuildReason } from 'azure-devops-node-api/interfaces/BuildInterfaces';
 import { Operation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
 import type {
     WorkItem,
@@ -26,6 +28,7 @@ import type {
     CommentThreadStatus,
     IdentityRefWithVote
 } from 'azure-devops-node-api/interfaces/GitInterfaces';
+import type { Build } from 'azure-devops-node-api/interfaces/BuildInterfaces';
 import type { TeamProject } from 'azure-devops-node-api/interfaces/CoreInterfaces';
 import type { JsonPatchDocument, JsonPatchOperation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
 import type { PolicyEvaluationRecord } from 'azure-devops-node-api/interfaces/PolicyInterfaces';
@@ -44,6 +47,7 @@ export type {
     CommentThreadStatus,
     IdentityRefWithVote,
     TeamProject,
+    Build,
     PolicyEvaluationRecord
 };
 export { GitStatusState, PolicyEvaluationStatus, PullRequestAsyncStatus, PullRequestMergeFailureType };
@@ -93,6 +97,7 @@ export const PullRequestReviewVotes = {
 
 const WORK_ITEM_QUERY_LIMIT = 200;
 const PLANNING_WORK_ITEM_QUERY_LIMIT = 500;
+const BUILDS_PER_QUERY = 10;
 const PLANNING_WORK_ITEM_TOTAL_LIMIT = 1000;
 const WORK_ITEM_BATCH_SIZE = 200;
 
@@ -952,6 +957,79 @@ export class AdoClient {
         const gitApi: IGitApi = await this.getConnectionFor(organization).getGitApi();
         const repo = await gitApi.getRepository(repositoryId, project);
         return repo?.name;
+    }
+
+    // -------------------------------------------------------------------------
+    // Builds
+    // -------------------------------------------------------------------------
+
+    /**
+     * Fetch the most recent builds for a pull request.
+     * Filters by the PR's repository and source branch, limited to builds
+     * triggered by pull request validation policies.
+     */
+    async getBuildsForPullRequest(
+        project: string,
+        repositoryId: string,
+        sourceBranch: string,
+        organization?: string
+    ): Promise<Build[]> {
+        const buildApi: IBuildApi = await this.getConnectionFor(organization).getBuildApi();
+        const builds = await buildApi.getBuilds(
+            project,
+            undefined, // definitions
+            undefined, // queues
+            undefined, // buildNumber
+            undefined, // minTime
+            undefined, // maxTime
+            undefined, // requestedFor
+            BuildReason.PullRequest,
+            undefined, // statusFilter
+            undefined, // resultFilter
+            undefined, // tagFilters
+            undefined, // properties
+            BUILDS_PER_QUERY, // top
+            undefined, // continuationToken
+            undefined, // maxBuildsPerDefinition
+            undefined, // deletedFilter
+            undefined, // queryOrder
+            sourceBranch,
+            undefined, // buildIds
+            repositoryId,
+            'TfsGit'
+        );
+        return builds ?? [];
+    }
+
+    /**
+     * Fetch builds linked to a work item via its artifact relations.
+     * Parses `vstfs:///Build/Build/{id}` URLs from the work item's relations.
+     */
+    async getBuildsForWorkItem(
+        project: string,
+        workItem: WorkItem,
+        organization?: string
+    ): Promise<Build[]> {
+        const relations = workItem.relations ?? [];
+        const buildArtifactPattern = /vstfs:\/\/\/Build\/Build\/(\d+)/i;
+        const buildIds = relations
+            .flatMap(r => {
+                if (r.rel !== 'ArtifactLink') { return []; }
+                const match = buildArtifactPattern.exec(r.url ?? '');
+                return match ? [Number(match[1])] : [];
+            });
+
+        if (buildIds.length === 0) {
+            return [];
+        }
+
+        const buildApi: IBuildApi = await this.getConnectionFor(organization).getBuildApi();
+        const builds = await Promise.all(
+            buildIds.slice(0, BUILDS_PER_QUERY).map(id =>
+                buildApi.getBuild(project, id).catch(() => undefined)
+            )
+        );
+        return builds.filter((b): b is Build => b !== undefined);
     }
 
     get organization(): string | undefined {

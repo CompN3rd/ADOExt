@@ -1,10 +1,12 @@
 import * as vscode from 'vscode';
 import * as crypto from 'crypto';
 import type { GitPullRequest, GitPullRequestCommentThread, Comment, PullRequestReviewVote, GitPullRequestStatus, PolicyEvaluationRecord } from '../api/adoClient';
+import type { Build } from '../api/adoClient';
 import { PullRequestReviewVotes, GitStatusState, PolicyEvaluationStatus, PullRequestAsyncStatus, PullRequestMergeFailureType } from '../api/adoClient';
 import type { AdoClient } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
 import { showErrorMessage, showInformationMessage, showWarningMessage } from '../utils/notifications';
+import { buildSummaryHtml, BUILD_SUMMARY_CSS } from './buildSummaryHtml';
 // Note: the diff is now opened via VS Code's native diff editor, dispatched
 // through the `adoext.viewPullRequestDiff` command so that the inline
 // comment controller is wired up consistently.
@@ -96,22 +98,26 @@ export class PrDetailsPanel {
         const organization = this._organization ?? client.organization ?? config.organization;
         const projectId = pr.repository?.project?.id;
 
-        const [latestPrResult, threadsResult, statusesResult, policiesResult] = await Promise.allSettled([
+        const [latestPrResult, threadsResult, statusesResult, policiesResult, buildsResult] = await Promise.allSettled([
             client.getPullRequest(project, repoId, prId, organization),
             client.getPullRequestThreads(project, repoId, prId, organization),
             client.getPullRequestStatuses(project, repoId, prId, organization),
             projectId
                 ? client.getPullRequestPolicyEvaluations(project, prId, projectId, organization)
-                : Promise.resolve([] as PolicyEvaluationRecord[])
+                : Promise.resolve([] as PolicyEvaluationRecord[]),
+            project && repoId && pr.sourceRefName
+                ? client.getBuildsForPullRequest(project, repoId, pr.sourceRefName, organization)
+                : Promise.resolve([] as Build[])
         ]);
 
         const latestPr = latestPrResult.status === 'fulfilled' && latestPrResult.value ? latestPrResult.value : pr;
         const threads = threadsResult.status === 'fulfilled' ? threadsResult.value : [];
         const statuses = statusesResult.status === 'fulfilled' ? statusesResult.value : [];
         const policies = policiesResult.status === 'fulfilled' ? policiesResult.value : [];
+        const builds = buildsResult.status === 'fulfilled' ? buildsResult.value : [];
 
         this._pr = latestPr;
-        this._panel.webview.html = this._buildHtml(latestPr, threads, statuses, policies);
+        this._panel.webview.html = this._buildHtml(latestPr, threads, statuses, policies, builds);
     }
 
     private async _handleMessage(msg: {
@@ -120,6 +126,7 @@ export class PrDetailsPanel {
         content?: string;
         status?: number;
         vote?: number;
+        buildId?: number;
     }): Promise<void> {
         const repoId = this._pr.repository?.id ?? '';
         const prId = this._pr.pullRequestId!;
@@ -174,6 +181,15 @@ export class PrDetailsPanel {
 
                 const url = `https://dev.azure.com/${encodeURIComponent(org)}/${encodeURIComponent(projectName)}/_git/${encodeURIComponent(repoName)}/pullrequest/${prId}`;
                 void vscode.env.openExternal(vscode.Uri.parse(url));
+            } else if (msg.type === 'openBuild' && typeof msg.buildId === 'number') {
+                if (!organization || !project || msg.buildId <= 0) {
+                    showWarningMessage(
+                        'Unable to open build because organization, project, or build ID is missing.'
+                    );
+                    return;
+                }
+                const buildUrl = `https://dev.azure.com/${encodeURIComponent(organization)}/${encodeURIComponent(project)}/_build/results?buildId=${msg.buildId}`;
+                void vscode.env.openExternal(vscode.Uri.parse(buildUrl));
             } else if (msg.type === 'openDiff') {
                 await vscode.commands.executeCommand('adoext.viewPullRequestDiff', {
                     pr: this._pr,
@@ -218,7 +234,8 @@ export class PrDetailsPanel {
         pr: GitPullRequest,
         threads: GitPullRequestCommentThread[],
         statuses: GitPullRequestStatus[] = [],
-        policies: PolicyEvaluationRecord[] = []
+        policies: PolicyEvaluationRecord[] = [],
+        builds: Build[] = []
     ): string {
         const webview = this._panel.webview;
         const nonce = this._createNonce();
@@ -252,6 +269,10 @@ export class PrDetailsPanel {
 
         const branchStatusHtml = this._buildBranchStatusHtml(pr);
         const checksHtml = this._buildChecksHtml(statuses, policies);
+
+        const buildsHtml = builds.length === 0
+            ? '<p class="empty">No builds found.</p>'
+            : builds.map(b => buildSummaryHtml(b)).join('');
 
         return /* html */`<!DOCTYPE html>
 <html lang="en">
@@ -303,6 +324,7 @@ export class PrDetailsPanel {
   .new-comment-form { display: flex; flex-direction: column; gap: 6px; }
     .toolbar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
     .review-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  ${BUILD_SUMMARY_CSS}
 </style>
 </head>
 <body>
@@ -333,6 +355,11 @@ ${reviewersHtml ? `<div class="section"><h2>Reviewers</h2><ul class="reviewers">
 ${branchStatusHtml}
 
 ${checksHtml}
+
+<div class="section">
+  <h2>Builds</h2>
+  ${buildsHtml}
+</div>
 
 <div class="section">
   <h2>Comment Threads</h2>
@@ -374,6 +401,15 @@ document.querySelector('[data-action="add-comment"]')?.addEventListener('click',
 
     vscode.postMessage({ type: 'addComment', content });
     input.value = '';
+});
+
+document.querySelectorAll('[data-action="open-build"]').forEach(button => {
+    button.addEventListener('click', () => {
+        const buildId = Number(button.getAttribute('data-build-id'));
+        if (Number.isFinite(buildId) && buildId > 0) {
+            vscode.postMessage({ type: 'openBuild', buildId });
+        }
+    });
 });
 
 document.querySelectorAll('[data-action="reply"]').forEach(button => {
@@ -545,7 +581,6 @@ document.querySelectorAll('[data-action="set-status"]').forEach(button => {
                 return 'Unknown';
         }
     }
-
     private _buildThreadHtml(thread: GitPullRequestCommentThread): string {
         const threadId = thread.id ?? 0;
         const isResolved =

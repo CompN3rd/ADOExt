@@ -1,9 +1,10 @@
 import * as vscode from 'vscode';
 import * as crypto from 'crypto';
-import type { WorkItem, WorkItemComment } from '../api/adoClient';
+import type { WorkItem, WorkItemComment, Build } from '../api/adoClient';
 import type { AdoClient } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
 import { showErrorMessage, showInformationMessage, showWarningMessage } from '../utils/notifications';
+import { buildSummaryHtml, BUILD_SUMMARY_CSS } from './buildSummaryHtml';
 
 interface WorkItemPanelScope {
     organization?: string;
@@ -154,7 +155,14 @@ export class WorkItemDetailsPanel {
         const repositoryNames = await this._resolveRepositoryNames(fullItem, project, organization);
         this._linkedItems = this._parseLinkedItems(fullItem, organization, project, repositoryNames);
 
-        this._panel.webview.html = this._buildHtml(fullItem, comments);
+        let builds: Build[] = [];
+        try {
+            builds = await client.getBuildsForWorkItem(project, fullItem, organization);
+        } catch (err) {
+            // show panel anyway, builds will just be empty
+        }
+
+        this._panel.webview.html = this._buildHtml(fullItem, comments, builds);
     }
 
     private async _handleMessage(msg: {
@@ -162,6 +170,7 @@ export class WorkItemDetailsPanel {
         content?: string;
         state?: string;
         url?: string;
+        buildId?: number;
     }): Promise<void> {
         const id = this._workItemId;
         const project = this._project ?? this._config.project;
@@ -170,6 +179,8 @@ export class WorkItemDetailsPanel {
             ? 'Failed to add work item comment'
             : msg.type === 'setState'
                 ? 'Failed to update work item state'
+                : msg.type === 'openBuild'
+                    ? 'Failed to open build'
                 : msg.type === 'openLinkedItem'
                     ? 'Failed to open linked item'
                     : msg.type === 'startWorking'
@@ -196,6 +207,15 @@ export class WorkItemDetailsPanel {
                 }
                 const url = `https://dev.azure.com/${encodeURIComponent(org)}/${encodeURIComponent(project)}/_workitems/edit/${id}`;
                 void vscode.env.openExternal(vscode.Uri.parse(url));
+            } else if (msg.type === 'openBuild' && typeof msg.buildId === 'number') {
+                if (!org || !project || msg.buildId <= 0) {
+                    showWarningMessage(
+                        'Unable to open build because organization, project, or build ID is missing.'
+                    );
+                    return;
+                }
+                const buildUrl = `https://dev.azure.com/${encodeURIComponent(org)}/${encodeURIComponent(project)}/_build/results?buildId=${msg.buildId}`;
+                void vscode.env.openExternal(vscode.Uri.parse(buildUrl));
             } else if (msg.type === 'setState' && msg.state) {
                 if (!org || !project) {
                     showWarningMessage(
@@ -232,7 +252,7 @@ export class WorkItemDetailsPanel {
         }
     }
 
-    private _buildHtml(item: WorkItem, comments: WorkItemComment[]): string {
+    private _buildHtml(item: WorkItem, comments: WorkItemComment[], builds: Build[] = []): string {
         const webview = this._panel.webview;
         const nonce = this._createNonce();
         const id = item.id ?? 0;
@@ -267,6 +287,10 @@ export class WorkItemDetailsPanel {
         const commentsHtml = comments.length === 0
             ? '<p class="empty">No comments yet.</p>'
             : comments.map((c, index) => this._buildCommentHtml(c, index)).join('');
+
+        const buildsHtml = builds.length === 0
+            ? '<p class="empty">No linked builds.</p>'
+            : builds.map(b => buildSummaryHtml(b)).join('');
 
         const metaRows = [
             ['Assigned To', assignedTo],
@@ -368,6 +392,7 @@ export class WorkItemDetailsPanel {
   .empty { color: var(--vscode-descriptionForeground); font-style: italic; }
   .linked-items-list { display: flex; flex-wrap: wrap; gap: 6px; }
   .linked-item-btn { text-align: left; }
+  ${BUILD_SUMMARY_CSS}
 </style>
 </head>
 <body>
@@ -401,6 +426,11 @@ export class WorkItemDetailsPanel {
 <div class="section">
   <h2>Linked Items (${linkedItems.length})</h2>
   <div class="linked-items-list">${linkedItemsHtml}</div>
+</div>
+
+<div class="section">
+  <h2>Builds</h2>
+  ${buildsHtml}
 </div>
 
 <div class="section">
@@ -445,6 +475,15 @@ document.querySelectorAll('[data-action="open-linked-item"]').forEach(btn => {
     btn.addEventListener('click', () => {
         const url = btn.getAttribute('data-url');
         if (url) { vscode.postMessage({ type: 'openLinkedItem', url }); }
+    });
+});
+
+document.querySelectorAll('[data-action="open-build"]').forEach(button => {
+    button.addEventListener('click', () => {
+        const buildId = Number(button.getAttribute('data-build-id'));
+        if (Number.isFinite(buildId) && buildId > 0) {
+            vscode.postMessage({ type: 'openBuild', buildId });
+        }
     });
 });
 
