@@ -357,8 +357,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             'adoext.createWorkItemFromSelection',
             async () => {
                 if (!(await ensureSignedIn())) { return; }
-                await createWorkItemFromSelection(client, config);
-                refreshAllViews();
+                const created = await createWorkItemFromSelection(client, config);
+                if (created) { refreshAllViews(); }
             }
         )
     );
@@ -368,8 +368,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             'adoext.createWorkItemFromTodo',
             async (todoText?: string, lineNumber?: number) => {
                 if (!(await ensureSignedIn())) { return; }
-                await createWorkItemFromTodo(client, config, todoText, lineNumber);
-                refreshAllViews();
+                const created = await createWorkItemFromTodo(client, config, todoText, lineNumber);
+                if (created) { refreshAllViews(); }
             }
         )
     );

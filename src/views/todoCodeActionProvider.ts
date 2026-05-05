@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { TODO_COMMENT_PATTERN } from '../utils/todoPattern';
 
 /**
- * Code-action provider that offers an "Create Azure DevOps Work Item" quick-fix
+ * Code-action provider that offers a "Create Azure DevOps Work Item" quick-fix
  * when the cursor is on a line that contains a TODO comment.
  */
 export class TodoCodeActionProvider implements vscode.CodeActionProvider {

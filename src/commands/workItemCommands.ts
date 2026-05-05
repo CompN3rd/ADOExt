@@ -157,9 +157,11 @@ function buildFileContextDescription(
     const workspaceFolders = vscode.workspace.workspaceFolders;
     let displayPath = fileUri.fsPath;
     if (workspaceFolders?.length) {
-        const root = workspaceFolders[0].uri.fsPath;
-        if (displayPath.startsWith(root)) {
-            displayPath = displayPath.slice(root.length).replace(/^[\\/]/, '');
+        const owningFolder = workspaceFolders.find(
+            folder => fileUri.fsPath.startsWith(folder.uri.fsPath)
+        );
+        if (owningFolder) {
+            displayPath = fileUri.fsPath.slice(owningFolder.uri.fsPath.length).replace(/^[\\/]/, '');
         }
     }
     // Normalize to forward slashes for display
@@ -186,14 +188,21 @@ function buildFileContextDescription(
 export async function createWorkItemFromSelection(
     client: AdoClient,
     config: ConfigManager
-): Promise<void> {
-    const organization = client.organization ?? config.organization;
-    const project = config.project;
-
-    if (!organization || !project) {
+): Promise<boolean> {
+    const scopes = await resolveProjectScopes(client, config);
+    if (scopes.length === 0) {
         showWarningMessage('Please configure your organization and project first.');
-        return;
+        return false;
     }
+
+    let scope = scopes[0];
+    if (scopes.length > 1) {
+        const scopeItems = scopes.map(s => ({ label: s.project, description: s.organization, scope: s }));
+        const picked = await vscode.window.showQuickPick(scopeItems, { placeHolder: 'Select a project for the new work item' });
+        if (!picked) { return false; }
+        scope = picked.scope;
+    }
+    const { project, organization } = scope;
 
     const editor = vscode.window.activeTextEditor;
     const selectedText = editor && !editor.selection.isEmpty
@@ -207,12 +216,12 @@ export async function createWorkItemFromSelection(
         placeHolder: 'Enter a title for the new work item'
     });
     if (!title?.trim()) {
-        return;
+        return false;
     }
 
     const workItemType = await pickWorkItemType(client, project, organization);
     if (!workItemType) {
-        return;
+        return false;
     }
 
     const description = editor
@@ -229,8 +238,10 @@ export async function createWorkItemFromSelection(
         );
         showInformationMessage(`Work item #${workItem.id} created.`);
         await WorkItemDetailsPanel.show(client, config, workItem, { organization, project });
+        return true;
     } catch (err) {
         showErrorMessage(`Failed to create work item: ${formatUnknownError(err)}`);
+        return false;
     }
 }
 
@@ -247,14 +258,21 @@ export async function createWorkItemFromTodo(
     config: ConfigManager,
     todoText?: string,
     lineNumber?: number
-): Promise<void> {
-    const organization = client.organization ?? config.organization;
-    const project = config.project;
-
-    if (!organization || !project) {
+): Promise<boolean> {
+    const scopes = await resolveProjectScopes(client, config);
+    if (scopes.length === 0) {
         showWarningMessage('Please configure your organization and project first.');
-        return;
+        return false;
     }
+
+    let scope = scopes[0];
+    if (scopes.length > 1) {
+        const scopeItems = scopes.map(s => ({ label: s.project, description: s.organization, scope: s }));
+        const picked = await vscode.window.showQuickPick(scopeItems, { placeHolder: 'Select a project for the new work item' });
+        if (!picked) { return false; }
+        scope = picked.scope;
+    }
+    const { project, organization } = scope;
 
     const editor = vscode.window.activeTextEditor;
 
@@ -265,7 +283,7 @@ export async function createWorkItemFromTodo(
         // Scan the active file for TODO comments
         if (!editor) {
             showWarningMessage('Open a file in the editor to scan for TODO comments.');
-            return;
+            return false;
         }
 
         interface TodoItem {
@@ -291,14 +309,14 @@ export async function createWorkItemFromTodo(
 
         if (todos.length === 0) {
             showInformationMessage('No TODO comments found in the active file.');
-            return;
+            return false;
         }
 
         const picked = await vscode.window.showQuickPick(todos, {
             placeHolder: 'Select a TODO comment to create a work item from'
         });
         if (!picked) {
-            return;
+            return false;
         }
         resolvedTitle = picked.text;
         resolvedLine = picked.line;
@@ -310,12 +328,12 @@ export async function createWorkItemFromTodo(
         placeHolder: 'Enter a title for the new work item'
     });
     if (!title?.trim()) {
-        return;
+        return false;
     }
 
     const workItemType = await pickWorkItemType(client, project, organization);
     if (!workItemType) {
-        return;
+        return false;
     }
 
     const lineContext = editor && resolvedLine < editor.document.lineCount
@@ -335,8 +353,10 @@ export async function createWorkItemFromTodo(
         );
         showInformationMessage(`Work item #${workItem.id} created.`);
         await WorkItemDetailsPanel.show(client, config, workItem, { organization, project });
+        return true;
     } catch (err) {
         showErrorMessage(`Failed to create work item: ${formatUnknownError(err)}`);
+        return false;
     }
 }
 
