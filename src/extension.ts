@@ -350,11 +350,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         })
     );
 
-    // Persist named pull request buckets
     // Refresh a single pull request bucket independently
     context.subscriptions.push(
         vscode.commands.registerCommand('adoext.refreshPullRequestBucket', async (node: PullRequestBucketNode) => {
-            await ensureSignedIn();
+            if (!(await ensureSignedIn())) { return; }
             pullRequestProvider.refreshBucket(node);
         })
     );

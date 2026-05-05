@@ -23,7 +23,7 @@ export class PullRequestBucketNode extends vscode.TreeItem {
         label: string,
         public readonly filter: 'mine' | 'created' | 'assigned' | 'all'
     ) {
-        super(label, vscode.TreeItemCollapsibleState.Expanded);
+        super(label, vscode.TreeItemCollapsibleState.Collapsed);
         this.contextValue = 'pullRequestBucket';
         this.iconPath = bucketIcon(filter);
     }
@@ -537,6 +537,7 @@ export class PullRequestProvider implements vscode.TreeDataProvider<PullRequestT
 
     private _buckets: PullRequestBucketNode[] = [];
     private _prCache = new Map<string, ScopedPullRequest[]>();
+    private _bucketScopeGrouping = new Map<string, boolean>();
     private _loadingPromises = new Map<string, Promise<PullRequestTreeNode[]>>();
 
     constructor(
@@ -546,6 +547,7 @@ export class PullRequestProvider implements vscode.TreeDataProvider<PullRequestT
 
     refresh(): void {
         this._prCache.clear();
+        this._bucketScopeGrouping.clear();
         this._loadingPromises.clear();
         this._buckets = [];
         this._onDidChangeTreeData.fire();
@@ -553,6 +555,7 @@ export class PullRequestProvider implements vscode.TreeDataProvider<PullRequestT
 
     refreshBucket(bucket: PullRequestBucketNode): void {
         this._prCache.delete(bucket.bucketId);
+        this._bucketScopeGrouping.delete(bucket.bucketId);
         this._loadingPromises.delete(bucket.bucketId);
         this._onDidChangeTreeData.fire(bucket);
     }
@@ -621,7 +624,9 @@ export class PullRequestProvider implements vscode.TreeDataProvider<PullRequestT
     private loadBucketChildren(bucket: PullRequestBucketNode): Promise<PullRequestTreeNode[]> {
         const cached = this._prCache.get(bucket.bucketId);
         if (cached) {
-            return Promise.resolve(this.buildBucketNodes(cached));
+            return Promise.resolve(
+                this.buildBucketNodes(cached, this._bucketScopeGrouping.get(bucket.bucketId) ?? false)
+            );
         }
 
         const inFlight = this._loadingPromises.get(bucket.bucketId);
@@ -645,7 +650,9 @@ export class PullRequestProvider implements vscode.TreeDataProvider<PullRequestT
 
             const prs = await this.loadPullRequests(scopes, bucket.filter);
             this._prCache.set(bucket.bucketId, prs);
-            return this.buildBucketNodes(prs);
+            const forceScopeGrouping = scopes.length > 1;
+            this._bucketScopeGrouping.set(bucket.bucketId, forceScopeGrouping);
+            return this.buildBucketNodes(prs, forceScopeGrouping);
         } catch (err) {
             const node = new vscode.TreeItem(`Error: ${err}`, vscode.TreeItemCollapsibleState.None);
             node.iconPath = new vscode.ThemeIcon('error');
@@ -653,15 +660,14 @@ export class PullRequestProvider implements vscode.TreeDataProvider<PullRequestT
         }
     }
 
-    private buildBucketNodes(prs: ScopedPullRequest[]): PullRequestTreeNode[] {
+    private buildBucketNodes(prs: ScopedPullRequest[], forceScopeGrouping: boolean): PullRequestTreeNode[] {
         if (prs.length === 0) {
             const node = new vscode.TreeItem('No pull requests found', vscode.TreeItemCollapsibleState.None);
             node.iconPath = new vscode.ThemeIcon('info');
             return [node];
         }
 
-        const uniqueScopes = new Set(prs.map(item => scopeKey(item.scope)));
-        if (uniqueScopes.size === 1) {
+        if (!forceScopeGrouping) {
             return [new PullRequestGroup(`Pull Requests (${prs.length})`, prs)];
         }
 
