@@ -1,53 +1,255 @@
-# ADOExt
-Azure DevOps Extension for VS Code
+# 🚀 ADOExt — Azure DevOps for VS Code
 
-## Features
+A full-featured Azure DevOps integration for Visual Studio Code, bringing the power of ADO directly into your editor. Manage work items, pull requests, builds, and team collaboration—all without leaving VS Code.
 
-ADOExt is a full-featured Azure DevOps integration for Visual Studio Code, providing an experience similar to the GitHub Issues & Pull Requests extension but for Azure DevOps.
+---
 
-### Work Items
-- Browse work items assigned to you, created by you, or all active items
-- Items aggregate across the selected organizations/projects and are grouped by project and state
-- Work item type icons use custom ADO-style icons for bugs, tasks, epics, features, stories, PBIs, and issues
-- **One-click to view full work item details in a dedicated webview panel** — no browser needed
-  - See title, type, state, priority, assignee, description, area path, iteration, and tags
-  - Change work item state directly from VS Code
-  - View and add discussion comments directly from the panel
-  - Open in browser available as a secondary action
+## ✨ Key Features
 
-### Backlog, Sprints, and Boards
-- View a hierarchical backlog using Azure DevOps parent/child work item links
-- Browse sprint work grouped by iteration path
-- Browse board work grouped by state columns
-- Open Backlog and Board editor views for wider nested planning layouts
-- Change work item state from the editor planning views and refresh the sidebar views automatically
-- Open any work item from these planning views in the same details panel used by the Work Items view
+### 📋 **Work Item Management**
+- **Browse & Filter** — View work items assigned to you, created by you, or across your entire portfolio
+- **Multi-Org Aggregation** — Work items aggregate seamlessly across selected organizations and projects, grouped by project and state
+- **Rich Details Panel** — One-click to open full work item details in a dedicated webview panel
+  - Edit title, description, state, priority, assignee, area path, iteration, and tags
+  - View and participate in discussion comments
+  - See work item history and linked items
+  - Open in browser anytime for advanced ADO features
+- **ADO-Style Icons** — Custom icons for bugs, tasks, epics, features, stories, PBIs, and issues
+- **State Changes** — Change work item state directly from the sidebar
 
-### Pull Requests
-- View active pull requests (yours, created, assigned to you, or all) aggregated across selected organizations/projects
-- Expand pull requests to see all comment threads inline
-- Reply to comment threads directly from the tree view
-- Resolve or reopen comment threads without leaving VS Code
-- **One-click to view full PR details in a dedicated webview panel** — no browser needed
-  - See title, description, reviewers, source/target branches, and all comment threads
-  - Reply to threads, resolve/reopen, and add new comments from the panel
-  - Open in browser available as a secondary action
-- **Native diff editor for pull requests** — picks up VS Code's normal side-by-side diff UI instead of a custom webview
-  - Opens the multi-diff editor showing every changed file at once (same UX as the GitHub Pull Request extension); click any entry to focus its diff
-  - Existing PR comment threads appear inline in the gutter, with full reply / resolve / reopen support
-  - Add new line comments using the same `+` gutter affordance and floating editor as the built-in GitHub PR extension
-- **Inline PR comments on the checked-out branch** — after running "Checkout Pull Request Branch", existing PR threads light up in the regular editor view so you can read and reply to them while editing the code, just like the built-in GitHub PR extension
-- **New-comment notifications** — a small toast appears when tracked pull requests receive new comments. Toggle via `adoext.notifyOnNewPullRequestComments` (or the "Mute Notifications" action on the toast); poll interval via `adoext.pullRequestCommentPollIntervalSeconds`.
-- **Checkout a PR branch** with a single click using the built-in Git extension
+### 🎯 **Create Work Items from Your Code**
+- **From Selection** — Highlight text in the editor and run `ADOExt: Create Work Item from Selection` to create a new work item with your selected text as the title
+- **From TODO Comments** — VS Code code action (💡) appears on TODO comments; click to create a work item directly from the comment
+- **File Context** — Work items automatically include the source file path and context lines for quick reference
 
-### Multi-Account & Multi-Organization Support
-- Uses VS Code's built-in Microsoft authentication — no manual token management
-- Works seamlessly with multiple Microsoft accounts already signed in to VS Code
-- Organization picker lists all ADO organizations your account belongs to and supports selecting multiple organizations or all organizations
-- Project picker supports selecting multiple projects per organization or all projects
-- Switch organization/project aggregation anytime via the toolbar commands
+### 🔍 **Smart Code Completions**
+- **Work Item References** — Type `#` or `AB#` in markdown, plaintext, or git commits to see IntelliSense completions for recent work items
+  - Shows work item ID, title, type, and state
+  - Filter by typing ID digits or title keywords
+  - Works with both `#123` and `AB#123` reference formats
+- **Team Mentions** — Type `@` to autocomplete team member names from your project
+  - Quickly mention colleagues in descriptions, comments, and commit messages
+  - Filters by display name and email prefix
 
-## Getting Started
+### 🎨 **Hover Cards for ADO References**
+- **Work Item Hovers** — Hover over `AB#123` or `#123` references in any open file to see a rich detail card
+  - Shows title, type, state, assignee, and project scope
+  - Quick actions: Open in Browser, View Details panel
+- **Pull Request Hovers** — Hover over `PR #123`, `PR!123`, or `!123` to see PR details
+  - Shows title, status, repository, and author
+  - Quick link to open in browser
+- **Smart Scope Resolution** — Hovers work across multi-project setups; when ambiguous, shows the matched scope
+
+### ✅ **Pull Request Management**
+- **Browse PRs** — View active pull requests (yours, created, assigned to you, all) aggregated across organizations/projects
+- **Inline Review** — Expand PRs in the tree to see all comment threads; reply, resolve, or reopen directly from the sidebar
+- **Rich PR Details Panel** — One-click to see full PR information, discussions, and reviewer status
+- **Native Diff Editor** — Review changes in VS Code's native multi-diff editor (same UX as GitHub PR extension)
+  - All changed files visible at once
+  - Inline PR comments in the gutter
+  - Add new line comments with the `+` affordance
+- **Checked-Out Branch** — After running "Checkout Pull Request Branch", existing PR threads light up in your regular editor
+- **Smart Notifications** — Toast notifications for new PR comments; configure poll frequency and notification types
+- **PR Queries & Buckets** — Organize PRs by review state (Waiting for My Review, Created by Me, All Open) or save custom queries
+
+### 📦 **Backlog, Sprints & Boards**
+- **Hierarchical Backlog** — View parent/child work item relationships in a collapsible tree
+- **Sprint Planning** — Browse work grouped by sprint/iteration with drag-and-drop reordering
+- **Board View** — See work organized by state columns (To Do, In Progress, Done, etc.)
+- **Editor Views** — Open Backlog and Board editor views for wider planning layouts
+- **State Changes** — Update work item state from planning views; sidebar automatically refreshes
+- **Linked Details** — Open any work item from planning views in the shared details panel
+
+### 🔐 **Multi-Account & Multi-Organization**
+- **Built-in Auth** — Uses VS Code's Microsoft authentication (no manual token management)
+- **Multiple Accounts** — Sign in with multiple Microsoft accounts and switch seamlessly
+- **Organization Picker** — Select one or multiple organizations or all orgs in your account
+- **Project Picker** — Choose projects per organization or select all projects
+- **Smart Aggregation** — All views (work items, PRs) automatically aggregate across your selection
+
+### 🏗️ **Build & Integration**
+- **Build Summaries** — Lightweight build status cards in PR and work item detail panels
+- **MCP Server** — Foundry integration for AI-powered workflows and automations
+- **Azure Boards Integration** — Full WIQL query support for advanced filtering and bulk operations
+
+---
+
+## 📥 Installation
+
+**From VS Code Marketplace:**
+1. Open VS Code
+2. Go to Extensions (Ctrl+Shift+X / Cmd+Shift+X)
+3. Search for "ADOExt"
+4. Click Install
+
+**From Source:**
+```bash
+git clone https://github.com/CompN3rd/ADOExt
+cd ADOExt
+npm install
+npm run compile
+code --install-extension ./adoext-0.1.0.vsix
+```
+
+---
+
+## 🚀 Quick Start
+
+### 1. **Sign In**
+   - Open the Command Palette (Ctrl+Shift+P / Cmd+Shift+P)
+   - Run `ADOExt: Sign In`
+   - Authenticate with your Microsoft account
+
+### 2. **Select Organization**
+   - Run `ADOExt: Select Organization`
+   - Choose your Azure DevOps organization(s)
+
+### 3. **Select Projects**
+   - Run `ADOExt: Select Project`
+   - Choose project(s) to work with
+
+### 4. **Explore the Sidebar**
+   - **Work Items** — Browse assigned, created, and all work items
+   - **Pull Requests** — View PRs organized by bucket (Waiting for Review, Created by Me, All Open)
+   - **Backlog** — Hierarchical view of all work
+   - **Sprints** — Current and future sprint planning
+   - **Boards** — Kanban-style board view
+
+---
+
+## 💡 Usage Examples
+
+### Create a Work Item from Code
+```typescript
+// 1. Highlight problematic code:
+const buggyFunction = () => {
+  return undefined; // Fix null handling here
+};
+
+// 2. Right-click → "Create Azure DevOps Work Item from Selection"
+// 3. Type title and choose work item type
+// 4. Work item created with file:line context embedded
+```
+
+### Use TODO Code Action
+```python
+# Line 42 in main.py
+# TODO: Refactor database queries for performance
+
+# 1. Click the 💡 lightbulb that appears
+# 2. Select "Create Azure DevOps Work Item from TODO"
+# 3. Work item created from the TODO text
+```
+
+### Complete Work Item References
+```markdown
+# PR Description
+
+This fixes AB#4521 and relates to #4522
+
+# As you type "AB#" or "#", VS Code shows matching work items:
+# - AB#4521 | Bug · Login timeout · Active · Jane Smith
+# - AB#4520 | Feature · Dark mode · Planned · Bob Wilson
+```
+
+### Hover Over References
+```text
+# In any editor, hover over a work item or PR reference:
+
+AB#4521      ← Hover here to see rich card:
+             │ Bug · Fix login timeout · Active
+             │ Assigned To: Jane Smith
+             │ Scope: contoso/backlog
+             │ [Open in Browser] [View Details]
+
+PR #123      ← Hover here to see:
+             │ Pull Request #123
+             │ Title: Add retry logic
+             │ Status: Active
+             │ Repository: backend
+             │ Author: Bob Wilson
+             │ [Open in Browser]
+```
+
+### Review a Pull Request
+```
+1. Open Pull Requests sidebar
+2. Expand a PR to see comment threads
+3. Right-click a thread → Reply, Resolve, or Reopen
+4. Or click the PR to open full details panel
+5. Or run "Checkout Pull Request Branch" to pull the code
+   → Existing PR threads now light up in your editor
+```
+
+---
+
+## ⚙️ Configuration
+
+Open VS Code Settings (Ctrl+, / Cmd+,) and search for `adoext` to customize:
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `adoext.notifyOnNewPullRequestComments` | Show toast when PRs get new comments | `true` |
+| `adoext.pullRequestCommentPollIntervalSeconds` | How often to check for new PR comments | `60` |
+| `adoext.workItemQueries` | Custom saved work item query filters | (defaults) |
+| `adoext.pullRequestQueries` | Custom saved PR query filters | (defaults) |
+| `adoext.projectsByOrganization` | Multi-org project selection | `{}` |
+
+---
+
+## 🎯 Commands
+
+| Command | Shortcut | Purpose |
+|---------|----------|---------|
+| `ADOExt: Sign In` | — | Authenticate with Microsoft |
+| `ADOExt: Select Organization` | — | Choose organization(s) |
+| `ADOExt: Select Project` | — | Choose project(s) |
+| `ADOExt: Create Work Item` | — | Create a new work item interactively |
+| `ADOExt: Create Work Item from Selection` | — | Create work item from highlighted text |
+| `ADOExt: Create Work Item from TODO` | — | Scan active file for TODO comments |
+| `ADOExt: Open Saved Query` | — | Browse and open saved work item queries |
+| `ADOExt: Refresh Work Items` | — | Manually refresh work items tree |
+| `ADOExt: Refresh Pull Requests` | — | Manually refresh PR tree |
+| `ADOExt: Checkout Pull Request Branch` | — | Check out a PR branch locally |
+
+---
+
+## 📋 Requirements
+
+- **VS Code** 1.101.0 or later
+- **Git** (for PR branch checkout)
+- **Azure DevOps Account** with at least read access to your organization
+- **Microsoft Authentication** in VS Code (built-in; uses existing sign-in)
+
+---
+
+## 🤝 Contributing
+
+We welcome contributions! Please feel free to open issues or pull requests on [GitHub](https://github.com/CompN3rd/ADOExt).
+
+### Development Setup
+```bash
+git clone https://github.com/CompN3rd/ADOExt
+cd ADOExt
+npm install
+npm run compile      # Build TypeScript
+npm run watch        # Watch mode during development
+code .               # Open in VS Code for testing
+```
+
+---
+
+## 📝 License
+
+This extension is open source and available under the [MIT License](LICENSE).
+
+---
+
+## 🐛 Feedback & Support
+
+Found a bug or have a feature request? [Open an issue](https://github.com/CompN3rd/ADOExt/issues) on GitHub.
+
+Happy coding! 🎉
 
 1. Open the **Azure DevOps** activity bar icon (sidebar)
 2. Click **Sign In** (or the organization icon) to authenticate with your Microsoft account
