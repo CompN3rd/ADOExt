@@ -17,6 +17,27 @@ interface ScopedPullRequest {
     scope: ProjectScope;
 }
 
+export class PullRequestBucketNode extends vscode.TreeItem {
+    constructor(
+        public readonly bucketId: string,
+        label: string,
+        public readonly filter: 'mine' | 'created' | 'assigned' | 'all'
+    ) {
+        super(label, vscode.TreeItemCollapsibleState.Collapsed);
+        this.contextValue = 'pullRequestBucket';
+        this.iconPath = bucketIcon(filter);
+    }
+}
+
+function bucketIcon(filter: 'mine' | 'created' | 'assigned' | 'all'): vscode.ThemeIcon {
+    switch (filter) {
+        case 'assigned': return new vscode.ThemeIcon('eye');
+        case 'created': return new vscode.ThemeIcon('person');
+        case 'mine': return new vscode.ThemeIcon('account'); // used by custom saved views
+        case 'all': return new vscode.ThemeIcon('list-filter');
+    }
+}
+
 export class PullRequestScopeGroup extends vscode.TreeItem {
     constructor(
         public readonly scope: ProjectScope,
@@ -493,6 +514,7 @@ function prIcon(pr: GitPullRequest): vscode.ThemeIcon {
 }
 
 type PullRequestTreeNode =
+    | PullRequestBucketNode
     | PullRequestScopeGroup
     | PullRequestGroup
     | PullRequestNode
@@ -502,12 +524,21 @@ type PullRequestTreeNode =
     | PullRequestCommentNode
     | vscode.TreeItem;
 
+const BUILT_IN_BUCKETS: Array<{ id: string; label: string; filter: 'mine' | 'created' | 'assigned' | 'all' }> = [
+    { id: 'waiting-for-review', label: 'Waiting for My Review', filter: 'assigned' },
+    { id: 'created-by-me', label: 'Created by Me', filter: 'created' },
+    { id: 'all-open', label: 'All Open', filter: 'all' }
+];
+
 export class PullRequestProvider implements vscode.TreeDataProvider<PullRequestTreeNode> {
     private _onDidChangeTreeData =
         new vscode.EventEmitter<PullRequestTreeNode | undefined | null | void>();
     readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
-    private _loading = false;
+    private _buckets: PullRequestBucketNode[] = [];
+    private _prCache = new Map<string, ScopedPullRequest[]>();
+    private _bucketScopeGrouping = new Map<string, boolean>();
+    private _loadingPromises = new Map<string, Promise<PullRequestTreeNode[]>>();
 
     constructor(
         private readonly client: AdoClient,
@@ -515,7 +546,18 @@ export class PullRequestProvider implements vscode.TreeDataProvider<PullRequestT
     ) {}
 
     refresh(): void {
+        this._prCache.clear();
+        this._bucketScopeGrouping.clear();
+        this._loadingPromises.clear();
+        this._buckets = [];
         this._onDidChangeTreeData.fire();
+    }
+
+    refreshBucket(bucket: PullRequestBucketNode): void {
+        this._prCache.delete(bucket.bucketId);
+        this._bucketScopeGrouping.delete(bucket.bucketId);
+        this._loadingPromises.delete(bucket.bucketId);
+        this._onDidChangeTreeData.fire(bucket);
     }
 
     getTreeItem(element: PullRequestTreeNode): vscode.TreeItem {
@@ -523,6 +565,10 @@ export class PullRequestProvider implements vscode.TreeDataProvider<PullRequestT
     }
 
     async getChildren(element?: PullRequestTreeNode): Promise<PullRequestTreeNode[]> {
+        if (element instanceof PullRequestBucketNode) {
+            return this.loadBucketChildren(element);
+        }
+
         if (element instanceof PullRequestScopeGroup) {
             return [new PullRequestGroup(`Pull Requests (${element.prs.length})`, element.prs)];
         }
@@ -549,62 +595,106 @@ export class PullRequestProvider implements vscode.TreeDataProvider<PullRequestT
             );
         }
 
-        if (this._loading) {
-            return [];
+        // Root: return setup node or buckets
+        const setupNode = this.getSetupNode();
+        if (setupNode) {
+            return [setupNode];
         }
-        this._loading = true;
 
+        return this.getBuckets();
+    }
+
+    private getBuckets(): PullRequestBucketNode[] {
+        if (this._buckets.length === 0) {
+            this._buckets = this.buildBuckets();
+        }
+        return this._buckets;
+    }
+
+    private buildBuckets(): PullRequestBucketNode[] {
+        const builtIn = BUILT_IN_BUCKETS.map(
+            b => new PullRequestBucketNode(b.id, b.label, b.filter)
+        );
+        const custom = this.config.savedPullRequestQueries.map(
+            q => new PullRequestBucketNode(q.id, q.label, q.filter)
+        );
+        return [...builtIn, ...custom];
+    }
+
+    private loadBucketChildren(bucket: PullRequestBucketNode): Promise<PullRequestTreeNode[]> {
+        const cached = this._prCache.get(bucket.bucketId);
+        if (cached) {
+            return Promise.resolve(
+                this.buildBucketNodes(cached, this._bucketScopeGrouping.get(bucket.bucketId) ?? false)
+            );
+        }
+
+        const inFlight = this._loadingPromises.get(bucket.bucketId);
+        if (inFlight) {
+            return inFlight;
+        }
+
+        const promise = this.doLoadBucketChildren(bucket).finally(() => {
+            this._loadingPromises.delete(bucket.bucketId);
+        });
+        this._loadingPromises.set(bucket.bucketId, promise);
+        return promise;
+    }
+
+    private async doLoadBucketChildren(bucket: PullRequestBucketNode): Promise<PullRequestTreeNode[]> {
         try {
-            const setupNode = this.getSetupNode();
-            if (setupNode) {
-                return [setupNode];
-            }
-
             const scopes = await resolveProjectScopes(this.client, this.config);
             if (scopes.length === 0) {
                 return [this.createConfigureNode()];
             }
 
-            const prs = await this.loadPullRequests(scopes);
-            if (prs.length === 0) {
-                const node = new vscode.TreeItem('No pull requests found', vscode.TreeItemCollapsibleState.None);
-                node.iconPath = new vscode.ThemeIcon('info');
-                return [node];
-            }
-
-            if (scopes.length === 1) {
-                return [new PullRequestGroup(`Pull Requests (${prs.length})`, prs)];
-            }
-
-            const byScope = new Map<string, ScopedPullRequest[]>();
-            const scopeByKey = new Map<string, ProjectScope>();
-            for (const item of prs) {
-                const key = scopeKey(item.scope);
-                scopeByKey.set(key, item.scope);
-                if (!byScope.has(key)) {
-                    byScope.set(key, []);
-                }
-                byScope.get(key)!.push(item);
-            }
-
-            return [...byScope.entries()]
-                .map(([key, scopedPrs]) => new PullRequestScopeGroup(scopeByKey.get(key)!, scopedPrs))
-                .sort((left, right) => `${left.label}`.localeCompare(`${right.label}`));
+            const prs = await this.loadPullRequests(scopes, bucket.filter);
+            this._prCache.set(bucket.bucketId, prs);
+            const forceScopeGrouping = scopes.length > 1;
+            this._bucketScopeGrouping.set(bucket.bucketId, forceScopeGrouping);
+            return this.buildBucketNodes(prs, forceScopeGrouping);
         } catch (err) {
             const node = new vscode.TreeItem(`Error: ${err}`, vscode.TreeItemCollapsibleState.None);
             node.iconPath = new vscode.ThemeIcon('error');
             return [node];
-        } finally {
-            this._loading = false;
         }
     }
 
-    private async loadPullRequests(scopes: ProjectScope[]): Promise<ScopedPullRequest[]> {
-        const query = this.config.activePullRequestQuery;
+    private buildBucketNodes(prs: ScopedPullRequest[], forceScopeGrouping: boolean): PullRequestTreeNode[] {
+        if (prs.length === 0) {
+            const node = new vscode.TreeItem('No pull requests found', vscode.TreeItemCollapsibleState.None);
+            node.iconPath = new vscode.ThemeIcon('info');
+            return [node];
+        }
+
+        if (!forceScopeGrouping) {
+            return [new PullRequestGroup(`Pull Requests (${prs.length})`, prs)];
+        }
+
+        const byScope = new Map<string, ScopedPullRequest[]>();
+        const scopeByKey = new Map<string, ProjectScope>();
+        for (const item of prs) {
+            const key = scopeKey(item.scope);
+            scopeByKey.set(key, item.scope);
+            if (!byScope.has(key)) {
+                byScope.set(key, []);
+            }
+            byScope.get(key)!.push(item);
+        }
+
+        return [...byScope.entries()]
+            .map(([key, scopedPrs]) => new PullRequestScopeGroup(scopeByKey.get(key)!, scopedPrs))
+            .sort((left, right) => `${left.label}`.localeCompare(`${right.label}`));
+    }
+
+    private async loadPullRequests(
+        scopes: ProjectScope[],
+        filter: 'mine' | 'created' | 'assigned' | 'all'
+    ): Promise<ScopedPullRequest[]> {
         const results = await mapWithConcurrencyLimit(scopes, MAX_CONCURRENT_SCOPE_REQUESTS, async scope => {
             const prs = await this.client.getPullRequests(
                 scope.project,
-                query.filter,
+                filter,
                 undefined,
                 scope.organization
             );

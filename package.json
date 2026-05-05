@@ -193,16 +193,16 @@
         "icon": "$(refresh)"
       },
       {
-        "command": "adoext.selectPullRequestQuery",
-        "title": "Select Pull Request Query",
-        "category": "ADOExt",
-        "icon": "$(filter)"
-      },
-      {
         "command": "adoext.savePullRequestQuery",
         "title": "Save Pull Request Query Preset",
         "category": "ADOExt",
         "icon": "$(save)"
+            },
+            {
+        "command": "adoext.refreshPullRequestBucket",
+        "title": "Refresh Bucket",
+        "category": "ADOExt",
+        "icon": "$(refresh)"
       },
       {
         "command": "adoext.openPullRequest",
@@ -421,17 +421,17 @@
           "group": "navigation"
         },
         {
-          "command": "adoext.selectPullRequestQuery",
-          "when": "view == adoext.pullRequests",
-          "group": "navigation"
-        },
-        {
           "command": "adoext.savePullRequestQuery",
           "when": "view == adoext.pullRequests",
           "group": "navigation"
         }
       ],
       "view/item/context": [
+        {
+          "command": "adoext.refreshPullRequestBucket",
+          "when": "viewItem == pullRequestBucket",
+          "group": "inline"
+        },
         {
           "command": "adoext.viewWorkItemDetails",
           "when": "viewItem == workItem",
@@ -655,7 +655,7 @@
         "adoext.pullRequestQueries": {
           "type": "array",
           "default": [],
-          "description": "Saved pull request query definitions. When empty, ADOExt falls back to adoext.pullRequestFilter for compatibility.",
+          "description": "Saved pull request bucket definitions. Custom buckets are appended after the built-in Pull Requests buckets.",
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -693,7 +693,7 @@
         "adoext.activePullRequestQueryId": {
           "type": "string",
           "default": "",
-          "description": "Active saved pull request query ID. When empty or invalid, ADOExt falls back to the first saved query or derives one from adoext.pullRequestFilter."
+          "description": "Legacy active pull request query ID retained for backward compatibility with older extension versions."
         },
         "adoext.pullRequestFilter": {
           "type": "string",
@@ -710,7 +710,7 @@
             "PRs assigned to me for review",
             "All active PRs"
           ],
-          "description": "Legacy default pull request filter. Used when adoext.pullRequestQueries is empty."
+          "description": "Legacy default pull request filter retained for backward compatibility with older extension versions."
         },
         "adoext.notifyOnNewPullRequestComments": {
           "type": "boolean",

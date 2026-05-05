@@ -5,6 +5,7 @@ import { ConfigManager } from './config/configManager';
 import { WorkItemProvider, WorkItemNode } from './providers/workItemProvider';
 import {
     PullRequestProvider,
+    PullRequestBucketNode,
     PullRequestNode,
     PullRequestCommentNode,
     PullRequestThreadNode
@@ -41,7 +42,6 @@ import {
 } from './commands/pullRequestCommands';
 import {
     selectWorkItemQuery,
-    selectPullRequestQuery,
     saveWorkItemQuery,
     savePullRequestQuery
 } from './commands/queryCommands';
@@ -350,11 +350,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         })
     );
 
-    // Switch / persist pull request query preset
+    // Refresh a single pull request bucket independently
     context.subscriptions.push(
-        vscode.commands.registerCommand('adoext.selectPullRequestQuery', async () => {
-            const changed = await selectPullRequestQuery(config);
-            if (changed) { pullRequestProvider.refresh(); }
+        vscode.commands.registerCommand('adoext.refreshPullRequestBucket', async (node: PullRequestBucketNode) => {
+            if (!(await ensureSignedIn())) { return; }
+            pullRequestProvider.refreshBucket(node);
         })
     );
     context.subscriptions.push(
