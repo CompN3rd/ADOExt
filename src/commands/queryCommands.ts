@@ -33,31 +33,6 @@ export async function selectWorkItemQuery(config: ConfigManager): Promise<boolea
 }
 
 /**
- * Show a quick-pick list of all available pull request queries and activate the
- * chosen one.  Returns true when a query was selected and activated.
- */
-export async function selectPullRequestQuery(config: ConfigManager): Promise<boolean> {
-    const queries = config.availablePullRequestQueries;
-    const activeId = config.activePullRequestQueryId;
-
-    const items = queries.map(q => ({
-        label: q.label,
-        description: q.description ?? q.filter,
-        picked: q.id === activeId,
-        query: q,
-    }));
-
-    const selected = await vscode.window.showQuickPick(items, {
-        title: 'Select Pull Request Query',
-        placeHolder: 'Choose which pull requests to display',
-    });
-
-    if (!selected) { return false; }
-    await config.setActivePullRequestQueryId(selected.query.id);
-    return true;
-}
-
-/**
  * Guide the user through naming and saving a new work item query preset, then
  * activate it.  Returns true when a preset was saved.
  */

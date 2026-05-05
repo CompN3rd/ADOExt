@@ -66,13 +66,13 @@ ADOExt is a full-featured Azure DevOps integration for Visual Studio Code, provi
 | `adoext.workItemQueries` | `[]` | Saved work item query definitions. When empty, ADOExt falls back to `adoext.workItemQuery`. |
 | `adoext.activeWorkItemQueryId` | `""` | Active saved work item query ID. Falls back to the first saved query or the legacy query setting. |
 | `adoext.workItemQuery` | `assigned` | Legacy work item filter used when no saved work item queries are defined. |
-| `adoext.pullRequestQueries` | `[]` | Saved pull request query definitions. When empty, ADOExt falls back to `adoext.pullRequestFilter`. |
-| `adoext.activePullRequestQueryId` | `""` | Active saved pull request query ID. Falls back to the first saved query or the legacy filter setting. |
-| `adoext.pullRequestFilter` | `mine` | Legacy pull request filter used when no saved pull request queries are defined. |
+| `adoext.pullRequestQueries` | `[]` | Saved pull request bucket definitions. These are appended below built-in buckets in the Pull Requests view. |
+| `adoext.activePullRequestQueryId` | `""` | Legacy pull request query selector state kept for backward compatibility with older versions. |
+| `adoext.pullRequestFilter` | `mine` | Legacy pull request filter used as compatibility fallback when older settings are migrated. |
 
-### Switching the active query
+### Query and bucket management
 
-Use the **ADOExt: Select Work Item Query** or **ADOExt: Select Pull Request Query** commands (also available as toolbar icons in each view) to pick from the available built-in and saved presets. Use **ADOExt: Save Work Item Query Preset** / **ADOExt: Save Pull Request Query Preset** to name a new preset and persist it to your settings.
+Use **ADOExt: Select Work Item Query** to switch the active work item preset. In the Pull Requests view, built-in review buckets are always shown (Waiting for My Review, Created by Me, All Open), and **ADOExt: Save Pull Request Query Preset** adds custom buckets to that list. Use the inline refresh action on a bucket to reload only that bucket.
 
 ## Development
 
