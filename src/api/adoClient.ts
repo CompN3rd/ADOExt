@@ -552,6 +552,17 @@ export class AdoClient {
     }
 
     /**
+     * Fetch a single pull request by its numeric ID without needing to know
+     * the repository. Useful for hover-card lookups where only the PR number
+     * is available. Pass an optional project to narrow the search scope.
+     */
+    async getPullRequestById(pullRequestId: number, project?: string, organization?: string): Promise<GitPullRequest | undefined> {
+        const gitApi: IGitApi = await this.getConnectionFor(organization).getGitApi();
+        const pr = await gitApi.getPullRequestById(pullRequestId, project);
+        return pr ?? undefined;
+    }
+
+    /**
      * Fetch the latest iteration id for a pull request without downloading
      * any file content. Useful when posting line comments without first
      * loading the full diff.

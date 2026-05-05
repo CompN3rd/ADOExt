@@ -353,6 +353,24 @@
         "title": "Open Head Commit in Browser",
         "category": "ADOExt",
         "icon": "$(git-commit)"
+      },
+      {
+        "command": "adoext.openWorkItemById",
+        "title": "Open Work Item in Browser",
+        "category": "ADOExt",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "adoext.viewWorkItemDetailsById",
+        "title": "View Work Item Details",
+        "category": "ADOExt",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "adoext.openPullRequestById",
+        "title": "Open Pull Request in Browser",
+        "category": "ADOExt",
+        "icon": "$(link-external)"
       }
     ],
     "menus": {
@@ -586,6 +604,18 @@
         },
         {
           "command": "adoext.prComment.reopen",
+          "when": "false"
+        },
+        {
+          "command": "adoext.openWorkItemById",
+          "when": "false"
+        },
+        {
+          "command": "adoext.viewWorkItemDetailsById",
+          "when": "false"
+        },
+        {
+          "command": "adoext.openPullRequestById",
           "when": "false"
         }
       ]

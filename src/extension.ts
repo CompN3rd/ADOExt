@@ -57,6 +57,7 @@ import {
 import { McpServerManager } from './mcp/mcpServerManager';
 import { TodoCodeActionProvider } from './views/todoCodeActionProvider';
 import { installNotificationMirroring, showErrorMessage, showInformationMessage, showOutputChannel } from './utils/notifications';
+import { WorkItemHoverProvider, PullRequestHoverProvider } from './providers/hoverProvider';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
     installNotificationMirroring();
@@ -622,6 +623,67 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const mcpManager = new McpServerManager(config, auth);
     mcpManager.register();
     context.subscriptions.push(mcpManager);
+
+    // -------------------------------------------------------------------------
+    // Hover providers (work items + pull requests)
+    // -------------------------------------------------------------------------
+    const workItemHoverProvider = new WorkItemHoverProvider(client, config);
+    const pullRequestHoverProvider = new PullRequestHoverProvider(client, config);
+    const hoverSelector: vscode.DocumentSelector = [{ language: '*' }];
+
+    context.subscriptions.push(
+        vscode.languages.registerHoverProvider(hoverSelector, workItemHoverProvider),
+        vscode.languages.registerHoverProvider(hoverSelector, pullRequestHoverProvider)
+    );
+
+    // Command: open a work item in the browser by numeric ID + org/project args.
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.openWorkItemById',
+            (args: { id: number; org: string; project: string }) => {
+                if (!args?.id || !args?.org || !args?.project) { return; }
+                const url = `https://dev.azure.com/${encodeURIComponent(args.org)}/${encodeURIComponent(args.project)}/_workitems/edit/${args.id}`;
+                void vscode.env.openExternal(vscode.Uri.parse(url));
+            }
+        )
+    );
+
+    // Command: open a work item details panel by numeric ID + org/project args.
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.viewWorkItemDetailsById',
+            async (args: { id: number; org: string; project: string }) => {
+                if (!args?.id || !args?.org || !args?.project) { return; }
+                if (!(await ensureSignedIn())) { return; }
+                try {
+                    const workItem = await client.getWorkItemById(args.project, args.id, args.org);
+                    if (!workItem) {
+                        showErrorMessage(`Work item #${args.id} not found.`);
+                        return;
+                    }
+                    const { WorkItemDetailsPanel } = await import('./views/workItemDetailsPanel');
+                    await WorkItemDetailsPanel.show(client, config, workItem, {
+                        organization: args.org,
+                        project: args.project
+                    });
+                } catch (err) {
+                    showErrorMessage(`Failed to open work item #${args.id}: ${err instanceof Error ? err.message : String(err)}`);
+                }
+            }
+        )
+    );
+
+    // Command: open a pull request in the browser by numeric ID + scope args.
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.openPullRequestById',
+            (args: { id: number; org: string; project: string; repo: string }) => {
+                if (!args?.id || !args?.org || !args?.project || !args?.repo) { return; }
+                const url = `https://dev.azure.com/${encodeURIComponent(args.org)}/${encodeURIComponent(args.project)}/_git/${encodeURIComponent(args.repo)}/pullrequest/${args.id}`;
+                void vscode.env.openExternal(vscode.Uri.parse(url));
+            }
+        )
+    );
 
     // -------------------------------------------------------------------------
     // Auto-restore session on activation
