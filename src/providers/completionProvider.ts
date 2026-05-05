@@ -11,9 +11,21 @@ const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
  */
 const WORK_ITEM_ID_SORT_PAD_LENGTH = 10;
 
-interface CacheEntry {
-    items: vscode.CompletionItem[];
+interface CacheEntry<T> {
+    items: T[];
     timestamp: number;
+}
+
+interface CachedWorkItem {
+    id: number;
+    title: string;
+    type: string;
+    state: string;
+}
+
+interface CachedUser {
+    displayName: string;
+    uniqueName: string;
 }
 
 /**
@@ -26,8 +38,8 @@ interface CacheEntry {
  * safely when the extension is not connected or configured.
  */
 export class AdoCompletionProvider implements vscode.CompletionItemProvider, vscode.Disposable {
-    private readonly _workItemCache = new Map<string, CacheEntry>();
-    private readonly _userCache = new Map<string, CacheEntry>();
+    private readonly _workItemCache = new Map<string, CacheEntry<CachedWorkItem>>();
+    private readonly _userCache = new Map<string, CacheEntry<CachedUser>>();
     private readonly _disposables: vscode.Disposable[] = [];
 
     constructor(
@@ -100,16 +112,13 @@ export class AdoCompletionProvider implements vscode.CompletionItemProvider, vsc
         if (token.isCancellationRequested) { return []; }
 
         const replacementRange = this._createReplacementRange(position, typedReference);
-        const insertText = typedReference.startsWith('AB#')
-            ? (id: number) => `AB#${id}`
-            : (id: number) => `#${id}`;
         const allItems: vscode.CompletionItem[] = [];
 
         for (const scope of scopes) {
             const cacheKey = `${scope.organization}\0${scope.project}`;
             const cached = this._workItemCache.get(cacheKey);
             if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-                allItems.push(...cached.items);
+                allItems.push(...this._buildWorkItemCompletionItems(cached.items, replacementRange, typedReference));
                 continue;
             }
 
@@ -117,32 +126,20 @@ export class AdoCompletionProvider implements vscode.CompletionItemProvider, vsc
                 const workItems = await this._client.getRecentWorkItems(scope.project, scope.organization);
                 if (token.isCancellationRequested) { return []; }
 
-                const items: vscode.CompletionItem[] = [];
+                const items: CachedWorkItem[] = [];
                 for (const wi of workItems) {
                     if (wi.id === undefined) { continue; }
 
-                    const id = wi.id;
-                    const title = (wi.fields?.['System.Title'] as string) ?? '';
-                    const type = (wi.fields?.['System.WorkItemType'] as string) ?? '';
-                    const state = (wi.fields?.['System.State'] as string) ?? '';
-
-                    const item = new vscode.CompletionItem(
-                        { label: `#${id}`, description: title },
-                        vscode.CompletionItemKind.Reference
-                    );
-                    item.detail = type && state ? `${type} · ${state}` : undefined;
-                    item.insertText = insertText(id);
-                    item.range = replacementRange;
-                    // filterText lets VS Code narrow the list as the user types digits or title words
-                    item.filterText = `#${id} ${title}`;
-                    item.documentation = new vscode.MarkdownString(`**#${id}** — ${title}\n\n*${type}* | ${state}`);
-                    // Sort numerically so lower IDs appear first
-                    item.sortText = String(id).padStart(WORK_ITEM_ID_SORT_PAD_LENGTH, '0');
-                    items.push(item);
+                    items.push({
+                        id: wi.id,
+                        title: (wi.fields?.['System.Title'] as string) ?? '',
+                        type: (wi.fields?.['System.WorkItemType'] as string) ?? '',
+                        state: (wi.fields?.['System.State'] as string) ?? ''
+                    });
                 }
 
                 this._workItemCache.set(cacheKey, { items, timestamp: Date.now() });
-                allItems.push(...items);
+                allItems.push(...this._buildWorkItemCompletionItems(items, replacementRange, typedReference));
             } catch {
                 // Degrade gracefully on API errors (e.g. not configured, network error)
             }
@@ -166,7 +163,7 @@ export class AdoCompletionProvider implements vscode.CompletionItemProvider, vsc
 
         if (token.isCancellationRequested) { return []; }
 
-    const replacementRange = this._createReplacementRange(position, typedMention);
+        const replacementRange = this._createReplacementRange(position, typedMention);
         const allItems: vscode.CompletionItem[] = [];
         // Track which (org, project) combinations we've already fetched to avoid
         // duplicate API calls when the same project appears under multiple orgs.
@@ -179,7 +176,7 @@ export class AdoCompletionProvider implements vscode.CompletionItemProvider, vsc
 
             const cached = this._userCache.get(cacheKey);
             if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
-                allItems.push(...cached.items);
+                allItems.push(...this._buildUserCompletionItems(cached.items, replacementRange));
                 continue;
             }
 
@@ -187,26 +184,17 @@ export class AdoCompletionProvider implements vscode.CompletionItemProvider, vsc
                 const members = await this._client.listProjectTeamMembers(scope.project, scope.organization);
                 if (token.isCancellationRequested) { return []; }
 
-                const items: vscode.CompletionItem[] = [];
+                const items: CachedUser[] = [];
                 for (const member of members) {
                     const displayName = member.displayName ?? '';
                     const uniqueName = member.uniqueName ?? '';
                     if (!displayName) { continue; }
 
-                    const item = new vscode.CompletionItem(
-                        { label: `@${displayName}`, description: uniqueName },
-                        vscode.CompletionItemKind.User
-                    );
-                    item.insertText = `@${displayName}`;
-                    item.range = replacementRange;
-                    // filterText enables matching by display name or email prefix
-                    item.filterText = `@${displayName} ${uniqueName}`;
-                    item.documentation = new vscode.MarkdownString(`**${displayName}**\n\n${uniqueName}`);
-                    items.push(item);
+                    items.push({ displayName, uniqueName });
                 }
 
                 this._userCache.set(cacheKey, { items, timestamp: Date.now() });
-                allItems.push(...items);
+                allItems.push(...this._buildUserCompletionItems(items, replacementRange));
             } catch {
                 // Degrade gracefully on API errors
             }
@@ -223,6 +211,45 @@ export class AdoCompletionProvider implements vscode.CompletionItemProvider, vsc
             new vscode.Position(position.line, position.character - typedText.length),
             position
         );
+    }
+
+    private _buildWorkItemCompletionItems(
+        workItems: CachedWorkItem[],
+        replacementRange: vscode.Range,
+        typedReference: string
+    ): vscode.CompletionItem[] {
+        const insertText = typedReference.startsWith('AB#')
+            ? (id: number) => `AB#${id}`
+            : (id: number) => `#${id}`;
+
+        return workItems.map(wi => {
+            const item = new vscode.CompletionItem(
+                { label: `#${wi.id}`, description: wi.title },
+                vscode.CompletionItemKind.Reference
+            );
+            item.detail = wi.type && wi.state ? `${wi.type} · ${wi.state}` : undefined;
+            item.insertText = insertText(wi.id);
+            item.range = replacementRange;
+            // Include both #id and AB#id so either typed prefix keeps items visible.
+            item.filterText = `#${wi.id} AB#${wi.id} ${wi.title}`;
+            item.documentation = new vscode.MarkdownString(`**#${wi.id}** — ${wi.title}\n\n*${wi.type}* | ${wi.state}`);
+            item.sortText = String(wi.id).padStart(WORK_ITEM_ID_SORT_PAD_LENGTH, '0');
+            return item;
+        });
+    }
+
+    private _buildUserCompletionItems(users: CachedUser[], replacementRange: vscode.Range): vscode.CompletionItem[] {
+        return users.map(user => {
+            const item = new vscode.CompletionItem(
+                { label: `@${user.displayName}`, description: user.uniqueName },
+                vscode.CompletionItemKind.User
+            );
+            item.insertText = `@${user.displayName}`;
+            item.range = replacementRange;
+            item.filterText = `@${user.displayName} ${user.uniqueName}`;
+            item.documentation = new vscode.MarkdownString(`**${user.displayName}**\n\n${user.uniqueName}`);
+            return item;
+        });
     }
 
     dispose(): void {
