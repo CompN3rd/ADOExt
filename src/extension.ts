@@ -23,7 +23,16 @@ import {
     selectProject,
     detectAndSuggestRepoContext
 } from './commands/accountCommands';
-import { changeWorkItemState, openWorkItem, viewWorkItemDetails, startWorkingOnWorkItem, openSavedQuery, createWorkItem } from './commands/workItemCommands';
+import {
+    changeWorkItemState,
+    openWorkItem,
+    viewWorkItemDetails,
+    startWorkingOnWorkItem,
+    openSavedQuery,
+    createWorkItem,
+    createWorkItemFromSelection,
+    createWorkItemFromTodo
+} from './commands/workItemCommands';
 import {
     openPullRequest,
     viewPullRequestDetails,
@@ -46,6 +55,7 @@ import {
     savePullRequestQuery
 } from './commands/queryCommands';
 import { McpServerManager } from './mcp/mcpServerManager';
+import { TodoCodeActionProvider } from './views/todoCodeActionProvider';
 import { installNotificationMirroring, showErrorMessage, showInformationMessage, showOutputChannel } from './utils/notifications';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
@@ -342,6 +352,36 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         })
     );
 
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.createWorkItemFromSelection',
+            async () => {
+                if (!(await ensureSignedIn())) { return; }
+                const created = await createWorkItemFromSelection(client, config);
+                if (created) { refreshAllViews(); }
+            }
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.createWorkItemFromTodo',
+            async (todoText?: string, lineNumber?: number) => {
+                if (!(await ensureSignedIn())) { return; }
+                const created = await createWorkItemFromTodo(client, config, todoText, lineNumber);
+                if (created) { refreshAllViews(); }
+            }
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.languages.registerCodeActionsProvider(
+            { pattern: '**/*' },
+            new TodoCodeActionProvider(),
+            { providedCodeActionKinds: TodoCodeActionProvider.providedCodeActionKinds }
+        )
+    );
+
     // Refresh pull requests
     context.subscriptions.push(
         vscode.commands.registerCommand('adoext.refreshPullRequests', async () => {
@@ -616,6 +656,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         }
     }
+
     updateSignedInContext();
     notificationService.applyConfig();
 
