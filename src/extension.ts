@@ -629,12 +629,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // -------------------------------------------------------------------------
     const workItemHoverProvider = new WorkItemHoverProvider(client, config);
     const pullRequestHoverProvider = new PullRequestHoverProvider(client, config);
+    const hoverSelector: vscode.DocumentSelector = [{ language: '*' }];
 
     context.subscriptions.push(
-        vscode.languages.registerHoverProvider({ scheme: 'file' }, workItemHoverProvider),
-        vscode.languages.registerHoverProvider({ scheme: 'file' }, pullRequestHoverProvider),
-        vscode.languages.registerHoverProvider({ scheme: 'untitled' }, workItemHoverProvider),
-        vscode.languages.registerHoverProvider({ scheme: 'untitled' }, pullRequestHoverProvider)
+        vscode.languages.registerHoverProvider(hoverSelector, workItemHoverProvider),
+        vscode.languages.registerHoverProvider(hoverSelector, pullRequestHoverProvider)
     );
 
     // Command: open a work item in the browser by numeric ID + org/project args.

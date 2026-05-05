@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import type { AdoClient } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
-import { resolveProjectScopes } from './projectScopes';
+import { resolveProjectScopes, scopeLabel, type ProjectScope } from './projectScopes';
 
 // ---------------------------------------------------------------------------
 // Regex patterns for recognizing Azure DevOps references
@@ -13,7 +13,7 @@ import { resolveProjectScopes } from './projectScopes';
  * - `#123`     – short-form used in PR descriptions and comments
  *
  * The leading word-boundary makes sure that plain numbers (e.g. "line 123")
- * are not matched, while the look-ahead prevents double-matching inside
+ * are not matched, while the negative lookbehind prevents double-matching inside
  * `AB#123` when the generic `#123` pattern runs last.
  */
 export const WORK_ITEM_PATTERNS: RegExp[] = [
@@ -50,6 +50,42 @@ function commandUri(command: string, args: unknown): vscode.Uri {
     return vscode.Uri.parse(
         `command:${command}?${encodeURIComponent(JSON.stringify(args))}`
     );
+}
+
+const SCOPE_CACHE_TTL_MS = 30_000;
+const scopeCache = new Map<string, { expiresAt: number; scopes: ProjectScope[] }>();
+const scopeInflight = new Map<string, Promise<ProjectScope[]>>();
+
+function buildScopeCacheKey(config: ConfigManager): string {
+    const organizations = config.selectedOrganizations;
+    const selections = organizations.map(org => ({ org, projects: config.getProjectSelection(org) }));
+    return JSON.stringify(selections);
+}
+
+async function resolveProjectScopesCached(client: AdoClient, config: ConfigManager): Promise<ProjectScope[]> {
+    const key = buildScopeCacheKey(config);
+    const now = Date.now();
+    const cached = scopeCache.get(key);
+    if (cached && cached.expiresAt > now) {
+        return cached.scopes;
+    }
+
+    const inflight = scopeInflight.get(key);
+    if (inflight) {
+        return inflight;
+    }
+
+    const pending = resolveProjectScopes(client, config)
+        .then(scopes => {
+            scopeCache.set(key, { expiresAt: Date.now() + SCOPE_CACHE_TTL_MS, scopes });
+            return scopes;
+        })
+        .finally(() => {
+            scopeInflight.delete(key);
+        });
+
+    scopeInflight.set(key, pending);
+    return pending;
 }
 
 /**
@@ -101,10 +137,10 @@ export class WorkItemHoverProvider implements vscode.HoverProvider {
 
         if (!this.client.isConnected) { return undefined; }
 
-        // Resolve scope – fail safely when ambiguous (> 1 project-scope).
+        // Resolve scopes with a short-lived cache so hover lookups stay responsive.
         let scopes;
         try {
-            scopes = await resolveProjectScopes(this.client, this.config);
+            scopes = await resolveProjectScopesCached(this.client, this.config);
         } catch {
             return undefined;
         }
@@ -135,16 +171,16 @@ export class WorkItemHoverProvider implements vscode.HoverProvider {
                     return { item, scope };
                 })
             );
-            const matches = results.filter(
+            const firstMatch = results.find(
                 (result): result is PromiseFulfilledResult<{ item: NonNullable<typeof workItem>; scope: typeof scopes[number] }> =>
                     result.status === 'fulfilled' && !!result.value.item
             );
-            if (matches.length !== 1) {
+            if (!firstMatch) {
                 return undefined;
             }
-            workItem = matches[0].value.item;
-            matchedOrg = matches[0].value.scope.organization;
-            matchedProject = matches[0].value.scope.project;
+            workItem = firstMatch.value.item;
+            matchedOrg = firstMatch.value.scope.organization;
+            matchedProject = firstMatch.value.scope.project;
         }
 
         if (!workItem || token.isCancellationRequested) { return undefined; }
@@ -159,14 +195,18 @@ export class WorkItemHoverProvider implements vscode.HoverProvider {
             : String(assignedToRaw ?? ''));
 
         const md = new vscode.MarkdownString('', true);
-        md.isTrusted = true;
+        md.isTrusted = { enabledCommands: ['adoext.openWorkItemById', 'adoext.viewWorkItemDetailsById'] };
         md.supportHtml = false;
 
         md.appendMarkdown(`**$(issues) Work Item #${hit.id}**\n\n`);
-        if (type) { md.appendMarkdown(`**Type:** ${type}\n\n`); }
-        md.appendMarkdown(`**Title:** ${title}\n\n`);
-        if (state) { md.appendMarkdown(`**State:** ${state}\n\n`); }
-        if (assignedTo) { md.appendMarkdown(`**Assigned To:** ${assignedTo}\n\n`); }
+        if (type) { md.appendText(`Type: ${type}\n`); }
+        md.appendText(`Title: ${title}\n`);
+        if (state) { md.appendText(`State: ${state}\n`); }
+        if (assignedTo) { md.appendText(`Assigned To: ${assignedTo}\n`); }
+        if (matchedOrg && matchedProject) {
+            md.appendText(`Scope: ${scopeLabel({ organization: matchedOrg, project: matchedProject })}\n`);
+        }
+        md.appendText('\n');
 
         // Quick-open actions
         if (matchedOrg && matchedProject) {
@@ -200,10 +240,10 @@ export class PullRequestHoverProvider implements vscode.HoverProvider {
 
         if (!this.client.isConnected) { return undefined; }
 
-        // Resolve scope – use the primary org/project for the PR lookup.
+        // Resolve scopes with a short-lived cache so hover lookups stay responsive.
         let scopes;
         try {
-            scopes = await resolveProjectScopes(this.client, this.config);
+            scopes = await resolveProjectScopesCached(this.client, this.config);
         } catch {
             return undefined;
         }
@@ -232,16 +272,16 @@ export class PullRequestHoverProvider implements vscode.HoverProvider {
                     return { found, scope };
                 })
             );
-            const matches = results.filter(
+            const firstMatch = results.find(
                 (result): result is PromiseFulfilledResult<{ found: NonNullable<typeof pr>; scope: typeof scopes[number] }> =>
                     result.status === 'fulfilled' && !!result.value.found
             );
-            if (matches.length !== 1) {
+            if (!firstMatch) {
                 return undefined;
             }
-            pr = matches[0].value.found;
-            matchedOrg = matches[0].value.scope.organization;
-            matchedProject = matches[0].value.scope.project;
+            pr = firstMatch.value.found;
+            matchedOrg = firstMatch.value.scope.organization;
+            matchedProject = firstMatch.value.scope.project;
         }
 
         if (!pr || token.isCancellationRequested) { return undefined; }
@@ -252,14 +292,18 @@ export class PullRequestHoverProvider implements vscode.HoverProvider {
         const author = pr.createdBy?.displayName ?? '';
 
         const md = new vscode.MarkdownString('', true);
-        md.isTrusted = true;
+        md.isTrusted = { enabledCommands: ['adoext.openPullRequestById'] };
         md.supportHtml = false;
 
         md.appendMarkdown(`**$(git-pull-request) Pull Request #${hit.id}**\n\n`);
-        md.appendMarkdown(`**Title:** ${title}\n\n`);
-        md.appendMarkdown(`**Status:** ${status}\n\n`);
-        if (repo) { md.appendMarkdown(`**Repository:** ${repo}\n\n`); }
-        if (author) { md.appendMarkdown(`**Author:** ${author}\n\n`); }
+        md.appendText(`Title: ${title}\n`);
+        md.appendText(`Status: ${status}\n`);
+        if (repo) { md.appendText(`Repository: ${repo}\n`); }
+        if (author) { md.appendText(`Author: ${author}\n`); }
+        if (matchedOrg && matchedProject) {
+            md.appendText(`Scope: ${scopeLabel({ organization: matchedOrg, project: matchedProject })}\n`);
+        }
+        md.appendText('\n');
 
         // Quick-open actions
         const repoName = pr.repository?.name ?? pr.repository?.id ?? '';
