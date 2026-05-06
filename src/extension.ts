@@ -246,6 +246,48 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         })
     );
 
+    // Set work item filter regex
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adoext.setWorkItemFilter', async () => {
+            const current = config.workItemFilterRegex;
+            const pattern = await vscode.window.showInputBox({
+                prompt: 'Enter regex pattern to filter work items (leave empty to clear)',
+                value: current,
+                validateInput: (value) => {
+                    if (!value.trim()) return undefined;
+                    try {
+                        new RegExp(value, 'i');
+                        return undefined;
+                    } catch {
+                        return 'Invalid regex pattern';
+                    }
+                }
+            });
+            if (pattern !== undefined) {
+                await config.setWorkItemFilterRegex(pattern);
+                workItemProvider.refresh();
+            }
+        })
+    );
+
+    // Set work item sort order
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adoext.setWorkItemSort', async () => {
+            const current = config.workItemSortOrder;
+            const choice = await vscode.window.showQuickPick(
+                [
+                    { label: 'Name (A-Z)', value: 'name', picked: current === 'name' },
+                    { label: 'Date (Newest first)', value: 'date', picked: current === 'date' }
+                ],
+                { placeHolder: 'Choose sort order for work items' }
+            );
+            if (choice) {
+                await config.setWorkItemSortOrder(choice.value as 'name' | 'date');
+                workItemProvider.refresh();
+            }
+        })
+    );
+
     context.subscriptions.push(
         vscode.commands.registerCommand('adoext.refreshBacklog', async () => {
             await ensureSignedIn();

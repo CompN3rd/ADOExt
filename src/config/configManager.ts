@@ -270,6 +270,46 @@ export class ConfigManager {
         return Math.max(60, Math.floor(raw));
     }
 
+    // --------- Filtering & Sorting --------- //
+
+    /** Regex pattern for filtering work items. */
+    get workItemFilterRegex(): string {
+        return this.config.get<string>('workItemFilterRegex', '');
+    }
+
+    async setWorkItemFilterRegex(value: string): Promise<void> {
+        await this.config.update('workItemFilterRegex', value, vscode.ConfigurationTarget.Global);
+    }
+
+    /** Sort order for work items ('name' | 'date'). */
+    get workItemSortOrder(): 'name' | 'date' {
+        const raw = this.config.get<string>('workItemSortOrder', 'name');
+        return raw === 'date' ? 'date' : 'name';
+    }
+
+    async setWorkItemSortOrder(value: 'name' | 'date'): Promise<void> {
+        await this.config.update('workItemSortOrder', value, vscode.ConfigurationTarget.Global);
+    }
+
+    /** Regex pattern for filtering backlog items. */
+    get backlogFilterRegex(): string {
+        return this.config.get<string>('backlogFilterRegex', '');
+    }
+
+    async setBacklogFilterRegex(value: string): Promise<void> {
+        await this.config.update('backlogFilterRegex', value, vscode.ConfigurationTarget.Global);
+    }
+
+    /** Sort order for backlog items ('name' | 'date'). */
+    get backlogSortOrder(): 'name' | 'date' {
+        const raw = this.config.get<string>('backlogSortOrder', 'name');
+        return raw === 'date' ? 'date' : 'name';
+    }
+
+    async setBacklogSortOrder(value: 'name' | 'date'): Promise<void> {
+        await this.config.update('backlogSortOrder', value, vscode.ConfigurationTarget.Global);
+    }
+
     /** Returns true if both organization and project are configured. */
     get isConfigured(): boolean {
         const organizations = this.selectedOrganizations;

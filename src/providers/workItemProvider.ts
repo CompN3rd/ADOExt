@@ -229,8 +229,12 @@ export class WorkItemProvider implements vscode.TreeDataProvider<WorkItemTreeNod
     }
 
     private buildStateGroups(items: ScopedWorkItem[]): WorkItemStateGroup[] {
+        // Apply filtering
+        const filtered = items.filter(item => this.matchesFilter(item));
+
+        // Apply sorting within each group
         const byState = new Map<string, ScopedWorkItem[]>();
-        for (const item of items) {
+        for (const item of filtered) {
             const state = (item.workItem.fields?.['System.State'] as string | undefined) ?? 'Unknown';
             if (!byState.has(state)) {
                 byState.set(state, []);
@@ -239,7 +243,10 @@ export class WorkItemProvider implements vscode.TreeDataProvider<WorkItemTreeNod
         }
 
         return [...byState.entries()]
-            .map(([state, groupItems]) => new WorkItemStateGroup(state, groupItems.length, groupItems))
+            .map(([state, groupItems]) => {
+                const sortedItems = this.sortedItems(groupItems);
+                return new WorkItemStateGroup(state, sortedItems.length, sortedItems);
+            })
             .sort((left, right) => stateSortValue(left.state) - stateSortValue(right.state));
     }
 
@@ -263,6 +270,44 @@ export class WorkItemProvider implements vscode.TreeDataProvider<WorkItemTreeNod
         node.command = { command: 'adoext.selectOrganization', title: 'Select Organizations' };
         node.iconPath = new vscode.ThemeIcon('settings-gear');
         return node;
+    }
+
+    private matchesFilter(item: ScopedWorkItem): boolean {
+        const filterRegex = this.config.workItemFilterRegex.trim();
+        if (!filterRegex) {
+            return true;
+        }
+
+        try {
+            const regex = new RegExp(filterRegex, 'i');
+            const id = item.workItem.id ?? 0;
+            const title = (item.workItem.fields?.['System.Title'] as string | undefined) ?? '';
+            return regex.test(`#${id} ${title}`);
+        } catch {
+            // Invalid regex - show all items
+            return true;
+        }
+    }
+
+    private sortedItems(items: ScopedWorkItem[]): ScopedWorkItem[] {
+        const sortOrder = this.config.workItemSortOrder;
+        const sorted = [...items];
+
+        if (sortOrder === 'date') {
+            sorted.sort((a, b) => {
+                const dateA = new Date(a.workItem.fields?.['System.CreatedDate'] as string ?? '').getTime();
+                const dateB = new Date(b.workItem.fields?.['System.CreatedDate'] as string ?? '').getTime();
+                return dateB - dateA; // Newest first
+            });
+        } else {
+            sorted.sort((a, b) => {
+                const titleA = (a.workItem.fields?.['System.Title'] as string ?? '').toLowerCase();
+                const titleB = (b.workItem.fields?.['System.Title'] as string ?? '').toLowerCase();
+                return titleA.localeCompare(titleB);
+            });
+        }
+
+        return sorted;
     }
 }
 

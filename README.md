@@ -4,6 +4,11 @@ A full-featured Azure DevOps integration for Visual Studio Code, bringing the po
 
 ## Changelog
 
+### 1.2.0
+- Added regex-based filtering for work items: run `ADOExt: Filter Work Items` to filter by work item ID or title.
+- Added sorting options for work items: sort by Name (A-Z) or Date (Newest first) via `ADOExt: Sort Work Items` command.
+- Filter and sort preferences persist in VS Code settings across sessions.
+
 ### 1.1.1
 - Fixed image loading in work item descriptions by widening CSP to allow Azure DevOps image sources and rewriting relative image paths to fully qualified URLs.
 
