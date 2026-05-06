@@ -44,6 +44,14 @@ Always run `npm run compile` after TypeScript changes. Run `npm run lint` when t
 - Prefer existing user notification helpers from `src/utils/notifications.ts` for consistent UX and logging.
 - Keep provider and command changes incremental; avoid broad refactors unless requested.
 
+## Release Versioning
+
+- Follow SemVer conservatively for extension releases.
+- Use a patch bump for bug fixes, regressions, packaging changes, and documentation-only release follow-ups.
+- Use a minor bump only for new backward-compatible user-facing features.
+- Use a major bump only for intentional breaking changes.
+- If a requested version bump appears larger than the actual change scope, call that out and suggest the smallest appropriate bump before editing version metadata or publishing.
+
 ## Provider Patterns
 
 - Tree views: update via existing refresh/event emitter patterns.
