@@ -4,6 +4,9 @@ A full-featured Azure DevOps integration for Visual Studio Code, bringing the po
 
 ## Changelog
 
+### 1.1.1
+- Fixed image loading in work item descriptions by widening CSP to allow Azure DevOps image sources and rewriting relative image paths to fully qualified URLs.
+
 ### 1.1.0
 - Fixed pull request branch checkout in multi-repository workspaces by matching the PR against Azure DevOps remotes instead of guessing from folder names.
 - Fixed checked-out pull request comment threads so they attach to the correct workspace repository and show inline in the affected files.
