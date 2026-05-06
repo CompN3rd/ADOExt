@@ -10,6 +10,7 @@ import type { ConfigManager } from '../config/configManager';
 import { PrDetailsPanel } from '../views/prDetailsPanel';
 import type { PrCommentController } from '../views/prCommentController';
 import type { PrDiffCache } from '../views/prContentProvider';
+import { parseAdoRemoteUrl } from '../utils/repoContext';
 import { showErrorMessage, showInformationMessage, showWarningMessage } from '../utils/notifications';
 
 export interface PrScope {
@@ -289,6 +290,9 @@ export async function checkoutPullRequest(
     const pr = node.pr;
     const branchRef = pr.sourceRefName ?? '';
     const branchName = branchRef.replace('refs/heads/', '');
+    const organization = node.organization ?? client.organization ?? config.organization;
+    const project = node.project ?? config.project;
+    const repositoryName = pr.repository?.name ?? '';
 
     if (!branchName) {
         showWarningMessage('Could not determine branch name for this PR.');
@@ -325,16 +329,29 @@ export async function checkoutPullRequest(
     // If there are multiple repos, ask the user to pick one
     let repo = repos[0];
     if (repos.length > 1) {
-        const repoName = pr.repository?.name ?? '';
-        const matchingRepo = repos.find(r =>
-            r.rootUri.fsPath.toLowerCase().includes(repoName.toLowerCase())
-        );
-        if (matchingRepo) {
-            repo = matchingRepo;
+        const matchingRepos = findRepositoriesForPullRequest(repos, {
+            organization,
+            project,
+            repositoryName
+        });
+        if (matchingRepos.length === 1) {
+            repo = matchingRepos[0];
+        } else if (matchingRepos.length > 1) {
+            const picked = await vscode.window.showQuickPick(
+                matchingRepos.map(r => ({
+                    label: r.rootUri.fsPath,
+                    description: describeRepositoryRemotes(r),
+                    repo: r
+                })),
+                { placeHolder: 'Select the repository to checkout the branch in' }
+            );
+            if (!picked) { return; }
+            repo = picked.repo;
         } else {
             const picked = await vscode.window.showQuickPick(
                 repos.map(r => ({
                     label: r.rootUri.fsPath,
+                    description: describeRepositoryRemotes(r),
                     repo: r
                 })),
                 { placeHolder: 'Select the repository to checkout the branch in' }
@@ -394,8 +411,6 @@ export async function checkoutPullRequest(
     // Attach the PR's existing comment threads inline on the workspace files
     // so reviewers can read and reply to them while editing the checked-out
     // branch.
-    const project = node.project ?? config.project;
-    const organization = node.organization ?? client.organization ?? config.organization;
     if (project && organization) {
         try {
             const count = await commentController.attachCheckout(pr, repo.rootUri, { organization, project });
@@ -522,4 +537,43 @@ interface Remote {
     name: string;
     fetchUrl?: string;
     pushUrl?: string;
+}
+
+function findRepositoriesForPullRequest(
+    repositories: Repository[],
+    scope: { organization?: string; project?: string; repositoryName?: string }
+): Repository[] {
+    const organizationLower = scope.organization?.toLowerCase();
+    const projectLower = scope.project?.toLowerCase();
+    const repositoryNameLower = scope.repositoryName?.toLowerCase();
+
+    return repositories.filter(repository => {
+        return repository.state.remotes.some(remote => {
+            const context = parseAdoRemoteUrl(remote.fetchUrl ?? remote.pushUrl ?? '');
+            if (!context) {
+                return false;
+            }
+
+            if (organizationLower && context.organization.toLowerCase() !== organizationLower) {
+                return false;
+            }
+            if (projectLower && context.project.toLowerCase() !== projectLower) {
+                return false;
+            }
+            if (repositoryNameLower && context.repository.toLowerCase() !== repositoryNameLower) {
+                return false;
+            }
+
+            return true;
+        });
+    });
+}
+
+function describeRepositoryRemotes(repository: Repository): string {
+    const matches = repository.state.remotes
+        .map(remote => parseAdoRemoteUrl(remote.fetchUrl ?? remote.pushUrl ?? ''))
+        .filter((context): context is NonNullable<typeof context> => !!context)
+        .map(context => `${context.organization}/${context.project}/${context.repository}`);
+
+    return matches.join(', ');
 }

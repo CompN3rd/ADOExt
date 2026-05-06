@@ -2,6 +2,12 @@
 
 A full-featured Azure DevOps integration for Visual Studio Code, bringing the power of ADO directly into your editor. Manage work items, pull requests, builds, and team collaboration—all without leaving VS Code.
 
+## Changelog
+
+### 1.1.0
+- Fixed pull request branch checkout in multi-repository workspaces by matching the PR against Azure DevOps remotes instead of guessing from folder names.
+- Fixed checked-out pull request comment threads so they attach to the correct workspace repository and show inline in the affected files.
+
 ---
 
 ## ✨ Key Features
@@ -88,7 +94,7 @@ git clone https://github.com/CompN3rd/ADOExt
 cd ADOExt
 npm install
 npm run compile
-code --install-extension ./adoext-0.1.0.vsix
+code --install-extension ./adoext-<version>.vsix
 ```
 
 ---
