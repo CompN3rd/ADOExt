@@ -4,6 +4,15 @@ A full-featured Azure DevOps integration for Visual Studio Code, bringing the po
 
 ## Changelog
 
+### 1.4.2
+- **Host bundling**: Bundled the extension host entrypoint into a single runtime artifact with esbuild while preserving VS Code API externals.
+- **Lean runtime package**: Switched VSIX packaging to ship bundled outputs only, removing `node_modules` from the published extension package.
+- **Package size reduction**: Reduced the packaged extension footprint significantly by keeping only required runtime assets.
+
+### 1.4.1
+- **Packaging optimization**: Reduced VSIX size and file count by tightening `.vscodeignore` rules to exclude source/tooling files and dev-only dependency content from the published extension package.
+- **Marketplace follow-up**: Published as a patch release because Marketplace package versions are immutable and cannot be overwritten in place.
+
 ### 1.4.0
 - **Modernized webviews**: Rebuilt the PR details, work item details, backlog, board, sprint, and build summary panels on bundled Lit components. The extension host now focuses on loading Azure DevOps data and handling commands, while the webviews own rendering, responsive layout, and local interaction state.
 - **Shared webview foundation**: Added reusable webview document/CSP helpers, typed view models, typed message contracts, and a browser-side rich text renderer. This reduces large inline HTML templates in the extension host and makes future panel work easier to evolve consistently.

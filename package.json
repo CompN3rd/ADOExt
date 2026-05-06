@@ -2,7 +2,7 @@
   "name": "adoext",
   "displayName": "ADOExt - Azure DevOps Integration",
   "description": "Full-featured Azure DevOps integration for VS Code: work items, pull requests, comments, and multi-account/org support.",
-  "version": "1.4.0",
+  "version": "1.4.2",
   "publisher": "MarcKassubeck",
   "engines": {
     "vscode": "^1.101.0"
@@ -845,10 +845,14 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./ && npm run check:webviews && npm run compile:webviews",
+    "compile": "npm run check:extension && npm run compile:host && npm run check:webviews && npm run compile:webviews",
+    "check:extension": "tsc -p ./ --noEmit",
+    "compile:host": "node ./scripts/build-extension-host.js",
     "compile:webviews": "node ./scripts/build-webviews.js",
     "check:webviews": "tsc -p ./tsconfig.webviews.json --noEmit",
-    "watch": "tsc -watch -p ./",
+    "watch": "node ./scripts/build-extension-host.js --watch",
+    "watch:types": "tsc -watch -p ./ --noEmit",
+    "watch:host": "node ./scripts/build-extension-host.js --watch",
     "watch:webviews": "node ./scripts/build-webviews.js --watch",
     "lint": "eslint src --ext ts"
   },

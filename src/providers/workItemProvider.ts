@@ -1,4 +1,3 @@
-import * as path from 'path';
 import * as vscode from 'vscode';
 import type { WorkItem } from '../api/adoClient';
 import type { AdoClient } from '../api/adoClient';
@@ -102,7 +101,10 @@ export function stateIcon(state: string): vscode.ThemeIcon {
 export function typeIcon(wiType: string): vscode.ThemeIcon | vscode.Uri {
     const fileName = workItemTypeIconFile(wiType);
     if (fileName) {
-        return vscode.Uri.file(path.join(__dirname, '..', '..', 'media', 'icons', 'workitems', fileName));
+        const extension = vscode.extensions.getExtension('MarcKassubeck.adoext');
+        if (extension) {
+            return vscode.Uri.joinPath(extension.extensionUri, 'media', 'icons', 'workitems', fileName);
+        }
     }
 
     return new vscode.ThemeIcon('issues');

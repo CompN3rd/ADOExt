@@ -1,2 +1,17 @@
 .vscode-test/
 *.vsix
+.vscode/**
+.gitignore
+
+# Source and local tooling files not needed at runtime
+src/**
+scripts/**
+.eslintrc.json
+tsconfig.json
+tsconfig.webviews.json
+AGENTS.md
+package-lock.json
+node_modules/**
+out/**
+!out/extension.js
+
