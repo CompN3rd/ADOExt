@@ -335,7 +335,7 @@ export class WorkItemDetailsPanel {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src https: data:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src https: data: https://*.dev.azure.com https://*.visualstudio.com;">
 <title>${wiType} #${id}</title>
 <style>
   body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); background: var(--vscode-editor-background); padding: 16px; margin: 0; }
@@ -520,6 +520,27 @@ document.querySelectorAll('[data-action="open-build"]').forEach(button => {
         ol:  new Set(['type', 'start']),
     };
 
+    /** Rewrite image sources to ensure they are fully qualified URLs. */
+    function rewriteImageSrc(url) {
+        if (!url) { return ''; }
+        const lower = url.toLowerCase();
+        // Already a full URL (https:// or http://)
+        if (lower.startsWith('https://') || lower.startsWith('http://')) {
+            return url;
+        }
+        // Data URI
+        if (lower.startsWith('data:')) {
+            return url;
+        }
+        // Relative path starting with / — assume it's on dev.azure.com
+        if (url.startsWith('/')) {
+            return 'https://dev.azure.com' + url;
+        }
+        // Other relative paths or incomplete URLs — still return as-is
+        // for CSP img-src to evaluate them
+        return url;
+    }
+
     /** Returns true if the URL scheme is safe for href / src attributes. */
     function isSafeUrl(url) {
         const lower = url.trim().toLowerCase();
@@ -551,10 +572,15 @@ document.querySelectorAll('[data-action="open-build"]').forEach(button => {
             return null;
         }
 
-        const tag = node.tagName.toLowerCase();
-
-        if (!ALLOWED_TAGS.has(tag)) {
-            // Unwrap: keep children, drop the element itself
+        conslet attrValue = attr.value;
+            // Rewrite image sources to ensure they are fully qualified
+            if (name === 'src' && tag === 'img') {
+                attrValue = rewriteImageSrc(attrValue);
+            }
+            if ((name === 'href' || name === 'src') && !isSafeUrl(attrValue)) {
+                return; // strip unsafe URL
+            }
+            el.setAttribute(attr.name, attrVe element itself
             const frag = document.createDocumentFragment();
             Array.from(node.childNodes).forEach(child => {
                 const cleaned = cleanNode(child);
