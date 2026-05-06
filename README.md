@@ -4,6 +4,9 @@ A full-featured Azure DevOps integration for Visual Studio Code, bringing the po
 
 ## Changelog
 
+### 1.3.1
+- **Auth reliability**: The extension now automatically picks up token refreshes and session changes without requiring a window reload. The MCP server is also re-provisioned with a fresh token when the Microsoft authentication session changes.
+
 ### 1.3.0
 - **Performance fix**: Limited pull request list to 100 items per scope to prevent UI freezing with large PR backlogs.
 - **Pull request filtering**: Added regex-based filtering for PRs; run `ADOExt: Filter Pull Requests` to filter by PR ID or title.

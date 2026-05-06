@@ -57,7 +57,7 @@ import {
 import { McpServerManager } from './mcp/mcpServerManager';
 import { TodoCodeActionProvider } from './views/todoCodeActionProvider';
 import { AdoCompletionProvider } from './providers/completionProvider';
-import { installNotificationMirroring, showErrorMessage, showInformationMessage, showOutputChannel } from './utils/notifications';
+import { installNotificationMirroring, showErrorMessage, showInformationMessage, showOutputChannel, showWarningMessage } from './utils/notifications';
 import { WorkItemHoverProvider, PullRequestHoverProvider } from './providers/hoverProvider';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
@@ -812,6 +812,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     updateSignedInContext();
     notificationService.applyConfig();
+
+    // React to Microsoft auth session changes so token refreshes are picked up
+    // without requiring a full window reload.
+    context.subscriptions.push(
+        vscode.authentication.onDidChangeSessions(async e => {
+            if (e.provider.id !== 'microsoft') {
+                return;
+            }
+
+            const wasSignedIn = auth.isSignedIn;
+            const restored = await auth.tryRestoreSession();
+
+            if (restored) {
+                rebuildClient();
+                if (config.isConfigured) {
+                    refreshAllViews();
+                }
+                return;
+            }
+
+            if (wasSignedIn) {
+                auth.signOut();
+                client.disconnect();
+                updateSignedInContext();
+                mcpManager.refresh();
+                showWarningMessage(
+                    'Azure DevOps session changed or expired. Please sign in again.'
+                );
+            }
+        })
+    );
 
     // React to configuration changes
     context.subscriptions.push(
