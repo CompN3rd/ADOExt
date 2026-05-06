@@ -1,12 +1,13 @@
 import * as vscode from 'vscode';
-import * as crypto from 'crypto';
 import type { GitPullRequest, GitPullRequestCommentThread, Comment, PullRequestReviewVote, GitPullRequestStatus, PolicyEvaluationRecord } from '../api/adoClient';
 import type { Build } from '../api/adoClient';
 import { PullRequestReviewVotes, GitStatusState, PolicyEvaluationStatus, PullRequestAsyncStatus, PullRequestMergeFailureType } from '../api/adoClient';
 import type { AdoClient } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
 import { showErrorMessage, showInformationMessage, showWarningMessage } from '../utils/notifications';
-import { buildSummaryHtml, BUILD_SUMMARY_CSS } from './buildSummaryHtml';
+import { buildSummaryData } from './buildSummaryHtml';
+import { buildWebviewDocument, webviewAssetRoots } from './webviewHtml';
+import type { NamedBadgeRowViewModel, PrDetailsMessage, PrDetailsViewModel } from './webviewTypes';
 // Note: the diff is now opened via VS Code's native diff editor, dispatched
 // through the `adoext.viewPullRequestDiff` command so that the inline
 // comment controller is wired up consistently.
@@ -70,7 +71,8 @@ export class PrDetailsPanel {
             vscode.ViewColumn.One,
             {
                 enableScripts: true,
-                retainContextWhenHidden: true
+                retainContextWhenHidden: true,
+                localResourceRoots: webviewAssetRoots(_context)
             }
         );
 
@@ -120,14 +122,7 @@ export class PrDetailsPanel {
         this._panel.webview.html = this._buildHtml(latestPr, threads, statuses, policies, builds);
     }
 
-    private async _handleMessage(msg: {
-        type: string;
-        threadId?: number;
-        content?: string;
-        status?: number;
-        vote?: number;
-        buildId?: number;
-    }): Promise<void> {
+    private async _handleMessage(msg: PrDetailsMessage): Promise<void> {
         const repoId = this._pr.repository?.id ?? '';
         const prId = this._pr.pullRequestId!;
         const project = this._project ?? this._config.project;
@@ -238,273 +233,134 @@ export class PrDetailsPanel {
         builds: Build[] = []
     ): string {
         const webview = this._panel.webview;
-        const nonce = this._createNonce();
+        const data = this._buildViewModel(pr, threads, statuses, policies, builds);
+        return buildWebviewDocument(this._context, webview, {
+            title: `PR #${data.prId}`,
+            entry: 'prDetails.js',
+            appTag: 'ado-pr-details-app',
+            data
+        });
+    }
+
+    private _buildViewModel(
+        pr: GitPullRequest,
+        threads: GitPullRequestCommentThread[],
+        statuses: GitPullRequestStatus[],
+        policies: PolicyEvaluationRecord[],
+        builds: Build[]
+    ): PrDetailsViewModel {
         const prId = pr.pullRequestId ?? 0;
-        const title = this._esc(pr.title ?? '');
-        const description = this._esc(pr.description ?? '*(no description)*');
+        const title = pr.title ?? '';
+        const description = pr.description ?? '*(no description)*';
         const sourceBranch = (pr.sourceRefName ?? '').replace('refs/heads/', '');
         const targetBranch = (pr.targetRefName ?? '').replace('refs/heads/', '');
-        const author = this._esc(pr.createdBy?.displayName ?? 'Unknown');
-        const isDraft = pr.isDraft ? ' <span class="badge draft">Draft</span>' : '';
+        const author = pr.createdBy?.displayName ?? 'Unknown';
         const createdDate = pr.creationDate
             ? new Date(pr.creationDate).toLocaleDateString()
             : '';
 
-        const reviewersHtml = (pr.reviewers ?? [])
-            .map(r => {
-                const vote = r.vote ?? 0;
-                const voteLabel = this._reviewVoteLabel(vote);
-                const voteClass = this._reviewVoteClass(vote);
-                return `<li><span class="vote ${voteClass}">${this._esc(voteLabel)}</span>${this._esc(r.displayName ?? '')}</li>`;
-            })
-            .join('');
+        const reviewers = (pr.reviewers ?? [])
+            .map(reviewer => {
+                const vote = reviewer.vote ?? 0;
+                return {
+                    displayName: reviewer.displayName ?? '',
+                    voteLabel: this._reviewVoteLabel(vote),
+                    voteClass: this._reviewVoteClass(vote)
+                };
+            });
 
         const meaningfulThreads = (threads ?? []).filter(
-            t => (t.comments ?? []).some(comment => !!comment.content) && !t.isDeleted
+            thread => (thread.comments ?? []).some(comment => !!comment.content) && !thread.isDeleted
         );
 
-        const threadsHtml = meaningfulThreads.length === 0
-            ? '<p class="empty">No comment threads.</p>'
-            : meaningfulThreads.map(t => this._buildThreadHtml(t)).join('');
-
-        const branchStatusHtml = this._buildBranchStatusHtml(pr);
-        const checksHtml = this._buildChecksHtml(statuses, policies);
-
-        const buildsHtml = builds.length === 0
-            ? '<p class="empty">No builds found.</p>'
-            : builds.map(b => buildSummaryHtml(b)).join('');
-
-        return /* html */`<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
-<title>PR #${prId}</title>
-<style>
-  body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); background: var(--vscode-editor-background); padding: 16px; margin: 0; }
-  h1 { font-size: 1.3em; margin-bottom: 4px; }
-  .meta { color: var(--vscode-descriptionForeground); font-size: 0.9em; margin-bottom: 12px; }
-  .badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 0.8em; margin-left: 6px; }
-  .draft { background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
-  .section { margin-bottom: 20px; }
-  .section h2 { font-size: 1em; border-bottom: 1px solid var(--vscode-panel-border); padding-bottom: 4px; margin-bottom: 8px; }
-  .reviewers { list-style: none; padding: 0; margin: 0; }
-    .reviewers li { margin: 4px 0; display: flex; gap: 8px; align-items: center; }
-    .vote { min-width: 112px; padding: 2px 6px; border-radius: 3px; font-size: 0.8em; text-align: center; border: 1px solid var(--vscode-panel-border); color: var(--vscode-descriptionForeground); }
-    .vote-positive { color: var(--vscode-charts-green); border-color: var(--vscode-charts-green); }
-    .vote-waiting { color: var(--vscode-charts-yellow); border-color: var(--vscode-charts-yellow); }
-    .vote-negative { color: var(--vscode-charts-red); border-color: var(--vscode-charts-red); }
-  .checks-list { list-style: none; padding: 0; margin: 0; }
-  .checks-list li { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--vscode-panel-border); }
-  .checks-list li:last-child { border-bottom: none; }
-  .check-state { font-size: 0.8em; min-width: 80px; padding: 2px 6px; border-radius: 3px; text-align: center; border: 1px solid; }
-  .check-success { color: var(--vscode-charts-green); border-color: var(--vscode-charts-green); }
-  .check-failure { color: var(--vscode-charts-red); border-color: var(--vscode-charts-red); }
-  .check-pending { color: var(--vscode-charts-yellow); border-color: var(--vscode-charts-yellow); }
-  .check-neutral { color: var(--vscode-descriptionForeground); border-color: var(--vscode-panel-border); }
-  .check-name { flex: 1; }
-  .check-desc { color: var(--vscode-descriptionForeground); font-size: 0.85em; }
-  .thread { border: 1px solid var(--vscode-panel-border); border-radius: 4px; margin-bottom: 10px; }
-  .thread-header { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; background: var(--vscode-sideBarSectionHeader-background); border-radius: 4px 4px 0 0; }
-  .thread-status { font-size: 0.8em; color: var(--vscode-descriptionForeground); }
-  .resolved .thread-header { opacity: 0.7; }
-  .comment { padding: 8px 10px; border-bottom: 1px solid var(--vscode-panel-border); }
-  .comment:last-child { border-bottom: none; }
-  .comment-author { font-weight: bold; font-size: 0.85em; margin-bottom: 2px; }
-  .comment-content { white-space: pre-wrap; word-break: break-word; }
-  .reply-form { padding: 8px 10px; display: flex; gap: 6px; }
-  .reply-input { flex: 1; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); border-radius: 3px; padding: 4px 6px; font-family: inherit; font-size: inherit; resize: vertical; min-height: 32px; }
-  .btn { padding: 4px 10px; border-radius: 3px; border: 1px solid var(--vscode-button-border, transparent); cursor: pointer; font-size: 0.85em; }
-  .btn-primary { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
-  .btn-primary:hover { background: var(--vscode-button-hoverBackground); }
-  .btn-secondary { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
-  .btn-secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
-  .empty { color: var(--vscode-descriptionForeground); font-style: italic; }
-  .new-comment-form { display: flex; flex-direction: column; gap: 6px; }
-    .toolbar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
-    .review-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-  ${BUILD_SUMMARY_CSS}
-</style>
-</head>
-<body>
-<div class="toolbar">
-    <button class="btn btn-primary" data-action="open-diff">View Diff</button>
-        <div class="review-actions" role="group" aria-label="Review actions">
-                <button class="btn btn-secondary" data-action="set-vote" data-vote="${PullRequestReviewVotes.approved}">Approve</button>
-                <button class="btn btn-secondary" data-action="set-vote" data-vote="${PullRequestReviewVotes.approvedWithSuggestions}">Approve with Suggestions</button>
-                <button class="btn btn-secondary" data-action="set-vote" data-vote="${PullRequestReviewVotes.waitingForAuthor}">Wait for Author</button>
-                <button class="btn btn-secondary" data-action="set-vote" data-vote="${PullRequestReviewVotes.rejected}">Reject</button>
-                <button class="btn btn-secondary" data-action="set-vote" data-vote="${PullRequestReviewVotes.noVote}">Reset Vote</button>
-        </div>
-    <button class="btn btn-secondary" data-action="open-browser">Open in Browser</button>
-</div>
-<h1>PR #${prId}: ${title}${isDraft}</h1>
-<div class="meta">
-  <strong>${author}</strong> opened on ${createdDate} &nbsp;·&nbsp;
-  <code>${this._esc(sourceBranch)}</code> → <code>${this._esc(targetBranch)}</code>
-</div>
-
-<div class="section">
-  <h2>Description</h2>
-  <pre class="comment-content">${description}</pre>
-</div>
-
-${reviewersHtml ? `<div class="section"><h2>Reviewers</h2><ul class="reviewers">${reviewersHtml}</ul></div>` : ''}
-
-${branchStatusHtml}
-
-${checksHtml}
-
-<div class="section">
-  <h2>Builds</h2>
-  ${buildsHtml}
-</div>
-
-<div class="section">
-  <h2>Comment Threads</h2>
-  ${threadsHtml}
-</div>
-
-<div class="section">
-  <h2>Add Comment</h2>
-  <div class="new-comment-form">
-    <textarea id="newCommentInput" class="reply-input" rows="3" placeholder="Write a comment…"></textarea>
-        <div><button class="btn btn-primary" data-action="add-comment">Add Comment</button></div>
-  </div>
-</div>
-
-<script nonce="${nonce}">
-const vscode = acquireVsCodeApi();
-
-document.querySelector('[data-action="open-browser"]')?.addEventListener('click', () => {
-    vscode.postMessage({ type: 'openInBrowser' });
-});
-
-document.querySelector('[data-action="open-diff"]')?.addEventListener('click', () => {
-    vscode.postMessage({ type: 'openDiff' });
-});
-
-document.querySelectorAll('[data-action="set-vote"]').forEach(button => {
-    button.addEventListener('click', () => {
-        const vote = Number(button.getAttribute('data-vote'));
-        vscode.postMessage({ type: 'setVote', vote });
-    });
-});
-
-document.querySelector('[data-action="add-comment"]')?.addEventListener('click', () => {
-    const input = document.getElementById('newCommentInput');
-    const content = input.value.trim();
-    if (!content) {
-        return;
+        return {
+            prId,
+            title,
+            description,
+            sourceBranch,
+            targetBranch,
+            author,
+            isDraft: !!pr.isDraft,
+            createdDate,
+            reviewers,
+            reviewActions: [
+                { label: 'Approve', vote: PullRequestReviewVotes.approved },
+                { label: 'Approve with Suggestions', vote: PullRequestReviewVotes.approvedWithSuggestions },
+                { label: 'Wait for Author', vote: PullRequestReviewVotes.waitingForAuthor },
+                { label: 'Reject', vote: PullRequestReviewVotes.rejected },
+                { label: 'Reset Vote', vote: PullRequestReviewVotes.noVote }
+            ],
+            branchStatuses: this._buildBranchStatusRows(pr),
+            checks: this._buildCheckRows(statuses, policies),
+            threads: meaningfulThreads.map(thread => {
+                const isResolved = thread.status === 2 || thread.status === 4;
+                return {
+                    id: thread.id ?? 0,
+                    isResolved,
+                    statusLabel: isResolved ? 'Resolved' : 'Active',
+                    comments: (thread.comments ?? []).map((comment: Comment) => ({
+                        author: comment.author?.displayName ?? 'Unknown',
+                        content: comment.content ?? ''
+                    }))
+                };
+            }),
+            builds: builds.map(buildSummaryData)
+        };
     }
 
-    vscode.postMessage({ type: 'addComment', content });
-    input.value = '';
-});
-
-document.querySelectorAll('[data-action="open-build"]').forEach(button => {
-    button.addEventListener('click', () => {
-        const buildId = Number(button.getAttribute('data-build-id'));
-        if (Number.isFinite(buildId) && buildId > 0) {
-            vscode.postMessage({ type: 'openBuild', buildId });
-        }
-    });
-});
-
-document.querySelectorAll('[data-action="reply"]').forEach(button => {
-    button.addEventListener('click', () => {
-        const threadId = Number(button.getAttribute('data-thread-id'));
-        const input = document.getElementById('reply_' + threadId);
-        const content = input.value.trim();
-        if (!content) {
-            return;
-        }
-
-        vscode.postMessage({ type: 'reply', threadId, content });
-        input.value = '';
-    });
-});
-
-document.querySelectorAll('[data-action="set-status"]').forEach(button => {
-    button.addEventListener('click', () => {
-        const threadId = Number(button.getAttribute('data-thread-id'));
-        const status = Number(button.getAttribute('data-status'));
-        vscode.postMessage({ type: 'setStatus', threadId, status });
-    });
-});
-</script>
-</body>
-</html>`;
-    }
-
-    private _buildChecksHtml(
+    private _buildCheckRows(
         statuses: GitPullRequestStatus[],
         policies: PolicyEvaluationRecord[]
-    ): string {
-        const totalChecks = statuses.length + policies.length;
-        if (totalChecks === 0) {
-            return '';
-        }
-
-        const items: string[] = [];
+    ): NamedBadgeRowViewModel[] {
+        const rows: NamedBadgeRowViewModel[] = [];
 
         for (const status of statuses) {
-            const name = this._esc(
-                [status.context?.genre, status.context?.name].filter(Boolean).join('/') || 'Check'
-            );
-            const desc = this._esc(status.description ?? '');
-            const { cls, label } = this._statusStateBadge(status.state);
-            items.push(
-                `<li><span class="check-state ${cls}">${label}</span><span class="check-name">${name}</span>${desc ? `<span class="check-desc">${desc}</span>` : ''}</li>`
-            );
+            const name = [status.context?.genre, status.context?.name].filter(Boolean).join('/') || 'Check';
+            const badge = this._statusStateBadge(status.state);
+            rows.push({
+                name,
+                description: status.description ?? '',
+                badge: { label: badge.label, className: badge.cls }
+            });
         }
 
         for (const policy of policies) {
-            const name = this._esc(policy.configuration?.type?.displayName ?? 'Policy');
-            const { cls, label } = this._policyStatusBadge(policy.status);
-            items.push(
-                `<li><span class="check-state ${cls}">${label}</span><span class="check-name">${name}</span></li>`
-            );
+            const name = policy.configuration?.settings?.displayName
+                ?? policy.configuration?.type?.displayName
+                ?? policy.configuration?.type?.id
+                ?? 'Policy';
+            const badge = this._policyStatusBadge(policy.status);
+            rows.push({
+                name,
+                description: policy.context?.statusReason ?? '',
+                badge: { label: badge.label, className: badge.cls }
+            });
         }
 
-        return `<div class="section"><h2>Build &amp; Policy Status</h2><ul class="checks-list">${items.join('')}</ul></div>`;
+        return rows;
     }
 
-    private _buildBranchStatusHtml(pr: GitPullRequest): string {
-        const rows: string[] = [];
-        rows.push(this._buildStatusRow('Merge state', this._branchStatusBadge(pr.mergeStatus)));
+    private _buildBranchStatusRows(pr: GitPullRequest): NamedBadgeRowViewModel[] {
+        const rows: NamedBadgeRowViewModel[] = [];
 
-        if (pr.hasMultipleMergeBases) {
-            rows.push(this._buildStatusRow('Merge bases', { cls: 'check-pending', label: 'Multiple detected' }));
+        if (pr.mergeStatus !== undefined) {
+            const badge = this._branchStatusBadge(pr.mergeStatus);
+            rows.push({
+                name: 'Merge Status',
+                description: pr.mergeFailureMessage ?? '',
+                badge: { label: badge.label, className: badge.cls }
+            });
         }
 
-        if (this._hasMergeFailure(pr)) {
-            rows.push(this._buildStatusRow(
-                'Failure reason',
-                { cls: 'check-failure', label: this._mergeFailureLabel(pr.mergeFailureType, pr.mergeFailureMessage) }
-            ));
+        if (pr.mergeFailureType !== undefined && pr.mergeFailureType !== PullRequestMergeFailureType.None) {
+            rows.push({
+                name: 'Merge Failure',
+                description: pr.mergeFailureMessage ?? '',
+                badge: { label: this._mergeFailureLabel(pr.mergeFailureType), className: 'check-failure' }
+            });
         }
 
-        if (pr.completionQueueTime) {
-            rows.push(this._buildStatusRow(
-                'Last merge queue time',
-                { cls: 'check-neutral', label: new Date(pr.completionQueueTime).toLocaleString() }
-            ));
-        }
-
-        return `<div class="section"><h2>Branch Status</h2><ul class="checks-list">${rows.join('')}</ul></div>`;
-    }
-
-    private _hasMergeFailure(pr: GitPullRequest): boolean {
-        return (
-            (pr.mergeFailureType !== undefined && pr.mergeFailureType !== PullRequestMergeFailureType.None) ||
-            !!pr.mergeFailureMessage
-        );
-    }
-
-    private _buildStatusRow(name: string, badge: { cls: string; label: string }): string {
-        return `<li><span class="check-state ${badge.cls}">${this._esc(badge.label)}</span><span class="check-name">${this._esc(name)}</span></li>`;
+        return rows;
     }
 
     private _statusStateBadge(state?: GitStatusState): { cls: string; label: string } {
@@ -581,45 +437,6 @@ document.querySelectorAll('[data-action="set-status"]').forEach(button => {
                 return 'Unknown';
         }
     }
-    private _buildThreadHtml(thread: GitPullRequestCommentThread): string {
-        const threadId = thread.id ?? 0;
-        const isResolved =
-            thread.status === 2 /* Fixed */ || thread.status === 4; /* ByDesign */
-        const statusLabel = isResolved ? 'Resolved' : 'Active';
-
-        const commentsHtml = (thread.comments ?? [])
-            .map((c: Comment) => {
-                const author = this._esc(c.author?.displayName ?? 'Unknown');
-                const content = this._esc(c.content ?? '');
-                return `<div class="comment"><div class="comment-author">${author}</div><div class="comment-content">${content}</div></div>`;
-            })
-            .join('');
-
-        const statusBtn = isResolved
-            ? `<button class="btn btn-secondary" data-action="set-status" data-thread-id="${threadId}" data-status="1">Reopen</button>`
-            : `<button class="btn btn-secondary" data-action="set-status" data-thread-id="${threadId}" data-status="2">Resolve</button>`;
-
-        return `
-<div class="thread ${isResolved ? 'resolved' : ''}">
-  <div class="thread-header">
-    <span class="thread-status">${statusLabel}</span>
-    ${statusBtn}
-  </div>
-  ${commentsHtml}
-  <div class="reply-form">
-    <textarea id="reply_${threadId}" class="reply-input" rows="2" placeholder="Reply…"></textarea>
-        <button class="btn btn-primary" data-action="reply" data-thread-id="${threadId}">Reply</button>
-  </div>
-</div>`;
-    }
-
-    private _esc(text: string): string {
-        return text
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;');
-    }
 
     private _reviewVoteLabel(vote: number): string {
         switch (vote) {
@@ -664,10 +481,6 @@ document.querySelectorAll('[data-action="set-status"]').forEach(button => {
             d.dispose();
         }
         this._disposables = [];
-    }
-
-    private _createNonce(): string {
-        return crypto.randomBytes(16).toString('hex');
     }
 
     private static panelKey(prId: number, organization?: string, project?: string): string {

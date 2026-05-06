@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import type { WorkItemNode } from '../providers/workItemProvider';
 import type { AdoClient, WorkItem, SavedQuery, ClassificationPath } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
-import { WorkItemDetailsPanel } from '../views/workItemDetailsPanel';
+import { showWorkItemDetailsPanel } from '../views/workItemDetailsPanel';
 import { parseAdoRemoteUrl } from '../utils/repoContext';
 import { showErrorMessage, showInformationMessage, showWarningMessage } from '../utils/notifications';
 import { resolveProjectScopes } from '../providers/projectScopes';
@@ -16,6 +16,7 @@ function formatUnknownError(err: unknown): string {
  * Show the work item details webview panel.
  */
 export async function viewWorkItemDetails(
+    context: vscode.ExtensionContext,
     node: WorkItemNode | undefined,
     client: AdoClient,
     config: ConfigManager
@@ -27,7 +28,7 @@ export async function viewWorkItemDetails(
         return;
     }
 
-    await WorkItemDetailsPanel.show(client, config, node.workItem, {
+    await showWorkItemDetailsPanel(context, client, config, node.workItem, {
         organization: node.organization,
         project: node.project
     });
@@ -186,6 +187,7 @@ function buildFileContextDescription(
  * when there is no selection).
  */
 export async function createWorkItemFromSelection(
+    context: vscode.ExtensionContext,
     client: AdoClient,
     config: ConfigManager
 ): Promise<boolean> {
@@ -237,7 +239,7 @@ export async function createWorkItemFromSelection(
             organization
         );
         showInformationMessage(`Work item #${workItem.id} created.`);
-        await WorkItemDetailsPanel.show(client, config, workItem, { organization, project });
+        await showWorkItemDetailsPanel(context, client, config, workItem, { organization, project });
         return true;
     } catch (err) {
         showErrorMessage(`Failed to create work item: ${formatUnknownError(err)}`);
@@ -254,6 +256,7 @@ export async function createWorkItemFromSelection(
  * it scans the current file for TODO comments and presents a quick-pick.
  */
 export async function createWorkItemFromTodo(
+    context: vscode.ExtensionContext,
     client: AdoClient,
     config: ConfigManager,
     todoText?: string,
@@ -352,7 +355,7 @@ export async function createWorkItemFromTodo(
             organization
         );
         showInformationMessage(`Work item #${workItem.id} created.`);
-        await WorkItemDetailsPanel.show(client, config, workItem, { organization, project });
+        await showWorkItemDetailsPanel(context, client, config, workItem, { organization, project });
         return true;
     } catch (err) {
         showErrorMessage(`Failed to create work item: ${formatUnknownError(err)}`);
@@ -365,6 +368,7 @@ export async function createWorkItemFromTodo(
  * Work Items tree (by displaying a quick-pick list of the work items).
  */
 export async function openSavedQuery(
+    context: vscode.ExtensionContext,
     client: AdoClient,
     config: ConfigManager
 ): Promise<void> {
@@ -466,7 +470,7 @@ export async function openSavedQuery(
         return;
     }
 
-    await WorkItemDetailsPanel.show(client, config, resultPick.workItem, { organization, project });
+    await showWorkItemDetailsPanel(context, client, config, resultPick.workItem, { organization, project });
 }
 
 /**

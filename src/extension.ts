@@ -312,21 +312,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(
         vscode.commands.registerCommand('adoext.openBacklogView', async () => {
             if (!(await ensureSignedIn())) { return; }
-            await PlanningPanel.show('backlog', client, config, refreshAllViews);
+            await PlanningPanel.show(context, 'backlog', client, config, refreshAllViews);
         })
     );
 
     context.subscriptions.push(
         vscode.commands.registerCommand('adoext.openBoardView', async () => {
             if (!(await ensureSignedIn())) { return; }
-            await PlanningPanel.show('board', client, config, refreshAllViews);
+            await PlanningPanel.show(context, 'board', client, config, refreshAllViews);
         })
     );
 
     context.subscriptions.push(
         vscode.commands.registerCommand('adoext.openSprintView', async () => {
             if (!(await ensureSignedIn())) { return; }
-            await PlanningPanel.show('sprint', client, config, refreshAllViews);
+            await PlanningPanel.show(context, 'sprint', client, config, refreshAllViews);
         })
     );
 
@@ -334,7 +334,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(
         vscode.commands.registerCommand(
             'adoext.viewWorkItemDetails',
-            (node?: WorkItemNode) => viewWorkItemDetails(node, client, config)
+            (node?: WorkItemNode) => viewWorkItemDetails(context, node, client, config)
         )
     );
 
@@ -382,7 +382,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(
         vscode.commands.registerCommand('adoext.openSavedQuery', async () => {
             if (!(await ensureSignedIn())) { return; }
-            await openSavedQuery(client, config);
+            await openSavedQuery(context, client, config);
         })
     );
 
@@ -401,7 +401,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             'adoext.createWorkItemFromSelection',
             async () => {
                 if (!(await ensureSignedIn())) { return; }
-                const created = await createWorkItemFromSelection(client, config);
+                const created = await createWorkItemFromSelection(context, client, config);
                 if (created) { refreshAllViews(); }
             }
         )
@@ -412,7 +412,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             'adoext.createWorkItemFromTodo',
             async (todoText?: string, lineNumber?: number) => {
                 if (!(await ensureSignedIn())) { return; }
-                const created = await createWorkItemFromTodo(client, config, todoText, lineNumber);
+                const created = await createWorkItemFromTodo(context, client, config, todoText, lineNumber);
                 if (created) { refreshAllViews(); }
             }
         )
@@ -753,7 +753,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         return;
                     }
                     const { WorkItemDetailsPanel } = await import('./views/workItemDetailsPanel');
-                    await WorkItemDetailsPanel.show(client, config, workItem, {
+                    await WorkItemDetailsPanel.show(context, client, config, workItem, {
                         organization: args.org,
                         project: args.project
                     });

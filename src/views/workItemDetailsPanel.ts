@@ -1,14 +1,25 @@
 import * as vscode from 'vscode';
-import * as crypto from 'crypto';
 import type { WorkItem, WorkItemComment, Build } from '../api/adoClient';
 import type { AdoClient } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
 import { showErrorMessage, showInformationMessage, showWarningMessage } from '../utils/notifications';
-import { buildSummaryHtml, BUILD_SUMMARY_CSS } from './buildSummaryHtml';
+import { buildSummaryData } from './buildSummaryHtml';
+import { buildWebviewDocument, webviewAssetRoots } from './webviewHtml';
+import type { WorkItemDetailsMessage, WorkItemDetailsViewModel } from './webviewTypes';
 
-interface WorkItemPanelScope {
+export interface WorkItemPanelScope {
     organization?: string;
     project?: string;
+}
+
+export function showWorkItemDetailsPanel(
+    context: vscode.ExtensionContext,
+    client: AdoClient,
+    config: ConfigManager,
+    workItem: WorkItem,
+    scope: WorkItemPanelScope = {}
+): Promise<void> {
+    return WorkItemDetailsPanel.show(context, client, config, workItem, scope);
 }
 
 /** Parsed Azure DevOps artifact link extracted from a work item relation. */
@@ -37,6 +48,7 @@ export class WorkItemDetailsPanel {
     private _linkedItems: LinkedItem[] = [];
 
     static async show(
+        context: vscode.ExtensionContext,
         client: AdoClient,
         config: ConfigManager,
         workItem: WorkItem,
@@ -61,10 +73,11 @@ export class WorkItemDetailsPanel {
             await existing._refresh(client, config, workItem);
             return;
         }
-        new WorkItemDetailsPanel(client, config, workItem, id, key, scope);
+        new WorkItemDetailsPanel(context, client, config, workItem, id, key, scope);
     }
 
     private constructor(
+        private readonly _context: vscode.ExtensionContext,
         private readonly _client: AdoClient,
         private readonly _config: ConfigManager,
         private _workItem: WorkItem,
@@ -86,7 +99,8 @@ export class WorkItemDetailsPanel {
             vscode.ViewColumn.One,
             {
                 enableScripts: true,
-                retainContextWhenHidden: true
+                retainContextWhenHidden: true,
+                localResourceRoots: webviewAssetRoots(_context)
             }
         );
 
@@ -165,13 +179,7 @@ export class WorkItemDetailsPanel {
         this._panel.webview.html = this._buildHtml(fullItem, comments, builds);
     }
 
-    private async _handleMessage(msg: {
-        type: string;
-        content?: string;
-        state?: string;
-        url?: string;
-        buildId?: number;
-    }): Promise<void> {
+    private async _handleMessage(msg: WorkItemDetailsMessage): Promise<void> {
         const id = this._workItemId;
         const project = this._project ?? this._config.project;
         const org = this._organization ?? this._client.organization ?? this._config.organization;
@@ -253,411 +261,65 @@ export class WorkItemDetailsPanel {
     }
 
     private _buildHtml(item: WorkItem, comments: WorkItemComment[], builds: Build[] = []): string {
-        const webview = this._panel.webview;
-        const nonce = this._createNonce();
+        const data = this._buildViewModel(item, comments, builds);
+        return buildWebviewDocument(this._context, this._panel.webview, {
+            title: `${data.workItemType} #${data.id}`,
+            entry: 'workItemDetails.js',
+            appTag: 'ado-work-item-details-app',
+            data,
+            cspExtra: "img-src https: data: https://*.dev.azure.com https://*.visualstudio.com;"
+        });
+    }
+
+    private _buildViewModel(
+        item: WorkItem,
+        comments: WorkItemComment[],
+        builds: Build[]
+    ): WorkItemDetailsViewModel {
         const id = item.id ?? 0;
         const f = item.fields ?? {};
-
-        const title = this._esc((f['System.Title'] as string | undefined) ?? '');
-        const wiType = this._esc((f['System.WorkItemType'] as string | undefined) ?? 'Work Item');
-        const rawState = (f['System.State'] as string | undefined) ?? '';
-        const state = this._esc(rawState);
-        const assignedTo = this._esc(this._identityName(f['System.AssignedTo']) ?? 'Unassigned');
-        const createdBy = this._esc(this._identityName(f['System.CreatedBy']) ?? 'Unknown');
+        const title = (f['System.Title'] as string | undefined) ?? '';
+        const workItemType = (f['System.WorkItemType'] as string | undefined) ?? 'Work Item';
+        const state = (f['System.State'] as string | undefined) ?? '';
+        const assignedTo = this._identityName(f['System.AssignedTo']) ?? 'Unassigned';
+        const createdBy = this._identityName(f['System.CreatedBy']) ?? 'Unknown';
         const createdDate = this._formatDate(f['System.CreatedDate'] as string | Date | undefined);
         const changedDate = this._formatDate(f['System.ChangedDate'] as string | Date | undefined);
-        const areaPath = this._esc((f['System.AreaPath'] as string | undefined) ?? '');
-        const iterationPath = this._esc((f['System.IterationPath'] as string | undefined) ?? '');
-        const tags = this._esc((f['System.Tags'] as string | undefined) ?? '');
+        const areaPath = (f['System.AreaPath'] as string | undefined) ?? '';
+        const iterationPath = (f['System.IterationPath'] as string | undefined) ?? '';
+        const tags = (f['System.Tags'] as string | undefined) ?? '';
         const priority = f['Microsoft.VSTS.Common.Priority'] as number | undefined;
-        const description = (f['System.Description'] as string | undefined) ?? '';
-
-        const stateColor = this._stateColor(state);
-        const stateOptions = this._stateOptions(rawState);
-        const priorityHtml = priority !== undefined
-            ? `<span class="badge priority-${priority}">P${priority}</span>`
-            : '';
-
-        // Description is rendered client-side via the nonce-protected script to
-        // preserve ADO HTML formatting while safely stripping dangerous content.
-        const descriptionPlaceholder = description
-            ? '<div id="description-content"></div>'
-            : '<em class="empty">No description provided.</em>';
-
-        const commentsHtml = comments.length === 0
-            ? '<p class="empty">No comments yet.</p>'
-            : comments.map((c, index) => this._buildCommentHtml(c, index)).join('');
-
-        const buildsHtml = builds.length === 0
-            ? '<p class="empty">No linked builds.</p>'
-            : builds.map(b => buildSummaryHtml(b)).join('');
+        const descriptionHtml = (f['System.Description'] as string | undefined) ?? '';
 
         const metaRows = [
             ['Assigned To', assignedTo],
             ['Created By', createdBy],
             ['Created', createdDate],
             ['Last Updated', changedDate],
-            areaPath ? ['Area Path', areaPath] : null,
-            iterationPath ? ['Iteration', iterationPath] : null,
-            tags ? ['Tags', tags] : null,
-        ].filter(Boolean) as [string, string][];
+            areaPath ? ['Area Path', areaPath] : undefined,
+            iterationPath ? ['Iteration', iterationPath] : undefined,
+            tags ? ['Tags', tags] : undefined,
+        ].filter((row): row is [string, string] => !!row);
 
-        const metaHtml = metaRows
-            .map(([label, value]) => `<tr><td class="meta-label">${label}</td><td>${value}</td></tr>`)
-            .join('');
-
-        // Embed raw description as JSON so the nonce-protected script can
-        // sanitize and render it without any server-side regex manipulation.
-        const descriptionJson = JSON.stringify(description);
-        const commentBodiesJson = JSON.stringify(
-            comments.map(comment => ({
+        return {
+            id,
+            title,
+            workItemType,
+            state,
+            stateColor: this._stateColor(state),
+            priority,
+            allowedStates: this._allowedStateList(state),
+            metaRows: metaRows.map(([label, value]) => ({ label, value })),
+            descriptionHtml,
+            linkedItems: this._linkedItems.map(item => ({ ...item })),
+            builds: builds.map(buildSummaryData),
+            comments: comments.map(comment => ({
+                author: this._identityName(comment.createdBy) ?? 'Unknown',
+                date: this._formatDate(comment.createdDate),
                 html: comment.renderedText ?? comment.text ?? '',
                 isPlainText: !comment.renderedText
             }))
-        );
-
-        const linkedItems = this._linkedItems;
-        // ↙ PR icon (↙ U+2198), ⎇ branch icon (U+2387), ◆ commit icon (U+25C6)
-        const LINKED_ITEM_ICONS: Record<LinkedItem['type'], string> = {
-            pr: '&#x2198;',     // ↙  pull-request arrow
-            branch: '&#x2387;', // ⎇  branch symbol
-            commit: '&#x25C6;'  // ◆  filled diamond (commit dot)
         };
-        const linkedItemsHtml = linkedItems.length === 0
-            ? '<p class="empty">No linked branches, commits, or pull requests.</p>'
-            : linkedItems.map(li => {
-                const icon = LINKED_ITEM_ICONS[li.type];
-                return `<div class="linked-item"><button class="btn btn-secondary linked-item-btn" data-action="open-linked-item" data-url="${this._esc(li.webUrl)}">${icon} ${this._esc(li.label)}</button></div>`;
-            }).join('\n');
-
-        return /* html */`<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src https: data: https://*.dev.azure.com https://*.visualstudio.com;">
-<title>${wiType} #${id}</title>
-<style>
-  body { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); background: var(--vscode-editor-background); padding: 16px; margin: 0; }
-  h1 { font-size: 1.3em; margin-bottom: 4px; }
-  h2 { font-size: 1em; border-bottom: 1px solid var(--vscode-panel-border); padding-bottom: 4px; margin-bottom: 8px; }
-    .toolbar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
-    .state-edit { display: flex; gap: 6px; align-items: center; }
-    select { background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground); border: 1px solid var(--vscode-dropdown-border); border-radius: 3px; padding: 3px 22px 3px 6px; }
-  .meta { margin-bottom: 16px; }
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.8em; font-weight: 600; margin-right: 6px; }
-  .badge-type { background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
-  .badge-state { background: ${stateColor}22; color: ${stateColor}; border: 1px solid ${stateColor}55; }
-  .priority-1 { background: #c84b3222; color: #c84b32; border: 1px solid #c84b3255; }
-  .priority-2 { background: #e8a33522; color: #e8a335; border: 1px solid #e8a33555; }
-  .priority-3 { background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
-  .priority-4 { background: var(--vscode-badge-background); color: var(--vscode-descriptionForeground); }
-  .meta-table { border-collapse: collapse; margin-top: 8px; }
-  .meta-table td { padding: 3px 12px 3px 0; vertical-align: top; }
-  .meta-label { color: var(--vscode-descriptionForeground); font-size: 0.9em; white-space: nowrap; min-width: 110px; }
-  .section { margin-bottom: 20px; }
-  .description { background: var(--vscode-textBlockQuote-background); border-left: 3px solid var(--vscode-textBlockQuote-border); padding: 10px 14px; border-radius: 0 4px 4px 0; line-height: 1.6; }
-  #description-content { word-break: break-word; }
-  #description-content p { margin: 0 0 8px; }
-  #description-content ul, #description-content ol { padding-left: 24px; margin: 0 0 8px; }
-  #description-content table { border-collapse: collapse; margin-bottom: 8px; }
-  #description-content td, #description-content th { border: 1px solid var(--vscode-panel-border); padding: 4px 8px; }
-  #description-content a { color: var(--vscode-textLink-foreground); }
-  #description-content a:hover { color: var(--vscode-textLink-activeForeground); }
-  #description-content img { max-width: 100%; }
-  #description-content pre, #description-content code { background: var(--vscode-textCodeBlock-background); padding: 2px 4px; border-radius: 3px; font-family: var(--vscode-editor-font-family); }
-  #description-content pre { padding: 8px; overflow-x: auto; }
-  .comment { border: 1px solid var(--vscode-panel-border); border-radius: 4px; margin-bottom: 10px; padding: 10px; }
-  .comment-header { display: flex; justify-content: space-between; margin-bottom: 6px; }
-  .comment-author { font-weight: bold; font-size: 0.9em; }
-  .comment-date { color: var(--vscode-descriptionForeground); font-size: 0.8em; }
-    .comment-text { word-break: break-word; line-height: 1.5; }
-    .comment-text.plain-text { white-space: pre-wrap; }
-    .comment-text p { margin: 0 0 8px; }
-    .comment-text ul, .comment-text ol { padding-left: 24px; margin: 0 0 8px; }
-    .comment-text table { border-collapse: collapse; margin-bottom: 8px; }
-    .comment-text td, .comment-text th { border: 1px solid var(--vscode-panel-border); padding: 4px 8px; }
-    .comment-text a { color: var(--vscode-textLink-foreground); }
-    .comment-text a:hover { color: var(--vscode-textLink-activeForeground); }
-    .comment-text img { max-width: 100%; }
-    .comment-text pre, .comment-text code { background: var(--vscode-textCodeBlock-background); padding: 2px 4px; border-radius: 3px; font-family: var(--vscode-editor-font-family); }
-    .comment-text pre { padding: 8px; overflow-x: auto; }
-  .new-comment-form { display: flex; flex-direction: column; gap: 6px; }
-  .reply-input { background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); border-radius: 3px; padding: 6px 8px; font-family: inherit; font-size: inherit; resize: vertical; min-height: 60px; width: 100%; box-sizing: border-box; }
-  .btn { padding: 4px 12px; border-radius: 3px; border: 1px solid var(--vscode-button-border, transparent); cursor: pointer; font-size: 0.85em; }
-  .btn-primary { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
-  .btn-primary:hover { background: var(--vscode-button-hoverBackground); }
-  .btn-secondary { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
-  .btn-secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
-  .empty { color: var(--vscode-descriptionForeground); font-style: italic; }
-  .linked-items-list { display: flex; flex-wrap: wrap; gap: 6px; }
-  .linked-item-btn { text-align: left; }
-  ${BUILD_SUMMARY_CSS}
-</style>
-</head>
-<body>
-<div class="toolbar">
-  <button class="btn btn-secondary" data-action="open-browser">Open in Browser</button>
-  <button class="btn btn-primary" data-action="start-working">Start Working</button>
-    <div class="state-edit">
-        <select id="stateSelect" aria-label="Work item state">${stateOptions}</select>
-        <button class="btn btn-primary" data-action="set-state">Update State</button>
-    </div>
-</div>
-
-<h1>
-  <span class="badge badge-type">${wiType}</span>
-  <span class="badge badge-state">${state}</span>
-  ${priorityHtml}
-  #${id}: ${title}
-</h1>
-
-<div class="section meta">
-  <table class="meta-table">
-    ${metaHtml}
-  </table>
-</div>
-
-<div class="section">
-  <h2>Description</h2>
-  <div class="description">${descriptionPlaceholder}</div>
-</div>
-
-<div class="section">
-  <h2>Linked Items (${linkedItems.length})</h2>
-  <div class="linked-items-list">${linkedItemsHtml}</div>
-</div>
-
-<div class="section">
-  <h2>Builds</h2>
-  ${buildsHtml}
-</div>
-
-<div class="section">
-  <h2>Comments (${comments.length})</h2>
-  ${commentsHtml}
-</div>
-
-<div class="section">
-  <h2>Add Comment</h2>
-  <div class="new-comment-form">
-    <textarea id="newCommentInput" class="reply-input" rows="4" placeholder="Write a comment…"></textarea>
-    <div><button class="btn btn-primary" data-action="add-comment">Add Comment</button></div>
-  </div>
-</div>
-
-<script nonce="${nonce}">
-const vscode = acquireVsCodeApi();
-
-document.querySelector('[data-action="open-browser"]')?.addEventListener('click', () => {
-    vscode.postMessage({ type: 'openInBrowser' });
-});
-
-document.querySelector('[data-action="start-working"]')?.addEventListener('click', () => {
-    vscode.postMessage({ type: 'startWorking' });
-});
-
-document.querySelector('[data-action="add-comment"]')?.addEventListener('click', () => {
-    const input = /** @type {HTMLTextAreaElement} */ (document.getElementById('newCommentInput'));
-    const content = input.value.trim();
-    if (!content) { return; }
-    vscode.postMessage({ type: 'addComment', content });
-    input.value = '';
-});
-
-document.querySelector('[data-action="set-state"]')?.addEventListener('click', () => {
-    const select = /** @type {HTMLSelectElement} */ (document.getElementById('stateSelect'));
-    if (!select.value) { return; }
-    vscode.postMessage({ type: 'setState', state: select.value });
-});
-
-document.querySelectorAll('[data-action="open-linked-item"]').forEach(btn => {
-    btn.addEventListener('click', () => {
-        const url = btn.getAttribute('data-url');
-        if (url) { vscode.postMessage({ type: 'openLinkedItem', url }); }
-    });
-});
-
-document.querySelectorAll('[data-action="open-build"]').forEach(button => {
-    button.addEventListener('click', () => {
-        const buildId = Number(button.getAttribute('data-build-id'));
-        if (Number.isFinite(buildId) && buildId > 0) {
-            vscode.postMessage({ type: 'openBuild', buildId });
-        }
-    });
-});
-
-// ---------------------------------------------------------------------------
-// Render the work item description.
-// The raw HTML from ADO is sanitized using an allowlist-based DOM walker so
-// that formatting is preserved while scripts and event handlers are removed.
-// The CSP (script-src 'nonce-...') provides an additional layer: even if a
-// script tag somehow survived sanitization it would be blocked by the CSP.
-// ---------------------------------------------------------------------------
-(function renderRichText() {
-    const rawDescriptionHtml = ${descriptionJson};
-    const rawCommentBodies = ${commentBodiesJson};
-
-    const ALLOWED_TAGS = new Set([
-        'p', 'br', 'div', 'span',
-        'b', 'strong', 'i', 'em', 'u', 's', 'strike', 'sub', 'sup',
-        'ul', 'ol', 'li',
-        'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-        'a', 'code', 'pre', 'blockquote',
-        'table', 'thead', 'tbody', 'tr', 'td', 'th',
-        'img', 'figure', 'figcaption'
-    ]);
-
-    /** Attributes allowed on any element. Keep this small for untrusted HTML. */
-    const GLOBAL_ATTRS = new Set(['class']);
-
-    /** Extra per-tag allowed attributes. */
-    const TAG_ATTRS = {
-        a:   new Set(['href', 'title', 'target', 'rel']),
-        img: new Set(['src', 'alt', 'width', 'height']),
-        td:  new Set(['colspan', 'rowspan', 'align']),
-        th:  new Set(['colspan', 'rowspan', 'scope', 'align']),
-        ol:  new Set(['type', 'start']),
-    };
-
-    /** Rewrite image sources to ensure they are fully qualified URLs. */
-    function rewriteImageSrc(url) {
-        if (!url) { return ''; }
-        const lower = url.toLowerCase();
-        // Already a full URL (https:// or http://)
-        if (lower.startsWith('https://') || lower.startsWith('http://')) {
-            return url;
-        }
-        // Data URI
-        if (lower.startsWith('data:')) {
-            return url;
-        }
-        // Relative path starting with / — assume it's on dev.azure.com
-        if (url.startsWith('/')) {
-            return 'https://dev.azure.com' + url;
-        }
-        // Other relative paths or incomplete URLs — still return as-is
-        // for CSP img-src to evaluate them
-        return url;
-    }
-
-    /** Returns true if the URL scheme is safe for href / src attributes. */
-    function isSafeUrl(url) {
-        const lower = url.trim().toLowerCase();
-        if (lower.startsWith('https://') ||
-            lower.startsWith('http://')  ||
-            lower.startsWith('#')         ||
-            lower.startsWith('/')) {
-            return true;
-        }
-        // Allow raster image data URIs only; exclude SVG which can embed JS.
-        if (lower.startsWith('data:image/')) {
-            const mimeEnd = lower.search(/[;,]/);
-            const mime = mimeEnd > 0 ? lower.slice(0, mimeEnd) : lower;
-            return mime !== 'data:image/svg+xml';
-        }
-        return false;
-    }
-
-    /**
-     * Recursively clean a DOM node.
-     * Returns a safe clone of the node, a DocumentFragment (when an
-     * unsupported element is unwrapped), or null to discard the node.
-     */
-    function cleanNode(node) {
-        if (node.nodeType === Node.TEXT_NODE) {
-            return document.createTextNode(node.textContent || '');
-        }
-        if (node.nodeType !== Node.ELEMENT_NODE) {
-            return null;
-        }
-
-        conslet attrValue = attr.value;
-            // Rewrite image sources to ensure they are fully qualified
-            if (name === 'src' && tag === 'img') {
-                attrValue = rewriteImageSrc(attrValue);
-            }
-            if ((name === 'href' || name === 'src') && !isSafeUrl(attrValue)) {
-                return; // strip unsafe URL
-            }
-            el.setAttribute(attr.name, attrVe element itself
-            const frag = document.createDocumentFragment();
-            Array.from(node.childNodes).forEach(child => {
-                const cleaned = cleanNode(child);
-                if (cleaned) { frag.appendChild(cleaned); }
-            });
-            return frag;
-        }
-
-        const el = document.createElement(tag);
-
-        // Copy only allowed attributes
-        Array.from(node.attributes).forEach(attr => {
-            const name = attr.name.toLowerCase();
-            const tagAttrs = TAG_ATTRS[tag];
-            if (!GLOBAL_ATTRS.has(name) && !(tagAttrs && tagAttrs.has(name))) {
-                return; // strip disallowed attribute
-            }
-            if ((name === 'href' || name === 'src') && !isSafeUrl(attr.value)) {
-                return; // strip unsafe URL
-            }
-            el.setAttribute(attr.name, attr.value);
-        });
-
-        // Force external links to open in the browser
-        if (tag === 'a') {
-            el.setAttribute('target', '_blank');
-            el.setAttribute('rel', 'noopener noreferrer');
-        }
-
-        Array.from(node.childNodes).forEach(child => {
-            const cleaned = cleanNode(child);
-            if (cleaned) { el.appendChild(cleaned); }
-        });
-
-        return el;
-    }
-
-    function renderInto(rawHtml, container) {
-        if (!rawHtml || !container) {
-            return;
-        }
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(rawHtml, 'text/html');
-        Array.from(doc.body.childNodes).forEach(child => {
-            const cleaned = cleanNode(child);
-            if (cleaned) { container.appendChild(cleaned); }
-        });
-    }
-
-    renderInto(rawDescriptionHtml, document.getElementById('description-content'));
-    rawCommentBodies.forEach((commentBody, index) => {
-        const container = document.getElementById('comment-content-' + index);
-        if (!container) {
-            return;
-        }
-        container.classList.toggle('plain-text', !!commentBody.isPlainText);
-        renderInto(commentBody.html, container);
-    });
-}());
-</script>
-</body>
-</html>`;
-    }
-
-    private _buildCommentHtml(comment: WorkItemComment, index: number): string {
-        const author = this._esc(
-            (comment.createdBy as { displayName?: string } | undefined)?.displayName ?? 'Unknown'
-        );
-        const date = this._formatDate(comment.createdDate);
-        return `
-<div class="comment">
-  <div class="comment-header">
-    <span class="comment-author">${author}</span>
-    <span class="comment-date">${date}</span>
-  </div>
-  <div class="comment-text" id="comment-content-${index}"></div>
-</div>`;
     }
 
     private _identityName(value: unknown): string | undefined {
@@ -677,14 +339,6 @@ document.querySelectorAll('[data-action="open-build"]').forEach(button => {
         } catch {
             return '';
         }
-    }
-
-    private _esc(text: string): string {
-        return text
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;');
     }
 
     private _formatError(err: unknown): string {
@@ -710,14 +364,11 @@ document.querySelectorAll('[data-action="open-build"]').forEach(button => {
         }
     }
 
-    private _stateOptions(currentState: string): string {
-        const states = this._allowedStates;
-        const options = states.includes(currentState) || !currentState
-            ? states
-            : [currentState, ...states];
-        return options
-            .map(state => `<option value="${this._esc(state)}"${state === currentState ? ' selected' : ''}>${this._esc(state)}</option>`)
-            .join('');
+    private _allowedStateList(currentState: string): string[] {
+        const states = this._allowedStates.includes(currentState) || !currentState
+            ? this._allowedStates
+            : [currentState, ...this._allowedStates];
+        return [...new Set(states.filter(Boolean))];
     }
 
     private _parseGitArtifactLink(
@@ -820,10 +471,6 @@ document.querySelectorAll('[data-action="open-build"]').forEach(button => {
             d.dispose();
         }
         this._disposables = [];
-    }
-
-    private _createNonce(): string {
-        return crypto.randomBytes(16).toString('hex');
     }
 
     private static panelKey(id: number, organization?: string, project?: string): string {

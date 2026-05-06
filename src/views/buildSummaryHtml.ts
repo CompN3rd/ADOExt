@@ -1,5 +1,6 @@
 import { BuildStatus, BuildResult } from 'azure-devops-node-api/interfaces/BuildInterfaces';
 import type { Build } from '../api/adoClient';
+import type { BuildSummaryStatusKind, BuildSummaryViewModel } from './webviewTypes';
 
 /**
  * Escapes HTML special characters in a string.
@@ -10,6 +11,10 @@ function esc(text: string): string {
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;');
+}
+
+function escAttr(text: string): string {
+    return esc(text).replace(/'/g, '&#39;');
 }
 
 /**
@@ -26,49 +31,73 @@ export const BUILD_SUMMARY_CSS = `
   .build-name { flex: 1; font-size: 0.9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .build-meta { font-size: 0.8em; color: var(--vscode-descriptionForeground); white-space: nowrap; }`;
 
-/**
- * Renders a single build as an HTML row with a status badge, build number,
- * pipeline name, requester, start time, and an "Open" button.
- */
-export function buildSummaryHtml(build: Build): string {
+export function buildSummaryData(build: Build): BuildSummaryViewModel {
     const buildId = build.id ?? 0;
-    const buildNumber = esc(build.buildNumber ?? `#${buildId}`);
-    const definitionName = esc(build.definition?.name ?? 'Unknown pipeline');
-    const requestedFor = esc(build.requestedFor?.displayName ?? '');
+    const buildNumber = build.buildNumber ?? `#${buildId}`;
+    const definitionName = build.definition?.name ?? 'Unknown pipeline';
+    const requestedFor = build.requestedFor?.displayName ?? '';
     const startTime = build.startTime ? new Date(build.startTime).toLocaleString() : '';
 
-    // Determine label and CSS class from build status/result
     let statusLabel: string;
-    let statusClass: string;
+    let statusKind: BuildSummaryStatusKind;
     const status = build.status;
     const result = build.result;
     if (status === BuildStatus.Completed) {
         if (result === BuildResult.Succeeded) {
             statusLabel = 'Succeeded';
-            statusClass = 'build-status-succeeded';
+            statusKind = 'succeeded';
         } else if (result === BuildResult.PartiallySucceeded) {
             statusLabel = 'Partially Succeeded';
-            statusClass = 'build-status-other';
+            statusKind = 'other';
         } else if (result === BuildResult.Failed) {
             statusLabel = 'Failed';
-            statusClass = 'build-status-failed';
+            statusKind = 'failed';
         } else {
             statusLabel = 'Canceled';
-            statusClass = 'build-status-other';
+            statusKind = 'other';
         }
     } else if (status === BuildStatus.InProgress) {
         statusLabel = 'In Progress';
-        statusClass = 'build-status-inprogress';
+        statusKind = 'inprogress';
     } else if (status === BuildStatus.NotStarted) {
         statusLabel = 'Queued';
-        statusClass = 'build-status-other';
+        statusKind = 'other';
     } else {
         statusLabel = 'Unknown';
-        statusClass = 'build-status-other';
+        statusKind = 'other';
     }
 
-    const openBtn = buildId
-        ? `<button class="btn btn-secondary" data-action="open-build" data-build-id="${buildId}">Open</button>`
+    return {
+        id: buildId,
+        buildNumber,
+        definitionName,
+        requestedFor,
+        startTime,
+        statusLabel,
+        statusKind
+    };
+}
+
+export function buildSummaryListHtml(builds: Build[], emptyLabel: string): string {
+    const buildsJson = JSON.stringify(builds.map(buildSummaryData));
+    return `<ado-build-list builds-json="${escAttr(buildsJson)}" empty-label="${escAttr(emptyLabel)}"></ado-build-list>`;
+}
+
+/**
+ * Renders a single build as an HTML row with a status badge, build number,
+ * pipeline name, requester, start time, and an "Open" button.
+ */
+export function buildSummaryHtml(build: Build): string {
+    const viewModel = buildSummaryData(build);
+    const buildNumber = esc(viewModel.buildNumber);
+    const definitionName = esc(viewModel.definitionName);
+    const requestedFor = esc(viewModel.requestedFor);
+    const startTime = viewModel.startTime;
+    const statusLabel = viewModel.statusLabel;
+    const statusClass = `build-status-${viewModel.statusKind}`;
+
+    const openBtn = viewModel.id
+        ? `<button class="btn btn-secondary" data-action="open-build" data-build-id="${viewModel.id}">Open</button>`
         : '';
 
     const metaParts = [definitionName, requestedFor, startTime].filter(Boolean);

@@ -4,6 +4,10 @@ A full-featured Azure DevOps integration for Visual Studio Code, bringing the po
 
 ## Changelog
 
+### 1.4.0
+- **Modernized webviews**: Rebuilt the PR details, work item details, backlog, board, sprint, and build summary panels on bundled Lit components. The extension host now focuses on loading Azure DevOps data and handling commands, while the webviews own rendering, responsive layout, and local interaction state.
+- **Shared webview foundation**: Added reusable webview document/CSP helpers, typed view models, typed message contracts, and a browser-side rich text renderer. This reduces large inline HTML templates in the extension host and makes future panel work easier to evolve consistently.
+
 ### 1.3.1
 - **Auth reliability**: The extension now automatically picks up token refreshes and session changes without requiring a window reload. The MCP server is also re-provisioned with a fresh token when the Microsoft authentication session changes.
 
@@ -260,8 +264,9 @@ We welcome contributions! Please feel free to open issues or pull requests on [G
 git clone https://github.com/CompN3rd/ADOExt
 cd ADOExt
 npm install
-npm run compile      # Build TypeScript
-npm run watch        # Watch mode during development
+npm run compile      # Build extension TypeScript and webview bundles
+npm run watch        # Watch extension TypeScript
+npm run watch:webviews # Watch bundled webview assets
 code .               # Open in VS Code for testing
 ```
 
@@ -311,6 +316,7 @@ npm install
 npm run compile
 # or for watch mode:
 npm run watch
+npm run watch:webviews
 ```
 
 Press `F5` in VS Code to launch the Extension Development Host.
