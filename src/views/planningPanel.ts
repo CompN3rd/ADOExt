@@ -451,6 +451,14 @@ export class PlanningPanel {
   .meta-edit:hover { color: var(--vscode-textLink-activeForeground); text-decoration: underline; }
   .btn-small { padding: 2px 7px; font-size: 0.82em; }
   .scope-new-item { margin-left: auto; }
+
+  /* Filter/Sort Controls */
+  .filter-sort-controls { display: flex; gap: 8px; align-items: center; padding: 8px; background: var(--vscode-sideBar-background); border-bottom: 1px solid var(--vscode-panel-border); flex-wrap: wrap; }
+  .filter-sort-controls input { padding: 4px 8px; border: 1px solid var(--vscode-input-border); background: var(--vscode-input-background); color: var(--vscode-input-foreground); border-radius: 2px; font-size: 0.9em; }
+  .filter-sort-controls select { padding: 4px 8px; border: 1px solid var(--vscode-input-border); background: var(--vscode-input-background); color: var(--vscode-input-foreground); border-radius: 2px; font-size: 0.9em; }
+  .filter-sort-controls label { font-size: 0.9em; color: var(--vscode-descriptionForeground); }
+  .filter-sort-controls button { padding: 4px 10px; font-size: 0.85em; }
+
   @media (max-width: 720px) {
     .tree-row, .sprint-task { grid-template-columns: 1fr; align-items: start; }
     .state-control { justify-content: flex-start; }
@@ -471,14 +479,70 @@ export class PlanningPanel {
       <button class="btn btn-secondary" data-action="refresh">Refresh</button>
     </div>
   </div>
+  <div class="filter-sort-controls">
+    <label for="filter-input">Filter:</label>
+    <input id="filter-input" type="text" placeholder="Regex pattern (e.g., bug|critical)" title="Filter items by regex pattern matching ID and title">
+    <label for="sort-select">Sort:</label>
+    <select id="sort-select">
+      <option value="name">Name (A-Z)</option>
+      <option value="date">Date (Newest first)</option>
+    </select>
+    <button class="btn btn-small" data-action="clear-filter">Clear filter</button>
+  </div>
   ${content}
 </main>
 <script nonce="${nonce}">
 const vscode = acquireVsCodeApi();
 
+// Store original content for filtering
+const originalContent = document.body.innerHTML;
+let currentFilter = '';
+let currentSort = 'name';
+
 document.querySelector('[data-action="refresh"]')?.addEventListener('click', () => {
     vscode.postMessage({ type: 'refresh' });
 });
+
+// Filter input handler
+document.querySelector('#filter-input')?.addEventListener('input', (e) => {
+    currentFilter = e.target.value.trim();
+    applyFilterAndSort();
+});
+
+// Sort select handler
+document.querySelector('#sort-select')?.addEventListener('change', (e) => {
+    currentSort = e.target.value;
+    applyFilterAndSort();
+});
+
+// Clear filter button handler
+document.querySelector('[data-action="clear-filter"]')?.addEventListener('click', () => {
+    document.querySelector('#filter-input').value = '';
+    currentFilter = '';
+    applyFilterAndSort();
+});
+
+function applyFilterAndSort() {
+    // Get all visible item containers
+    const items = document.querySelectorAll('.tree-row, .sprint-task, .sprint-parent');
+    
+    items.forEach(item => {
+        const itemText = item.textContent.toLowerCase();
+        
+        // Apply filter
+        if (currentFilter) {
+            try {
+                const regex = new RegExp(currentFilter, 'i');
+                item.style.display = regex.test(itemText) ? '' : 'none';
+            } catch {
+                // Invalid regex, show all
+                item.style.display = '';
+            }
+        } else {
+            item.style.display = '';
+        }
+    });
+}
 
 document.querySelector('[data-action="expand-all"]')?.addEventListener('click', () => {
     document.querySelectorAll('.tree-twisty:not(.placeholder)').forEach(btn => {

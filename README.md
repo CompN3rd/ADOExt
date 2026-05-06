@@ -4,6 +4,13 @@ A full-featured Azure DevOps integration for Visual Studio Code, bringing the po
 
 ## Changelog
 
+### 1.3.0
+- **Performance fix**: Limited pull request list to 100 items per scope to prevent UI freezing with large PR backlogs.
+- **Pull request filtering**: Added regex-based filtering for PRs; run `ADOExt: Filter Pull Requests` to filter by PR ID or title.
+- **Pull request sorting**: Added sort options for PRs: sort by Title (A-Z) or Date (Newest first) via `ADOExt: Sort Pull Requests` command.
+- **Backlog/Sprint filtering & sorting**: Added filter (regex) and sort (Name/Date) controls to the Backlog and Sprint planning views in the webview panel.
+- All filter and sort preferences persist in VS Code settings across sessions.
+
 ### 1.2.0
 - Added regex-based filtering for work items: run `ADOExt: Filter Work Items` to filter by work item ID or title.
 - Added sorting options for work items: sort by Name (A-Z) or Date (Newest first) via `ADOExt: Sort Work Items` command.

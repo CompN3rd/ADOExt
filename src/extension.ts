@@ -434,6 +434,48 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         })
     );
 
+    // Set pull request filter regex
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adoext.setPullRequestFilter', async () => {
+            const current = config.pullRequestFilterRegex;
+            const pattern = await vscode.window.showInputBox({
+                prompt: 'Enter regex pattern to filter pull requests (leave empty to clear)',
+                value: current,
+                validateInput: (value) => {
+                    if (!value.trim()) return undefined;
+                    try {
+                        new RegExp(value, 'i');
+                        return undefined;
+                    } catch {
+                        return 'Invalid regex pattern';
+                    }
+                }
+            });
+            if (pattern !== undefined) {
+                await config.setPullRequestFilterRegex(pattern);
+                pullRequestProvider.refresh();
+            }
+        })
+    );
+
+    // Set pull request sort order
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adoext.setPullRequestSort', async () => {
+            const current = config.pullRequestSortOrder;
+            const choice = await vscode.window.showQuickPick(
+                [
+                    { label: 'Title (A-Z)', value: 'title', picked: current === 'title' },
+                    { label: 'Date (Newest first)', value: 'date', picked: current === 'date' }
+                ],
+                { placeHolder: 'Choose sort order for pull requests' }
+            );
+            if (choice) {
+                await config.setPullRequestSortOrder(choice.value as 'title' | 'date');
+                pullRequestProvider.refresh();
+            }
+        })
+    );
+
     // Refresh a single pull request bucket independently
     context.subscriptions.push(
         vscode.commands.registerCommand('adoext.refreshPullRequestBucket', async (node: PullRequestBucketNode) => {

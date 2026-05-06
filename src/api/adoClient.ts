@@ -574,6 +574,10 @@ export class AdoClient {
             status: 1 // active
         };
 
+        // Limit PR results to prevent UI freeze with large lists
+        const PR_LIMIT = 100;
+        (searchCriteria as any).top = PR_LIMIT;
+
         if (filter === 'created' && currentUserDescriptor) {
             searchCriteria.creatorId = currentUserDescriptor;
         } else if (filter === 'assigned' && currentUserDescriptor) {

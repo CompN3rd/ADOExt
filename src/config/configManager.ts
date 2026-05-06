@@ -310,6 +310,25 @@ export class ConfigManager {
         await this.config.update('backlogSortOrder', value, vscode.ConfigurationTarget.Global);
     }
 
+    /** Regex pattern for filtering pull requests. */
+    get pullRequestFilterRegex(): string {
+        return this.config.get<string>('pullRequestFilterRegex', '');
+    }
+
+    async setPullRequestFilterRegex(value: string): Promise<void> {
+        await this.config.update('pullRequestFilterRegex', value, vscode.ConfigurationTarget.Global);
+    }
+
+    /** Sort order for pull requests ('title' | 'date'). */
+    get pullRequestSortOrder(): 'title' | 'date' {
+        const raw = this.config.get<string>('pullRequestSortOrder', 'title');
+        return raw === 'date' ? 'date' : 'title';
+    }
+
+    async setPullRequestSortOrder(value: 'title' | 'date'): Promise<void> {
+        await this.config.update('pullRequestSortOrder', value, vscode.ConfigurationTarget.Global);
+    }
+
     /** Returns true if both organization and project are configured. */
     get isConfigured(): boolean {
         const organizations = this.selectedOrganizations;

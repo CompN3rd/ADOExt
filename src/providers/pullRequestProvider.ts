@@ -661,19 +661,23 @@ export class PullRequestProvider implements vscode.TreeDataProvider<PullRequestT
     }
 
     private buildBucketNodes(prs: ScopedPullRequest[], forceScopeGrouping: boolean): PullRequestTreeNode[] {
-        if (prs.length === 0) {
+        // Apply filtering and sorting
+        const filtered = this.filterPullRequests(prs);
+        const sorted = this.sortPullRequests(filtered);
+
+        if (sorted.length === 0) {
             const node = new vscode.TreeItem('No pull requests found', vscode.TreeItemCollapsibleState.None);
             node.iconPath = new vscode.ThemeIcon('info');
             return [node];
         }
 
         if (!forceScopeGrouping) {
-            return [new PullRequestGroup(`Pull Requests (${prs.length})`, prs)];
+            return [new PullRequestGroup(`Pull Requests (${sorted.length})`, sorted)];
         }
 
         const byScope = new Map<string, ScopedPullRequest[]>();
         const scopeByKey = new Map<string, ProjectScope>();
-        for (const item of prs) {
+        for (const item of sorted) {
             const key = scopeKey(item.scope);
             scopeByKey.set(key, item.scope);
             if (!byScope.has(key)) {
@@ -685,6 +689,44 @@ export class PullRequestProvider implements vscode.TreeDataProvider<PullRequestT
         return [...byScope.entries()]
             .map(([key, scopedPrs]) => new PullRequestScopeGroup(scopeByKey.get(key)!, scopedPrs))
             .sort((left, right) => `${left.label}`.localeCompare(`${right.label}`));
+    }
+
+    private filterPullRequests(prs: ScopedPullRequest[]): ScopedPullRequest[] {
+        const pattern = this.config.pullRequestFilterRegex;
+        if (!pattern.trim()) {
+            return prs;
+        }
+
+        try {
+            const regex = new RegExp(pattern, 'i');
+            return prs.filter(item => {
+                const id = item.pr.pullRequestId ?? 0;
+                const title = item.pr.title ?? '';
+                const searchText = `#${id} ${title}`;
+                return regex.test(searchText);
+            });
+        } catch {
+            // Invalid regex; return all items
+            return prs;
+        }
+    }
+
+    private sortPullRequests(prs: ScopedPullRequest[]): ScopedPullRequest[] {
+        const order = this.config.pullRequestSortOrder;
+        if (order === 'date') {
+            return [...prs].sort((a, b) => {
+                const dateA = a.pr.creationDate?.getTime() ?? 0;
+                const dateB = b.pr.creationDate?.getTime() ?? 0;
+                return dateB - dateA; // Newest first
+            });
+        }
+
+        // Default: sort by title
+        return [...prs].sort((a, b) => {
+            const titleA = (a.pr.title ?? '').toLowerCase();
+            const titleB = (b.pr.title ?? '').toLowerCase();
+            return titleA.localeCompare(titleB);
+        });
     }
 
     private async loadPullRequests(
