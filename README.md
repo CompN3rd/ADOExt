@@ -30,6 +30,7 @@ A full-featured Azure DevOps integration for Visual Studio Code, bringing the po
 ### 📋 **Work Item Management**
 - **Browse & Filter** — View work items assigned to you, created by you, or across your entire portfolio
 - **Multi-Org Aggregation** — Work items aggregate seamlessly across selected organizations and projects, grouped by project and state
+- **Regex Filtering & Sorting** — Filter work items by regex pattern (ID, title) and sort by name or creation date; buttons in the Work Items view header
 - **Rich Details Panel** — One-click to open full work item details in a dedicated webview panel
   - Edit title, description, state, priority, assignee, area path, iteration, and tags
   - View and participate in discussion comments
@@ -63,6 +64,7 @@ A full-featured Azure DevOps integration for Visual Studio Code, bringing the po
 
 ### ✅ **Pull Request Management**
 - **Browse PRs** — View active pull requests (yours, created, assigned to you, all) aggregated across organizations/projects
+- **Regex Filtering & Sorting** — Filter PRs by regex pattern (ID, title) and sort by title or creation date; buttons in the Pull Requests view header
 - **Inline Review** — Expand PRs in the tree to see all comment threads; reply, resolve, or reopen directly from the sidebar
 - **Rich PR Details Panel** — One-click to see full PR information, discussions, and reviewer status
 - **Familiar Review UX** — The pull request review flow is inspired by the GitHub Pull Requests and Issues extension for VS Code, adapted for Azure DevOps workflows
@@ -77,6 +79,7 @@ A full-featured Azure DevOps integration for Visual Studio Code, bringing the po
 ### 📦 **Backlog, Sprints & Boards**
 - **Hierarchical Backlog** — View parent/child work item relationships in a collapsible tree
 - **Sprint Planning** — Browse work grouped by sprint/iteration with drag-and-drop reordering
+- **Regex Filtering & Sorting** — Filter and sort items in Backlog and Sprint views by regex pattern or name/date (controls in the editor view toolbar)
 - **Board View** — See work organized by state columns (To Do, In Progress, Done, etc.)
 - **Editor Views** — Open Backlog and Board editor views for wider planning layouts
 - **State Changes** — Update work item state from planning views; sidebar automatically refreshes

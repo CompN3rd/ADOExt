@@ -521,14 +521,14 @@ export class PlanningPanel {
     </div>
   </div>
   <div class="filter-sort-controls">
-    <label for="filter-input">Filter:</label>
-    <input id="filter-input" type="text" placeholder="Regex pattern (e.g., bug|critical)" title="Filter items by regex pattern matching ID and title">
-    <label for="sort-select">Sort:</label>
-    <select id="sort-select">
+    <label for="filter-input">🔍 Filter:</label>
+    <input id="filter-input" type="text" placeholder="e.g., bug|critical" title="Filter items by regex pattern. Match against ID and title. Leave empty to show all.">
+    <label for="sort-select">📊 Sort:</label>
+    <select id="sort-select" title="Sort items alphabetically or by creation date">
       <option value="name">Name (A-Z)</option>
       <option value="date">Date (Newest first)</option>
     </select>
-    <button class="btn btn-small" data-action="clear-filter">Clear filter</button>
+    <button class="btn btn-small" data-action="clear-filter" title="Clear filter to show all items">Clear</button>
   </div>
   ${content}
 </main>
