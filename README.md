@@ -50,6 +50,7 @@ A full-featured Azure DevOps integration for Visual Studio Code, bringing the po
 - **Browse PRs** — View active pull requests (yours, created, assigned to you, all) aggregated across organizations/projects
 - **Inline Review** — Expand PRs in the tree to see all comment threads; reply, resolve, or reopen directly from the sidebar
 - **Rich PR Details Panel** — One-click to see full PR information, discussions, and reviewer status
+- **Familiar Review UX** — The pull request review flow is inspired by the GitHub Pull Requests and Issues extension for VS Code, adapted for Azure DevOps workflows
 - **Native Diff Editor** — Review changes in VS Code's native multi-diff editor (same UX as GitHub PR extension)
   - All changed files visible at once
   - Inline PR comments in the gutter
