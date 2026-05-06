@@ -380,6 +380,30 @@
         "title": "Open Pull Request in Browser",
         "category": "ADOExt",
         "icon": "$(link-external)"
+      },
+      {
+        "command": "adoext.setWorkItemFilter",
+        "title": "Filter Work Items",
+        "category": "ADOExt",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "adoext.setWorkItemSort",
+        "title": "Sort Work Items",
+        "category": "ADOExt",
+        "icon": "$(sort-precedence)"
+      },
+      {
+        "command": "adoext.setPullRequestFilter",
+        "title": "Filter Pull Requests",
+        "category": "ADOExt",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "adoext.setPullRequestSort",
+        "title": "Sort Pull Requests",
+        "category": "ADOExt",
+        "icon": "$(sort-precedence)"
       }
     ],
     "menus": {
@@ -406,6 +430,16 @@
         },
         {
           "command": "adoext.createWorkItem",
+          "when": "view == adoext.workItems",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.setWorkItemFilter",
+          "when": "view == adoext.workItems",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.setWorkItemSort",
           "when": "view == adoext.workItems",
           "group": "navigation"
         },
@@ -461,6 +495,16 @@
         },
         {
           "command": "adoext.savePullRequestQuery",
+          "when": "view == adoext.pullRequests",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.setPullRequestFilter",
+          "when": "view == adoext.pullRequests",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.setPullRequestSort",
           "when": "view == adoext.pullRequests",
           "group": "navigation"
         }

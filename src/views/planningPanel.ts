@@ -453,11 +453,52 @@ export class PlanningPanel {
   .scope-new-item { margin-left: auto; }
 
   /* Filter/Sort Controls */
-  .filter-sort-controls { display: flex; gap: 8px; align-items: center; padding: 8px; background: var(--vscode-sideBar-background); border-bottom: 1px solid var(--vscode-panel-border); flex-wrap: wrap; }
-  .filter-sort-controls input { padding: 4px 8px; border: 1px solid var(--vscode-input-border); background: var(--vscode-input-background); color: var(--vscode-input-foreground); border-radius: 2px; font-size: 0.9em; }
-  .filter-sort-controls select { padding: 4px 8px; border: 1px solid var(--vscode-input-border); background: var(--vscode-input-background); color: var(--vscode-input-foreground); border-radius: 2px; font-size: 0.9em; }
-  .filter-sort-controls label { font-size: 0.9em; color: var(--vscode-descriptionForeground); }
-  .filter-sort-controls button { padding: 4px 10px; font-size: 0.85em; }
+  .filter-sort-controls { 
+    display: flex; 
+    gap: 10px; 
+    align-items: center; 
+    padding: 10px 12px; 
+    background: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-sideBar-background)); 
+    border-bottom: 1px solid var(--vscode-panel-border); 
+    flex-wrap: wrap;
+    font-size: 0.9em;
+  }
+  .filter-sort-controls label { 
+    color: var(--vscode-descriptionForeground); 
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .filter-sort-controls input, .filter-sort-controls select { 
+    padding: 4px 8px; 
+    border: 1px solid var(--vscode-input-border); 
+    background: var(--vscode-input-background); 
+    color: var(--vscode-input-foreground); 
+    border-radius: 3px; 
+    font-size: 0.9em;
+    min-width: 160px;
+  }
+  .filter-sort-controls select {
+    min-width: auto;
+  }
+  .filter-sort-controls input:focus, .filter-sort-controls select:focus {
+    outline: none;
+    border-color: var(--vscode-focusBorder);
+    box-shadow: 0 0 0 1px var(--vscode-focusBorder);
+  }
+  .filter-sort-controls button { 
+    padding: 4px 10px; 
+    font-size: 0.85em;
+    background: var(--vscode-button-secondaryBackground);
+    color: var(--vscode-button-secondaryForeground);
+    border: 1px solid var(--vscode-input-border);
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .filter-sort-controls button:hover {
+    background: var(--vscode-button-secondaryHoverBackground);
+  }
 
   @media (max-width: 720px) {
     .tree-row, .sprint-task { grid-template-columns: 1fr; align-items: start; }
