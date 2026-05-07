@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import type { AdoClient, GitPullRequest, GitPullRequestCommentThread, Comment, GitPullRequestStatus, PolicyEvaluationRecord } from '../api/adoClient';
 import { GitStatusState, PolicyEvaluationStatus, PullRequestAsyncStatus, PullRequestMergeFailureType } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
-import { isToolIdentity } from '../utils/prCommentIdentity';
+import { isToolIdentity, isSystemThread } from '../utils/prCommentIdentity';
 import {
     resolveProjectScopes,
     scopeKey,
@@ -808,9 +808,12 @@ export class PullRequestProvider implements vscode.TreeDataProvider<PullRequestT
             const meaningful = (threads ?? []).filter(
                 thread => (thread.comments ?? []).some(comment => !!comment.content) && !thread.isDeleted
             );
+            const withoutSystem = this.config.hideSystemPullRequestThreads
+                ? meaningful.filter(thread => !isSystemThread(thread))
+                : meaningful;
             const visible = this.config.showResolvedPullRequestThreads
-                ? meaningful
-                : meaningful.filter(thread => thread.status !== 2 && thread.status !== 4);
+                ? withoutSystem
+                : withoutSystem.filter(thread => thread.status !== 2 && thread.status !== 4);
             if (visible.length === 0) {
                 const label = this.config.showResolvedPullRequestThreads
                     ? 'No comments'

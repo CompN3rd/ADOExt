@@ -278,6 +278,10 @@ export class ConfigManager {
         await this.config.update('showResolvedPullRequestThreads', value, vscode.ConfigurationTarget.Global);
     }
 
+    get hideSystemPullRequestThreads(): boolean {
+        return this.config.get<boolean>('hideSystemPullRequestThreads', true);
+    }
+
     // --------- Filtering & Sorting --------- //
 
     /** Regex pattern for filtering work items. */

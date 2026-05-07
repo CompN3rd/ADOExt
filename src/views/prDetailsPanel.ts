@@ -5,7 +5,7 @@ import { PullRequestReviewVotes, GitStatusState, PolicyEvaluationStatus, PullReq
 import type { AdoClient } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
 import { showErrorMessage, showInformationMessage, showWarningMessage } from '../utils/notifications';
-import { isToolIdentity } from '../utils/prCommentIdentity';
+import { isToolIdentity, isSystemThread } from '../utils/prCommentIdentity';
 import { buildSummaryData } from './buildSummaryHtml';
 import { buildWebviewDocument, webviewAssetRoots } from './webviewHtml';
 import type { NamedBadgeRowViewModel, PrDetailsMessage, PrDetailsViewModel } from './webviewTypes';
@@ -284,6 +284,9 @@ export class PrDetailsPanel {
         const meaningfulThreads = (threads ?? []).filter(
             thread => (thread.comments ?? []).some(comment => !!comment.content) && !thread.isDeleted
         );
+        const visibleThreads = this._config.hideSystemPullRequestThreads
+            ? meaningfulThreads.filter(thread => !isSystemThread(thread))
+            : meaningfulThreads;
 
         return {
             prId,
@@ -305,7 +308,7 @@ export class PrDetailsPanel {
             branchStatuses: this._buildBranchStatusRows(pr),
             checks: this._buildCheckRows(statuses, policies),
             showResolvedThreads: this._config.showResolvedPullRequestThreads,
-            threads: meaningfulThreads.map(thread => {
+            threads: visibleThreads.map(thread => {
                 const isResolved = thread.status === 2 || thread.status === 4;
                 const firstComment = thread.comments?.[0];
                 return {

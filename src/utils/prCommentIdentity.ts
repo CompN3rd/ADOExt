@@ -10,5 +10,23 @@ export function isToolIdentity(identity: IdentityRef | undefined): boolean {
     }
 
     const descriptor = identity.descriptor?.toLowerCase() ?? '';
-    return descriptor.startsWith('svc.');
+    if (descriptor.startsWith('svc.')) {
+        return true;
+    }
+
+    const displayName = identity.displayName?.trim() ?? '';
+    if (displayName.startsWith('Microsoft.VisualStudio.Services.')) {
+        return true;
+    }
+
+    return false;
+}
+
+export function isSystemThread(thread: { comments?: Array<{ author?: IdentityRef; content?: string }> }): boolean {
+    const first = thread.comments?.[0];
+    if (!first?.author) {
+        return false;
+    }
+    const displayName = first.author.displayName?.trim() ?? '';
+    return displayName.startsWith('Microsoft.VisualStudio.Services.');
 }

@@ -914,6 +914,11 @@
           "default": true,
           "description": "Show resolved pull request comment threads in tree and details views."
         },
+        "adoext.hideSystemPullRequestThreads": {
+          "type": "boolean",
+          "default": true,
+          "description": "Hide system-generated PR threads (e.g. ref-update notifications from Microsoft.VisualStudio.Services.TFS). These threads are not visible in the Azure DevOps web UI either."
+        },
         "adoext.notifyOnNewPullRequestComments": {
           "type": "boolean",
           "default": true,
