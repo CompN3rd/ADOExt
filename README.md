@@ -281,6 +281,7 @@ Happy coding! 🎉
 | `adoext.pullRequestQueries` | `[]` | Saved pull request bucket definitions. These are appended below built-in buckets in the Pull Requests view. |
 | `adoext.activePullRequestQueryId` | `""` | Legacy pull request query selector state kept for backward compatibility with older versions. |
 | `adoext.pullRequestFilter` | `mine` | Legacy pull request filter used as compatibility fallback when older settings are migrated. |
+| `adoext.useRemoteWorkItemIcons` | `true` | Prefer Azure DevOps work item type icons (including custom process icons). Disable to force bundled fallback icons. |
 
 ### Query and bucket management
 
@@ -402,4 +403,3 @@ The MCP server supports multiple authentication methods (checked in order by the
 3. **PAT** (`PERSONAL_ACCESS_TOKEN`) — Personal access token for automation scenarios. The wrapper maps `AZURE_DEVOPS_PAT` → `PERSONAL_ACCESS_TOKEN`.
 
 The **ADOExt: Copy MCP Server Configuration** command generates env-var-based configurations that reference `${ADO_MCP_AUTH_TOKEN}` or `${PERSONAL_ACCESS_TOKEN}` — tokens are never embedded directly in the config file.
-

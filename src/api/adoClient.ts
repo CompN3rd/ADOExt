@@ -102,6 +102,7 @@ const BUILDS_PER_QUERY = 10;
 const PLANNING_WORK_ITEM_TOTAL_LIMIT = 1000;
 const WORK_ITEM_BATCH_SIZE = 200;
 const COMPLETION_WORK_ITEM_LIMIT = 50;
+const WORK_ITEM_TYPE_ICON_CACHE_TTL_MS = 60 * 60 * 1000;
 
 /**
  * Thin wrapper around the azure-devops-node-api package.
@@ -114,6 +115,7 @@ export class AdoClient {
     private _organization: string | undefined;
     private _currentUserIds = new Map<string, string>();
     private _workItemStatesByType = new Map<string, string[]>();
+    private _workItemTypeIconsByScope = new Map<string, { expiresAt: number; icons: Map<string, string> }>();
 
     constructor(private _accessToken: string) {}
 
@@ -125,6 +127,7 @@ export class AdoClient {
         this._currentUserIds.clear();
         this._connectionsByOrganization.clear();
         this._workItemStatesByType.clear();
+        this._workItemTypeIconsByScope.clear();
 
         if (!token.trim()) {
             this.disconnect();
@@ -158,6 +161,7 @@ export class AdoClient {
         this._connectionsByOrganization.clear();
         this._currentUserIds.clear();
         this._workItemStatesByType.clear();
+        this._workItemTypeIconsByScope.clear();
     }
 
     private get connection(): azdev.WebApi {
@@ -542,6 +546,35 @@ export class AdoClient {
             .filter((name): name is string => typeof name === 'string' && name.trim().length > 0);
         this._workItemStatesByType.set(cacheKey, names);
         return names;
+    }
+
+    async getWorkItemTypeIconUrls(
+        project: string,
+        organization?: string
+    ): Promise<Map<string, string>> {
+        const cacheKey = JSON.stringify([organization ?? this._organization ?? null, project]);
+        const now = Date.now();
+        const cached = this._workItemTypeIconsByScope.get(cacheKey);
+        if (cached && cached.expiresAt > now) {
+            return cached.icons;
+        }
+
+        const types = await this.getWorkItemTypes(project, organization);
+        const icons = new Map<string, string>();
+        for (const type of types) {
+            const name = type.name?.trim();
+            const iconUrl = type.icon?.url?.trim();
+            if (!name || !iconUrl) {
+                continue;
+            }
+            icons.set(normalizeWorkItemTypeName(name), iconUrl);
+        }
+
+        this._workItemTypeIconsByScope.set(cacheKey, {
+            expiresAt: now + WORK_ITEM_TYPE_ICON_CACHE_TTL_MS,
+            icons
+        });
+        return icons;
     }
 
     // -------------------------------------------------------------------------
@@ -1324,4 +1357,8 @@ export class AdoClient {
         }
         return 'edit';
     }
+}
+
+function normalizeWorkItemTypeName(value: string): string {
+    return value.trim().toLowerCase();
 }

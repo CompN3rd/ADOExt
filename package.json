@@ -844,6 +844,11 @@
           },
           "description": "Work item states to hide from the Work Items tree view (e.g. [\"Done\", \"Removed\"]). Applied as a client-side filter; case-insensitive."
         },
+        "adoext.useRemoteWorkItemIcons": {
+          "type": "boolean",
+          "default": true,
+          "description": "Prefer work item type icons from Azure DevOps metadata (including custom process icons). Disable to always use bundled fallback icons."
+        },
         "adoext.workItemSortOrder": {
           "type": "string",
           "default": "name",

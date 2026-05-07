@@ -85,6 +85,7 @@ export interface WorkItemDetailsViewModel {
     id: number;
     title: string;
     workItemType: string;
+    workItemTypeIconUrl?: string;
     state: string;
     stateColor: string;
     priority?: number;

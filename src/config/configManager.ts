@@ -277,6 +277,11 @@ export class ConfigManager {
         return this.config.get<string>('workItemFilterRegex', '');
     }
 
+    /** Whether to prefer work item type icons from Azure DevOps metadata. */
+    get useRemoteWorkItemIcons(): boolean {
+        return this.config.get<boolean>('useRemoteWorkItemIcons', true);
+    }
+
     async setWorkItemFilterRegex(value: string): Promise<void> {
         await this.config.update('workItemFilterRegex', value, vscode.ConfigurationTarget.Global);
     }

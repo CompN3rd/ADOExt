@@ -24,6 +24,7 @@ class AdoWorkItemDetailsApp extends LitElement {
         .btn-secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
         select { background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground); border: 1px solid var(--vscode-dropdown-border); border-radius: 3px; padding: 3px 22px 3px 6px; }
         .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.8em; font-weight: 600; margin-right: 6px; }
+        .type-icon { width: 16px; height: 16px; vertical-align: text-bottom; margin-right: 6px; object-fit: contain; }
         .badge-type { background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
         .badge-state { background: color-mix(in srgb, var(--state-color) 14%, transparent); color: var(--state-color); border: 1px solid color-mix(in srgb, var(--state-color) 38%, transparent); }
         .priority-1 { background: #c84b3222; color: #c84b32; border: 1px solid #c84b3255; }
@@ -68,7 +69,7 @@ class AdoWorkItemDetailsApp extends LitElement {
                 <button class="btn-primary" @click=${() => this.send({ type: 'startWorking' })}>Start Working</button>
                 <div class="state-edit"><select aria-label="Work item state" .value=${this.selectedState} @change=${this.onStateChanged}>${this.data.allowedStates.map(state => html`<option value=${state}>${state}</option>`)}</select><button class="btn-primary" @click=${this.updateState}>Update State</button></div>
             </div>
-            <h1><span class="badge badge-type">${this.data.workItemType}</span><span class="badge badge-state">${this.data.state}</span>${this.data.priority !== undefined ? html`<span class="badge priority-${this.data.priority}">P${this.data.priority}</span>` : nothing}#${this.data.id}: ${this.data.title}</h1>
+            <h1>${this.data.workItemTypeIconUrl ? html`<img class="type-icon" src=${this.data.workItemTypeIconUrl} alt="" />` : nothing}<span class="badge badge-type">${this.data.workItemType}</span><span class="badge badge-state">${this.data.state}</span>${this.data.priority !== undefined ? html`<span class="badge priority-${this.data.priority}">P${this.data.priority}</span>` : nothing}#${this.data.id}: ${this.data.title}</h1>
             <section class="section"><table class="meta-table">${this.data.metaRows.map(row => html`<tr><td class="meta-label">${row.label}</td><td>${row.value}</td></tr>`)}</table></section>
             <section class="section"><h2>Description</h2><div class="description"><ado-rich-text .htmlText=${this.data.descriptionHtml} empty-label="No description provided."></ado-rich-text></div></section>
             <section class="section"><h2>Linked Items (${this.data.linkedItems.length})</h2><div class="linked-items-list">${this.renderLinkedItems()}</div></section>
