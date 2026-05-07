@@ -6,6 +6,8 @@ export type ProjectSelectionsByOrganization = Record<string, string[]>;
 export type WorkItemQueryFilter = 'assigned' | 'created' | 'mentioned' | 'all';
 export type PullRequestQueryFilter = 'mine' | 'created' | 'assigned' | 'all';
 export type PlanningAssignedFilter = 'all' | 'mine';
+export type PipelineRunsFilter = 'all' | 'running' | 'failed' | 'mine';
+export type PipelineRunsGroupBy = 'none' | 'repository' | 'branch';
 
 export interface SavedQueryDefinition<TFilter extends string> {
     id: string;
@@ -364,6 +366,48 @@ export class ConfigManager {
 
     async setPullRequestSortOrder(value: 'title' | 'date'): Promise<void> {
         await this.config.update('pullRequestSortOrder', value, vscode.ConfigurationTarget.Global);
+    }
+
+    /** Filter for pipeline runs in the Pipelines tree view. */
+    get pipelineRunsFilter(): PipelineRunsFilter {
+        const raw = this.config.get<string>('pipelineRunsFilter', 'all');
+        switch (raw) {
+            case 'running':
+            case 'failed':
+            case 'mine':
+            case 'all':
+                return raw;
+            default:
+                return 'all';
+        }
+    }
+
+    async setPipelineRunsFilter(value: PipelineRunsFilter): Promise<void> {
+        await this.config.update('pipelineRunsFilter', value, vscode.ConfigurationTarget.Global);
+    }
+
+    /** Optional grouping for pipeline runs under each project scope. */
+    get pipelineRunsGroupBy(): PipelineRunsGroupBy {
+        const raw = this.config.get<string>('pipelineRunsGroupBy', 'none');
+        switch (raw) {
+            case 'repository':
+            case 'branch':
+            case 'none':
+                return raw;
+            default:
+                return 'none';
+        }
+    }
+
+    async setPipelineRunsGroupBy(value: PipelineRunsGroupBy): Promise<void> {
+        await this.config.update('pipelineRunsGroupBy', value, vscode.ConfigurationTarget.Global);
+    }
+
+    /** Max runs fetched per scope for the Pipelines view (1-100). */
+    get pipelineRunsTop(): number {
+        const raw = this.config.get<number>('pipelineRunsTop', 25);
+        const top = Math.floor(raw);
+        return Math.max(1, Math.min(100, top));
     }
 
     /** Returns true if both organization and project are configured. */

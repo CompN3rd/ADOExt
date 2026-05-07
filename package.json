@@ -78,6 +78,12 @@
           "name": "Pull Requests",
           "icon": "media/icons/ado.svg",
           "contextualTitle": "Azure DevOps Pull Requests"
+        },
+        {
+          "id": "adoext.pipelines",
+          "name": "Pipelines",
+          "icon": "media/icons/ado.svg",
+          "contextualTitle": "Azure DevOps Pipelines"
         }
       ]
     },
@@ -151,6 +157,12 @@
       {
         "command": "adoext.refreshBoards",
         "title": "Refresh Boards",
+        "category": "ADOExt",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "adoext.refreshPipelines",
+        "title": "Refresh Pipelines",
         "category": "ADOExt",
         "icon": "$(refresh)"
       },
@@ -508,23 +520,28 @@
           "group": "navigation"
         },
         {
+          "command": "adoext.refreshPipelines",
+          "when": "view == adoext.pipelines",
+          "group": "navigation"
+        },
+        {
           "command": "adoext.setPlanningAssignedFilter",
           "when": "view == adoext.boards",
           "group": "navigation"
         },
         {
           "command": "adoext.selectOrganization",
-          "when": "view == adoext.workItems || view == adoext.backlog || view == adoext.sprints || view == adoext.boards || view == adoext.pullRequests",
+          "when": "view == adoext.workItems || view == adoext.backlog || view == adoext.sprints || view == adoext.boards || view == adoext.pullRequests || view == adoext.pipelines",
           "group": "navigation"
         },
         {
           "command": "adoext.detectRepoContext",
-          "when": "view == adoext.workItems || view == adoext.backlog || view == adoext.sprints || view == adoext.boards || view == adoext.pullRequests",
+          "when": "view == adoext.workItems || view == adoext.backlog || view == adoext.sprints || view == adoext.boards || view == adoext.pullRequests || view == adoext.pipelines",
           "group": "navigation"
         },
         {
           "command": "adoext.signIn",
-          "when": "(view == adoext.workItems || view == adoext.backlog || view == adoext.sprints || view == adoext.boards || view == adoext.pullRequests) && !adoext.isSignedIn",
+          "when": "(view == adoext.workItems || view == adoext.backlog || view == adoext.sprints || view == adoext.boards || view == adoext.pullRequests || view == adoext.pipelines) && !adoext.isSignedIn",
           "group": "navigation"
         },
         {

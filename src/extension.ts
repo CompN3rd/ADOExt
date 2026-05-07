@@ -11,6 +11,7 @@ import {
     PullRequestThreadNode
 } from './providers/pullRequestProvider';
 import { BacklogProvider, SprintProvider, BoardProvider } from './providers/planningProviders';
+import { PipelinesProvider } from './providers/pipelinesProvider';
 import { WorkItemIconResolver } from './providers/workItemIconResolver';
 import { PlanningPanel } from './views/planningPanel';
 import { PrCommentController, type CommentReply } from './views/prCommentController';
@@ -111,6 +112,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         backlogProvider.refresh();
         sprintProvider.refresh();
         boardProvider.refresh();
+        pipelinesProvider.refresh();
     }
 
     // -------------------------------------------------------------------------
@@ -122,13 +124,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const backlogProvider = new BacklogProvider(client, config, workItemIconResolver);
     const sprintProvider = new SprintProvider(client, config, workItemIconResolver);
     const boardProvider = new BoardProvider(client, config, workItemIconResolver);
+    const pipelinesProvider = new PipelinesProvider(client, config);
 
     context.subscriptions.push(
         vscode.window.registerTreeDataProvider('adoext.workItems', workItemProvider),
         vscode.window.registerTreeDataProvider('adoext.pullRequests', pullRequestProvider),
         vscode.window.registerTreeDataProvider('adoext.backlog', backlogProvider),
         vscode.window.registerTreeDataProvider('adoext.sprints', sprintProvider),
-        vscode.window.registerTreeDataProvider('adoext.boards', boardProvider)
+        vscode.window.registerTreeDataProvider('adoext.boards', boardProvider),
+        vscode.window.registerTreeDataProvider('adoext.pipelines', pipelinesProvider)
     );
 
     // -------------------------------------------------------------------------
@@ -334,6 +338,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('adoext.refreshBoards', async () => {
             await ensureSignedIn();
             boardProvider.refresh();
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adoext.refreshPipelines', async () => {
+            await ensureSignedIn();
+            pipelinesProvider.refresh();
         })
     );
 
