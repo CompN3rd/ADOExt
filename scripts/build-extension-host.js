@@ -14,6 +14,7 @@ const buildOptions = {
     format: 'cjs',
     target: 'node18',
     sourcemap: false,
+    minify: !watch,
     legalComments: 'none',
     external: ['vscode'],
     logLevel: 'info'
