@@ -308,6 +308,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             await config.setWorkItemHideStates(newHideStates);
             updateWorkItemDoneHiddenContext();
             workItemProvider.refresh();
+            backlogProvider.refresh();
+            sprintProvider.refresh();
+            boardProvider.refresh();
         })
     );
 

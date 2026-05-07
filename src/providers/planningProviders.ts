@@ -350,7 +350,17 @@ async function loadPlanningItems(
         const workItems = await client.getPlanningWorkItems(scope.project, scope.organization);
         return workItems.map(workItem => ({ workItem, scope }));
     });
-    return { scopes, items: results.flat() };
+    let items = results.flat();
+
+    const hideStates = new Set(config.workItemHideStates.map(s => s.toLowerCase()));
+    if (hideStates.size > 0) {
+        items = items.filter(item => {
+            const state = (item.workItem.fields?.['System.State'] as string | undefined) ?? '';
+            return !hideStates.has(state.toLowerCase());
+        });
+    }
+
+    return { scopes, items };
 }
 
 function groupByScope(items: ScopedWorkItem[], contextValue: string): PlanningScopeGroup[] {
