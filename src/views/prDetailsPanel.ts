@@ -54,6 +54,14 @@ export class PrDetailsPanel {
         new PrDetailsPanel(context, client, config, pr, key, scope);
     }
 
+    static async refreshAllOpenPanels(): Promise<void> {
+        await Promise.allSettled(
+            [...PrDetailsPanel._panels.values()].map(panel =>
+                panel._refresh(panel._client, panel._config, panel._pr)
+            )
+        );
+    }
+
     private constructor(
         private readonly _context: vscode.ExtensionContext,
         private readonly _client: AdoClient,
