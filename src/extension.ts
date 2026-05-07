@@ -11,6 +11,7 @@ import {
     PullRequestThreadNode
 } from './providers/pullRequestProvider';
 import { BacklogProvider, SprintProvider, BoardProvider } from './providers/planningProviders';
+import { WorkItemIconResolver } from './providers/workItemIconResolver';
 import { PlanningPanel } from './views/planningPanel';
 import { PrCommentController, type CommentReply } from './views/prCommentController';
 import { PrDiffCache, PrDiffContentProvider, PR_DIFF_SCHEME } from './views/prContentProvider';
@@ -113,11 +114,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // -------------------------------------------------------------------------
     // Tree providers
     // -------------------------------------------------------------------------
-    const workItemProvider = new WorkItemProvider(client, config);
+    const workItemIconResolver = new WorkItemIconResolver(client, config);
+    const workItemProvider = new WorkItemProvider(client, config, workItemIconResolver);
     const pullRequestProvider = new PullRequestProvider(client, config);
-    const backlogProvider = new BacklogProvider(client, config);
-    const sprintProvider = new SprintProvider(client, config);
-    const boardProvider = new BoardProvider(client, config);
+    const backlogProvider = new BacklogProvider(client, config, workItemIconResolver);
+    const sprintProvider = new SprintProvider(client, config, workItemIconResolver);
+    const boardProvider = new BoardProvider(client, config, workItemIconResolver);
 
     context.subscriptions.push(
         vscode.window.registerTreeDataProvider('adoext.workItems', workItemProvider),

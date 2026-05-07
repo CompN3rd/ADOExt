@@ -9,6 +9,8 @@ import {
     type ProjectScope
 } from './projectScopes';
 import { mapWithConcurrencyLimit } from '../utils/async';
+import { bundledWorkItemTypeIconFile } from '../utils/workItemTypeIcons';
+import { WorkItemIconResolver } from './workItemIconResolver';
 
 const MAX_CONCURRENT_SCOPE_REQUESTS = 4;
 
@@ -49,7 +51,8 @@ export class WorkItemNode extends vscode.TreeItem {
     constructor(
         public readonly workItem: WorkItem,
         scope?: ProjectScope,
-        collapsibleState = vscode.TreeItemCollapsibleState.None
+        collapsibleState = vscode.TreeItemCollapsibleState.None,
+        iconPath?: vscode.ThemeIcon | vscode.Uri
     ) {
         const id = workItem.id ?? 0;
         const title = workItem.fields?.['System.Title'] as string ?? '(no title)';
@@ -67,7 +70,7 @@ export class WorkItemNode extends vscode.TreeItem {
             scope ? `Project: ${scopeLabel(scope)}` : undefined
         ].filter(Boolean).join('\n');
         this.contextValue = 'workItem';
-        this.iconPath = typeIcon(wiType);
+        this.iconPath = iconPath ?? bundledTypeIcon(wiType);
 
         this.command = {
             command: 'adoext.viewWorkItemDetails',
@@ -98,8 +101,8 @@ export function stateIcon(state: string): vscode.ThemeIcon {
     }
 }
 
-export function typeIcon(wiType: string): vscode.ThemeIcon | vscode.Uri {
-    const fileName = workItemTypeIconFile(wiType);
+function bundledTypeIcon(wiType: string): vscode.ThemeIcon | vscode.Uri {
+    const fileName = bundledWorkItemTypeIconFile(wiType);
     if (fileName) {
         const extension = vscode.extensions.getExtension('MarcKassubeck.adoext');
         if (extension) {
@@ -108,28 +111,6 @@ export function typeIcon(wiType: string): vscode.ThemeIcon | vscode.Uri {
     }
 
     return new vscode.ThemeIcon('issues');
-}
-
-function workItemTypeIconFile(wiType: string): string | undefined {
-    switch (wiType.trim().toLowerCase()) {
-        case 'bug':
-            return 'bug.svg';
-        case 'task':
-            return 'task.svg';
-        case 'epic':
-            return 'epic.svg';
-        case 'feature':
-            return 'feature.svg';
-        case 'user story':
-            return 'user-story.svg';
-        case 'product backlog item':
-        case 'pbi':
-            return 'product-backlog-item.svg';
-        case 'issue':
-            return 'issue.svg';
-        default:
-            return undefined;
-    }
 }
 
 type WorkItemTreeNode =
@@ -144,11 +125,19 @@ export class WorkItemProvider implements vscode.TreeDataProvider<WorkItemTreeNod
     readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
     private _loading = false;
+    private readonly _iconResolver: WorkItemIconResolver;
 
     constructor(
         private readonly client: AdoClient,
-        private readonly config: ConfigManager
-    ) {}
+        private readonly config: ConfigManager,
+        iconResolver?: WorkItemIconResolver
+    ) {
+        this._iconResolver = iconResolver ?? new WorkItemIconResolver(client, config);
+    }
+
+    get iconResolver(): WorkItemIconResolver {
+        return this._iconResolver;
+    }
 
     refresh(): void {
         this._onDidChangeTreeData.fire();
@@ -164,7 +153,15 @@ export class WorkItemProvider implements vscode.TreeDataProvider<WorkItemTreeNod
         }
 
         if (element instanceof WorkItemStateGroup) {
-            return element.items.map(item => new WorkItemNode(item.workItem, item.scope));
+            return element.items.map(item => {
+                const workItemType = (item.workItem.fields?.['System.WorkItemType'] as string | undefined) ?? '';
+                return new WorkItemNode(
+                    item.workItem,
+                    item.scope,
+                    vscode.TreeItemCollapsibleState.None,
+                    this._iconResolver.resolve(workItemType, item.scope)
+                );
+            });
         }
 
         if (this._loading) {
@@ -183,6 +180,7 @@ export class WorkItemProvider implements vscode.TreeDataProvider<WorkItemTreeNod
                 return [this.createConfigureNode()];
             }
 
+            await this._iconResolver.loadForScopes(scopes);
             const scopedItems = await this.loadWorkItems(scopes);
             if (scopedItems.length === 0) {
                 const node = new vscode.TreeItem('No work items found', vscode.TreeItemCollapsibleState.None);

@@ -3,6 +3,7 @@ import type { WorkItem, WorkItemComment, Build } from '../api/adoClient';
 import type { AdoClient } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
 import { showErrorMessage, showInformationMessage, showWarningMessage } from '../utils/notifications';
+import { bundledWorkItemTypeIconFile, normalizeWorkItemTypeName } from '../utils/workItemTypeIcons';
 import { buildSummaryData } from './buildSummaryHtml';
 import { buildWebviewDocument, webviewAssetRoots } from './webviewHtml';
 import type { WorkItemDetailsMessage, WorkItemDetailsViewModel } from './webviewTypes';
@@ -46,6 +47,7 @@ export class WorkItemDetailsPanel {
     private _disposables: vscode.Disposable[] = [];
     private _allowedStates: string[] = [];
     private _linkedItems: LinkedItem[] = [];
+    private _workItemTypeIconUrl: string | undefined;
 
     static async show(
         context: vscode.ExtensionContext,
@@ -164,6 +166,22 @@ export class WorkItemDetailsPanel {
         } catch (err) {
             this._allowedStates = [];
             showWarningMessage(`Failed to load work item states: ${this._formatError(err)}`);
+        }
+
+        const workItemType = (fullItem.fields?.['System.WorkItemType'] as string | undefined) ?? '';
+        this._workItemTypeIconUrl = this._bundledTypeIconUrl(workItemType);
+        if (config.useRemoteWorkItemIcons) {
+            try {
+                if (workItemType) {
+                    const iconUrls = await client.getWorkItemTypeIconUrls(project, organization);
+                    const remoteIconUrl = this._sanitizeIconUrl(iconUrls.get(normalizeWorkItemTypeName(workItemType)));
+                    if (remoteIconUrl) {
+                        this._workItemTypeIconUrl = remoteIconUrl;
+                    }
+                }
+            } catch {
+                // Fall back to the bundled icon badge presentation in the webview.
+            }
         }
 
         const repositoryNames = await this._resolveRepositoryNames(fullItem, project, organization);
@@ -305,6 +323,7 @@ export class WorkItemDetailsPanel {
             id,
             title,
             workItemType,
+            workItemTypeIconUrl: this._workItemTypeIconUrl,
             state,
             stateColor: this._stateColor(state),
             priority,
@@ -343,6 +362,27 @@ export class WorkItemDetailsPanel {
 
     private _formatError(err: unknown): string {
         return err instanceof Error ? err.message : String(err);
+    }
+
+    private _sanitizeIconUrl(value: string | undefined): string | undefined {
+        if (!value) {
+            return undefined;
+        }
+        try {
+            const uri = vscode.Uri.parse(value);
+            return uri.scheme === 'https' ? uri.toString(true) : undefined;
+        } catch {
+            return undefined;
+        }
+    }
+
+    private _bundledTypeIconUrl(workItemType: string): string | undefined {
+        const fileName = bundledWorkItemTypeIconFile(workItemType);
+        if (!fileName) {
+            return undefined;
+        }
+        const uri = vscode.Uri.joinPath(this._context.extensionUri, 'media', 'icons', 'workitems', fileName);
+        return this._panel.webview.asWebviewUri(uri).toString(true);
     }
 
     private _stateColor(state: string): string {
