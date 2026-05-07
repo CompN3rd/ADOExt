@@ -30,7 +30,8 @@ import type {
     CommentThreadStatus,
     IdentityRefWithVote
 } from 'azure-devops-node-api/interfaces/GitInterfaces';
-import type { Build } from 'azure-devops-node-api/interfaces/BuildInterfaces';
+import type { Build, BuildDefinition, BuildDefinitionReference, Timeline } from 'azure-devops-node-api/interfaces/BuildInterfaces';
+import { BuildStatus, BuildResult } from 'azure-devops-node-api/interfaces/BuildInterfaces';
 import type { TeamProject } from 'azure-devops-node-api/interfaces/CoreInterfaces';
 import type { IdentityRef, JsonPatchDocument, JsonPatchOperation, ResourceRef } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
 import type { PolicyEvaluationRecord } from 'azure-devops-node-api/interfaces/PolicyInterfaces';
@@ -51,9 +52,12 @@ export type {
     IdentityRef,
     TeamProject,
     Build,
+    BuildDefinition,
+    BuildDefinitionReference,
+    Timeline,
     PolicyEvaluationRecord
 };
-export { GitStatusState, PolicyEvaluationStatus, PullRequestAsyncStatus, PullRequestMergeFailureType, PullRequestStatus };
+export { GitStatusState, PolicyEvaluationStatus, PullRequestAsyncStatus, PullRequestMergeFailureType, PullRequestStatus, BuildStatus, BuildResult };
 
 /** A flattened representation of a saved query (non-folder). */
 export interface SavedQuery {
@@ -1162,6 +1166,131 @@ export class AdoClient {
             )
         );
         return builds.filter((b): b is Build => b !== undefined);
+    }
+
+    // -------------------------------------------------------------------------
+    // Pipelines
+    // -------------------------------------------------------------------------
+
+    /**
+     * List all pipeline definitions (build definitions) in a project.
+     */
+    async getPipelineDefinitions(
+        project: string,
+        organization?: string
+    ): Promise<BuildDefinitionReference[]> {
+        const buildApi: IBuildApi = await this.getConnectionFor(organization).getBuildApi();
+        const definitions = await buildApi.getDefinitions(project);
+        return definitions ?? [];
+    }
+
+    /**
+     * Get recent pipeline runs (builds) for a project.
+     * Optionally filter by definition ID.
+     */
+    async getPipelineRuns(
+        project: string,
+        definitionId?: number,
+        top: number = 50,
+        organization?: string
+    ): Promise<Build[]> {
+        const buildApi: IBuildApi = await this.getConnectionFor(organization).getBuildApi();
+        const builds = await buildApi.getBuilds(
+            project,
+            definitionId ? [definitionId] : undefined,
+            undefined, // queues
+            undefined, // buildNumber
+            undefined, // minTime
+            undefined, // maxTime
+            undefined, // requestedFor
+            undefined, // reasonFilter
+            undefined, // statusFilter
+            undefined, // resultFilter
+            undefined, // tagFilters
+            undefined, // properties
+            top
+        );
+        return builds ?? [];
+    }
+
+    /**
+     * Get a specific pipeline run (build) by ID.
+     */
+    async getPipelineRun(
+        project: string,
+        buildId: number,
+        organization?: string
+    ): Promise<Build | undefined> {
+        const buildApi: IBuildApi = await this.getConnectionFor(organization).getBuildApi();
+        try {
+            return await buildApi.getBuild(project, buildId);
+        } catch {
+            return undefined;
+        }
+    }
+
+    /**
+     * Get the timeline (stages, jobs, tasks) for a pipeline run.
+     */
+    async getPipelineTimeline(
+        project: string,
+        buildId: number,
+        organization?: string
+    ): Promise<Timeline | undefined> {
+        const buildApi: IBuildApi = await this.getConnectionFor(organization).getBuildApi();
+        try {
+            return await buildApi.getBuildTimeline(project, buildId);
+        } catch {
+            return undefined;
+        }
+    }
+
+    /**
+     * Queue a new pipeline run.
+     */
+    async queuePipelineRun(
+        project: string,
+        definitionId: number,
+        sourceBranch?: string,
+        organization?: string
+    ): Promise<Build | undefined> {
+        const buildApi: IBuildApi = await this.getConnectionFor(organization).getBuildApi();
+        try {
+            const build = await buildApi.queueBuild(
+                {
+                    definition: { id: definitionId },
+                    sourceBranch: sourceBranch
+                },
+                project
+            );
+            return build;
+        } catch {
+            return undefined;
+        }
+    }
+
+    /**
+     * Cancel a running pipeline build.
+     */
+    async cancelPipelineRun(
+        project: string,
+        buildId: number,
+        organization?: string
+    ): Promise<Build | undefined> {
+        const buildApi: IBuildApi = await this.getConnectionFor(organization).getBuildApi();
+        try {
+            const build = await buildApi.updateBuild(
+                {
+                    id: buildId,
+                    status: BuildStatus.Cancelling
+                },
+                project,
+                buildId
+            );
+            return build;
+        } catch {
+            return undefined;
+        }
     }
 
     get organization(): string | undefined {

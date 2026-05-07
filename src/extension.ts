@@ -10,6 +10,7 @@ import {
     PullRequestCommentNode,
     PullRequestThreadNode
 } from './providers/pullRequestProvider';
+import { PipelineProvider, PipelineBucketNode, PipelineRunNode } from './providers/pipelineProvider';
 import { BacklogProvider, SprintProvider, BoardProvider } from './providers/planningProviders';
 import { WorkItemIconResolver } from './providers/workItemIconResolver';
 import { PlanningPanel } from './views/planningPanel';
@@ -52,6 +53,12 @@ import {
     openPullRequestSourceBranch,
     openPullRequestCommit
 } from './commands/pullRequestCommands';
+import {
+    openPipelineRun,
+    viewPipelineRunDetails,
+    runPipeline,
+    cancelPipelineRun
+} from './commands/pipelineCommands';
 import {
     selectWorkItemQuery,
     saveWorkItemQuery,
@@ -108,6 +115,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     function refreshAllViews(): void {
         workItemProvider.refresh();
         pullRequestProvider.refresh();
+        pipelineProvider.refresh();
         backlogProvider.refresh();
         sprintProvider.refresh();
         boardProvider.refresh();
@@ -119,6 +127,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const workItemIconResolver = new WorkItemIconResolver(client, config);
     const workItemProvider = new WorkItemProvider(client, config, workItemIconResolver);
     const pullRequestProvider = new PullRequestProvider(client, config);
+    const pipelineProvider = new PipelineProvider(client, config);
     const backlogProvider = new BacklogProvider(client, config, workItemIconResolver);
     const sprintProvider = new SprintProvider(client, config, workItemIconResolver);
     const boardProvider = new BoardProvider(client, config, workItemIconResolver);
@@ -126,6 +135,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(
         vscode.window.registerTreeDataProvider('adoext.workItems', workItemProvider),
         vscode.window.registerTreeDataProvider('adoext.pullRequests', pullRequestProvider),
+        vscode.window.registerTreeDataProvider('adoext.pipelines', pipelineProvider),
         vscode.window.registerTreeDataProvider('adoext.backlog', backlogProvider),
         vscode.window.registerTreeDataProvider('adoext.sprints', sprintProvider),
         vscode.window.registerTreeDataProvider('adoext.boards', boardProvider)
@@ -757,6 +767,70 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     pullRequestProvider.refresh();
                 } catch (err) {
                     showErrorMessage(`Failed to add comment: ${err}`);
+                }
+            }
+        )
+    );
+
+    // -------------------------------------------------------------------------
+    // Pipeline commands
+    // -------------------------------------------------------------------------
+
+    // Refresh pipelines
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adoext.refreshPipelines', async () => {
+            await ensureSignedIn();
+            pipelineProvider.refresh();
+        })
+    );
+
+    // Refresh a single pipeline bucket
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adoext.refreshPipelineBucket', async (node: PipelineBucketNode) => {
+            if (!(await ensureSignedIn())) { return; }
+            pipelineProvider.refreshBucket(node);
+        })
+    );
+
+    // Open pipeline run in browser
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.openPipelineRun',
+            (node: PipelineRunNode) => openPipelineRun(node, client, config)
+        )
+    );
+
+    // View pipeline run details in webview
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.viewPipelineRunDetails',
+            (node: PipelineRunNode) => viewPipelineRunDetails(node, context, client, config)
+        )
+    );
+
+    // Re-run pipeline
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.runPipeline',
+            async (node: PipelineRunNode) => {
+                if (!(await ensureSignedIn())) { return; }
+                const updated = await runPipeline(node, client, config);
+                if (updated) {
+                    pipelineProvider.refresh();
+                }
+            }
+        )
+    );
+
+    // Cancel pipeline run
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.cancelPipelineRun',
+            async (node: PipelineRunNode) => {
+                if (!(await ensureSignedIn())) { return; }
+                const updated = await cancelPipelineRun(node, client, config);
+                if (updated) {
+                    pipelineProvider.refresh();
                 }
             }
         )

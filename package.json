@@ -78,6 +78,12 @@
           "name": "Pull Requests",
           "icon": "media/icons/ado.svg",
           "contextualTitle": "Azure DevOps Pull Requests"
+        },
+        {
+          "id": "adoext.pipelines",
+          "name": "Pipelines",
+          "icon": "media/icons/ado.svg",
+          "contextualTitle": "Azure DevOps Pipelines"
         }
       ]
     },
@@ -423,6 +429,42 @@
         "title": "Show/Hide Resolved PR Threads",
         "category": "ADOExt",
         "icon": "$(eye-closed)"
+      },
+      {
+        "command": "adoext.refreshPipelines",
+        "title": "Refresh Pipelines",
+        "category": "ADOExt",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "adoext.refreshPipelineBucket",
+        "title": "Refresh Bucket",
+        "category": "ADOExt",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "adoext.openPipelineRun",
+        "title": "Open Pipeline Run in Browser",
+        "category": "ADOExt",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "adoext.viewPipelineRunDetails",
+        "title": "View Pipeline Run Details",
+        "category": "ADOExt",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "adoext.runPipeline",
+        "title": "Re-run Pipeline",
+        "category": "ADOExt",
+        "icon": "$(play)"
+      },
+      {
+        "command": "adoext.cancelPipelineRun",
+        "title": "Cancel Pipeline Run",
+        "category": "ADOExt",
+        "icon": "$(stop)"
       }
     ],
     "menus": {
@@ -514,17 +556,17 @@
         },
         {
           "command": "adoext.selectOrganization",
-          "when": "view == adoext.workItems || view == adoext.backlog || view == adoext.sprints || view == adoext.boards || view == adoext.pullRequests",
+          "when": "view == adoext.workItems || view == adoext.backlog || view == adoext.sprints || view == adoext.boards || view == adoext.pullRequests || view == adoext.pipelines",
           "group": "navigation"
         },
         {
           "command": "adoext.detectRepoContext",
-          "when": "view == adoext.workItems || view == adoext.backlog || view == adoext.sprints || view == adoext.boards || view == adoext.pullRequests",
+          "when": "view == adoext.workItems || view == adoext.backlog || view == adoext.sprints || view == adoext.boards || view == adoext.pullRequests || view == adoext.pipelines",
           "group": "navigation"
         },
         {
           "command": "adoext.signIn",
-          "when": "(view == adoext.workItems || view == adoext.backlog || view == adoext.sprints || view == adoext.boards || view == adoext.pullRequests) && !adoext.isSignedIn",
+          "when": "(view == adoext.workItems || view == adoext.backlog || view == adoext.sprints || view == adoext.boards || view == adoext.pullRequests || view == adoext.pipelines) && !adoext.isSignedIn",
           "group": "navigation"
         },
         {
@@ -550,6 +592,11 @@
         {
           "command": "adoext.toggleResolvedPullRequestThreads",
           "when": "view == adoext.pullRequests",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.refreshPipelines",
+          "when": "view == adoext.pipelines",
           "group": "navigation"
         }
       ],
@@ -648,6 +695,31 @@
           "command": "adoext.reopenThread",
           "when": "viewItem == prCommentThreadResolved",
           "group": "inline"
+        },
+        {
+          "command": "adoext.refreshPipelineBucket",
+          "when": "viewItem == pipelineBucket",
+          "group": "inline"
+        },
+        {
+          "command": "adoext.viewPipelineRunDetails",
+          "when": "viewItem == pipelineRun",
+          "group": "inline"
+        },
+        {
+          "command": "adoext.openPipelineRun",
+          "when": "viewItem == pipelineRun",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.runPipeline",
+          "when": "viewItem == pipelineRun",
+          "group": "actions@1"
+        },
+        {
+          "command": "adoext.cancelPipelineRun",
+          "when": "viewItem == pipelineRun",
+          "group": "actions@2"
         }
       ],
       "comments/commentThread/context": [
