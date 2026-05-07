@@ -934,6 +934,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     updateWorkItemDoneHiddenContext();
                 }
                 refreshAllViews();
+                if (e.affectsConfiguration('adoext.planningAssignedFilter')) {
+                    void PlanningPanel.refreshOpenPanels();
+                }
                 if (
                     e.affectsConfiguration('adoext.notifyOnNewPullRequestComments') ||
                     e.affectsConfiguration('adoext.notifyOnPullRequestReviewRequests') ||

@@ -51,6 +51,12 @@ export class PlanningPanel {
         await panel.refresh();
     }
 
+    static async refreshOpenPanels(): Promise<void> {
+        await Promise.allSettled(
+            [...PlanningPanel._panels.values()].map(panel => panel.refresh())
+        );
+    }
+
     private constructor(
         private readonly _context: vscode.ExtensionContext,
         private readonly _kind: PlanningPanelKind,
