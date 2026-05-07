@@ -15,6 +15,7 @@ import { WorkItemIconResolver } from './providers/workItemIconResolver';
 import { PlanningPanel } from './views/planningPanel';
 import { PrCommentController, type CommentReply } from './views/prCommentController';
 import { PrDiffCache, PrDiffContentProvider, PR_DIFF_SCHEME } from './views/prContentProvider';
+import { PrDetailsPanel } from './views/prDetailsPanel';
 import { NotificationService } from './notifications/notificationService';
 import { PrCommentHandler } from './notifications/handlers/prCommentHandler';
 import { PrReviewRequestHandler } from './notifications/handlers/prReviewRequestHandler';
@@ -47,6 +48,7 @@ import {
     replyToComment,
     resolveThread,
     reopenThread,
+    toggleResolvedPullRequestThreads,
     openPullRequestSourceBranch,
     openPullRequestCommit
 } from './commands/pullRequestCommands';
@@ -689,6 +691,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             async (node: PullRequestThreadNode) => {
                 await reopenThread(node, client, config);
                 pullRequestProvider.refresh();
+            }
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.toggleResolvedPullRequestThreads',
+            async () => {
+                await toggleResolvedPullRequestThreads(config);
+                pullRequestProvider.refresh();
+                await PrDetailsPanel.refreshAllOpenPanels();
             }
         )
     );

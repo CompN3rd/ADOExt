@@ -35,11 +35,13 @@ export interface PrReviewActionViewModel {
 export interface PrCommentViewModel {
     author: string;
     content: string;
+    isTool: boolean;
 }
 
 export interface PrThreadViewModel {
     id: number;
     isResolved: boolean;
+    isToolThread: boolean;
     statusLabel: string;
     comments: PrCommentViewModel[];
 }
@@ -57,6 +59,7 @@ export interface PrDetailsViewModel {
     reviewActions: PrReviewActionViewModel[];
     branchStatuses: NamedBadgeRowViewModel[];
     checks: NamedBadgeRowViewModel[];
+    showResolvedThreads: boolean;
     threads: PrThreadViewModel[];
     builds: BuildSummaryViewModel[];
 }
@@ -137,6 +140,7 @@ export type PrDetailsMessage =
     | { type: 'addComment'; content: string }
     | { type: 'reply'; threadId: number; content: string }
     | { type: 'setStatus'; threadId: number; status: number }
+    | { type: 'setShowResolvedThreads'; showResolved: boolean }
     | { type: 'openBuild'; buildId: number };
 
 export type WorkItemDetailsMessage =

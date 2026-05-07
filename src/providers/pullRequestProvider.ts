@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import type { AdoClient, GitPullRequest, GitPullRequestCommentThread, Comment, GitPullRequestStatus, PolicyEvaluationRecord } from '../api/adoClient';
 import { GitStatusState, PolicyEvaluationStatus, PullRequestAsyncStatus, PullRequestMergeFailureType } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
+import { isToolIdentity, isSystemThread } from '../utils/prCommentIdentity';
 import {
     resolveProjectScopes,
     scopeKey,
@@ -114,11 +115,16 @@ export class PullRequestThreadNode extends vscode.TreeItem {
         this.project = scope?.project;
 
         const isResolved = thread.status === 2 /* Fixed */ || thread.status === 4; /* ByDesign */
-        this.description = isResolved ? 'Resolved' : 'Active';
+        const isToolThread = isToolIdentity(firstComment?.author);
+        this.description = `${isResolved ? 'Resolved' : 'Active'}${isToolThread ? ' • Tool' : ''}`;
         this.contextValue = isResolved ? 'prCommentThreadResolved' : 'prCommentThreadActive';
-        this.iconPath = isResolved
-            ? new vscode.ThemeIcon('pass', new vscode.ThemeColor('charts.green'))
-            : new vscode.ThemeIcon('comment');
+        if (isToolThread) {
+            this.iconPath = new vscode.ThemeIcon('hubot', new vscode.ThemeColor('descriptionForeground'));
+        } else {
+            this.iconPath = isResolved
+                ? new vscode.ThemeIcon('pass', new vscode.ThemeColor('charts.green'))
+                : new vscode.ThemeIcon('comment');
+        }
         this.tooltip = content;
     }
 }
@@ -141,10 +147,13 @@ export class PullRequestCommentNode extends vscode.TreeItem {
         this.organization = scope?.organization;
         this.project = scope?.project;
 
-        this.description = author;
+        const isToolComment = isToolIdentity(comment.author);
+        this.description = isToolComment ? `${author} (Tool)` : author;
         this.tooltip = `${author}: ${content}`;
         this.contextValue = 'prComment';
-        this.iconPath = new vscode.ThemeIcon('comment-discussion');
+        this.iconPath = isToolComment
+            ? new vscode.ThemeIcon('hubot', new vscode.ThemeColor('descriptionForeground'))
+            : new vscode.ThemeIcon('comment-discussion');
     }
 }
 
@@ -799,12 +808,21 @@ export class PullRequestProvider implements vscode.TreeDataProvider<PullRequestT
             const meaningful = (threads ?? []).filter(
                 thread => (thread.comments ?? []).some(comment => !!comment.content) && !thread.isDeleted
             );
-            if (meaningful.length === 0) {
-                const node = new vscode.TreeItem('No comments', vscode.TreeItemCollapsibleState.None);
+            const withoutSystem = this.config.hideSystemPullRequestThreads
+                ? meaningful.filter(thread => !isSystemThread(thread))
+                : meaningful;
+            const visible = this.config.showResolvedPullRequestThreads
+                ? withoutSystem
+                : withoutSystem.filter(thread => thread.status !== 2 && thread.status !== 4);
+            if (visible.length === 0) {
+                const label = this.config.showResolvedPullRequestThreads
+                    ? 'No comments'
+                    : 'No active comments';
+                const node = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.None);
                 node.iconPath = new vscode.ThemeIcon('comment');
                 return [node];
             }
-            return meaningful.map(thread => new PullRequestThreadNode(thread, pr, scope));
+            return visible.map(thread => new PullRequestThreadNode(thread, pr, scope));
         } catch (err) {
             const node = new vscode.TreeItem(`Error loading comments: ${err}`, vscode.TreeItemCollapsibleState.None);
             node.iconPath = new vscode.ThemeIcon('error');

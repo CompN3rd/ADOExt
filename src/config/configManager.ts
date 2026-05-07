@@ -270,6 +270,18 @@ export class ConfigManager {
         return Math.max(60, Math.floor(raw));
     }
 
+    get showResolvedPullRequestThreads(): boolean {
+        return this.config.get<boolean>('showResolvedPullRequestThreads', true);
+    }
+
+    async setShowResolvedPullRequestThreads(value: boolean): Promise<void> {
+        await this.config.update('showResolvedPullRequestThreads', value, vscode.ConfigurationTarget.Global);
+    }
+
+    get hideSystemPullRequestThreads(): boolean {
+        return this.config.get<boolean>('hideSystemPullRequestThreads', true);
+    }
+
     // --------- Filtering & Sorting --------- //
 
     /** Regex pattern for filtering work items. */

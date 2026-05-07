@@ -509,6 +509,15 @@ export async function reopenThread(
     }
 }
 
+export async function toggleResolvedPullRequestThreads(
+    config: ConfigManager
+): Promise<boolean> {
+    const nextValue = !config.showResolvedPullRequestThreads;
+    await config.setShowResolvedPullRequestThreads(nextValue);
+    showInformationMessage(nextValue ? 'Showing resolved pull request threads.' : 'Hiding resolved pull request threads.');
+    return nextValue;
+}
+
 // ---------------------------------------------------------------------------
 // Minimal VS Code Git extension API types for TypeScript
 // These mirror the public API shape without importing the full extension.

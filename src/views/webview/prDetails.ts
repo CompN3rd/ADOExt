@@ -9,7 +9,11 @@ class AdoPrDetailsApp extends LitElement {
     };
 
     static styles = css`
-        :host { display: block; }
+        :host {
+            display: block;
+            --tool-thread-textarea-min-height: 28px;
+            --tool-thread-textarea-font-size: 0.9em;
+        }
         * { box-sizing: border-box; }
         .shell { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); background: var(--vscode-editor-background); padding: 16px; min-height: 100vh; }
         h1 { font-size: 1.3em; margin: 0 0 4px; line-height: 1.35; }
@@ -42,15 +46,23 @@ class AdoPrDetailsApp extends LitElement {
         .thread { border: 1px solid var(--vscode-panel-border); border-radius: 4px; margin-bottom: 10px; }
         .thread-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; background: var(--vscode-sideBarSectionHeader-background); border-radius: 4px 4px 0 0; }
         .thread-status { font-size: 0.8em; color: var(--vscode-descriptionForeground); }
+        .thread-meta { display: flex; align-items: center; gap: 8px; }
         .resolved .thread-header { opacity: 0.7; }
+        .tool-thread { border-style: dashed; opacity: 0.9; }
         .comment { padding: 8px 10px; border-bottom: 1px solid var(--vscode-panel-border); }
+        .comment.tool { border-left: 3px solid var(--vscode-descriptionForeground); }
         .comment:last-child { border-bottom: none; }
-        .comment-author { font-weight: bold; font-size: 0.85em; margin-bottom: 2px; }
+        .comment-author { font-weight: bold; font-size: 0.85em; margin-bottom: 2px; display: flex; align-items: center; gap: 6px; }
+        .bot-badge { display: inline-flex; align-items: center; border: 1px solid var(--vscode-panel-border); border-radius: 999px; padding: 0 6px; font-size: 0.75em; font-weight: normal; color: var(--vscode-descriptionForeground); }
         .comment-content, .description { white-space: pre-wrap; word-break: break-word; }
         .description { font-family: var(--vscode-editor-font-family); }
         .reply-form, .new-comment-form { padding: 8px 10px; display: flex; gap: 6px; }
+        .reply-disclosure { padding: 8px 10px; }
+        .reply-disclosure > summary { cursor: pointer; color: var(--vscode-descriptionForeground); font-size: 0.85em; }
+        .reply-disclosure > .reply-form { padding: 8px 0 0; }
         .new-comment-form { padding: 0; flex-direction: column; }
         textarea { flex: 1; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); border-radius: 3px; padding: 4px 6px; font-family: inherit; font-size: inherit; resize: vertical; min-height: 32px; }
+        .tool-thread textarea { min-height: var(--tool-thread-textarea-min-height); font-size: var(--tool-thread-textarea-font-size); }
         .empty { color: var(--vscode-descriptionForeground); font-style: italic; }
         @media (max-width: 620px) { .reply-form { flex-direction: column; } .checks-list li { align-items: flex-start; flex-direction: column; } }
     `;
@@ -84,18 +96,65 @@ class AdoPrDetailsApp extends LitElement {
     }
 
     private renderThreads() {
-        return this.data.threads.length === 0
+        const resolvedCount = this.data.threads.filter(thread => thread.isResolved).length;
+        const visibleThreads = this.data.showResolvedThreads
+            ? this.data.threads
+            : this.data.threads.filter(thread => !thread.isResolved);
+
+        return html`
+            <div class="toolbar">
+                <button class="btn-secondary" @click=${this.toggleResolvedThreads}>
+                    ${this.data.showResolvedThreads ? 'Hide resolved threads' : `Show resolved threads (${resolvedCount})`}
+                </button>
+            </div>
+            ${visibleThreads.length === 0
             ? html`<p class="empty">No comment threads.</p>`
-            : html`${this.data.threads.map(thread => this.renderThread(thread))}`;
+            : html`${visibleThreads.map(thread => this.renderThread(thread))}`}
+        `;
     }
 
     private renderThread(thread: PrThreadViewModel) {
-        return html`<article class="thread ${thread.isResolved ? 'resolved' : ''}">
-            <div class="thread-header"><span class="thread-status">${thread.statusLabel}</span><button class="btn-secondary" @click=${() => this.setThreadStatus(thread)}>${thread.isResolved ? 'Reopen' : 'Resolve'}</button></div>
-            ${thread.comments.map(comment => html`<div class="comment"><div class="comment-author">${comment.author}</div><div class="comment-content">${comment.content}</div></div>`)}
-            <div class="reply-form"><textarea id="reply-${thread.id}" rows="2" placeholder="Reply..."></textarea><button class="btn-primary" @click=${() => this.reply(thread.id)}>Reply</button></div>
+        return html`<article class="thread ${thread.isResolved ? 'resolved' : ''} ${thread.isToolThread ? 'tool-thread' : ''}">
+            <div class="thread-header">
+                <div class="thread-meta">
+                    <span class="thread-status">${thread.statusLabel}</span>
+                    ${thread.isToolThread ? html`<span class="bot-badge">Bot</span>` : nothing}
+                </div>
+                <button class="btn-secondary" @click=${() => this.setThreadStatus(thread)}>${thread.isResolved ? 'Reopen' : 'Resolve'}</button>
+            </div>
+            ${thread.comments.map(comment => this.renderComment(comment))}
+            ${this.renderReplySection(thread)}
         </article>`;
     }
+
+    private renderComment(comment: PrThreadViewModel['comments'][number]) {
+        return html`<div class="comment ${comment.isTool ? 'tool' : ''}">
+            <div class="comment-author">
+                ${comment.author}
+                ${comment.isTool ? html`<span class="bot-badge">Bot</span>` : nothing}
+            </div>
+            <div class="comment-content">${comment.content}</div>
+        </div>`;
+    }
+
+    private renderReplySection(thread: PrThreadViewModel) {
+        const replyForm = html`<div class="reply-form">
+            <textarea id="reply-${thread.id}" rows="2" placeholder="Reply..."></textarea>
+            <button class="btn-primary" @click=${() => this.reply(thread.id)}>Reply</button>
+        </div>`;
+
+        return thread.isToolThread
+            ? html`<details class="reply-disclosure"><summary>Reply (expand)</summary>${replyForm}</details>`
+            : replyForm;
+    }
+
+    private toggleResolvedThreads = (): void => {
+        this.data = {
+            ...this.data,
+            showResolvedThreads: !this.data.showResolvedThreads
+        };
+        this.send({ type: 'setShowResolvedThreads', showResolved: this.data.showResolvedThreads });
+    };
 
     private addComment = (): void => {
         const input = this.renderRoot.querySelector<HTMLTextAreaElement>('#new-comment');

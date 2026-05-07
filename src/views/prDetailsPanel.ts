@@ -5,6 +5,7 @@ import { PullRequestReviewVotes, GitStatusState, PolicyEvaluationStatus, PullReq
 import type { AdoClient } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
 import { showErrorMessage, showInformationMessage, showWarningMessage } from '../utils/notifications';
+import { isToolIdentity, isSystemThread } from '../utils/prCommentIdentity';
 import { buildSummaryData } from './buildSummaryHtml';
 import { buildWebviewDocument, webviewAssetRoots } from './webviewHtml';
 import type { NamedBadgeRowViewModel, PrDetailsMessage, PrDetailsViewModel } from './webviewTypes';
@@ -51,6 +52,14 @@ export class PrDetailsPanel {
             return;
         }
         new PrDetailsPanel(context, client, config, pr, key, scope);
+    }
+
+    static async refreshAllOpenPanels(): Promise<void> {
+        await Promise.allSettled(
+            [...PrDetailsPanel._panels.values()].map(panel =>
+                panel._refresh(panel._client, panel._config, panel._pr)
+            )
+        );
     }
 
     private constructor(
@@ -162,6 +171,9 @@ export class PrDetailsPanel {
                 );
                 showInformationMessage('Comment added.');
                 await this._refresh(this._client, this._config, this._pr);
+            } else if (msg.type === 'setShowResolvedThreads') {
+                await this._config.setShowResolvedPullRequestThreads(msg.showResolved);
+                await this._refresh(this._client, this._config, this._pr);
             } else if (msg.type === 'openInBrowser') {
                 const org = organization;
                 const projectName = project;
@@ -272,6 +284,9 @@ export class PrDetailsPanel {
         const meaningfulThreads = (threads ?? []).filter(
             thread => (thread.comments ?? []).some(comment => !!comment.content) && !thread.isDeleted
         );
+        const visibleThreads = this._config.hideSystemPullRequestThreads
+            ? meaningfulThreads.filter(thread => !isSystemThread(thread))
+            : meaningfulThreads;
 
         return {
             prId,
@@ -292,15 +307,19 @@ export class PrDetailsPanel {
             ],
             branchStatuses: this._buildBranchStatusRows(pr),
             checks: this._buildCheckRows(statuses, policies),
-            threads: meaningfulThreads.map(thread => {
+            showResolvedThreads: this._config.showResolvedPullRequestThreads,
+            threads: visibleThreads.map(thread => {
                 const isResolved = thread.status === 2 || thread.status === 4;
+                const firstComment = thread.comments?.[0];
                 return {
                     id: thread.id ?? 0,
                     isResolved,
+                    isToolThread: isToolIdentity(firstComment?.author),
                     statusLabel: isResolved ? 'Resolved' : 'Active',
                     comments: (thread.comments ?? []).map((comment: Comment) => ({
                         author: comment.author?.displayName ?? 'Unknown',
-                        content: comment.content ?? ''
+                        content: comment.content ?? '',
+                        isTool: isToolIdentity(comment.author)
                     }))
                 };
             }),
