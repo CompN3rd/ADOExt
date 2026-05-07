@@ -5,6 +5,7 @@ export const ALL_PROJECTS = '*';
 export type ProjectSelectionsByOrganization = Record<string, string[]>;
 export type WorkItemQueryFilter = 'assigned' | 'created' | 'mentioned' | 'all';
 export type PullRequestQueryFilter = 'mine' | 'created' | 'assigned' | 'all';
+export type PlanningAssignedFilter = 'all' | 'mine';
 
 export interface SavedQueryDefinition<TFilter extends string> {
     id: string;
@@ -334,6 +335,16 @@ export class ConfigManager {
 
     async setBacklogSortOrder(value: 'name' | 'date'): Promise<void> {
         await this.config.update('backlogSortOrder', value, vscode.ConfigurationTarget.Global);
+    }
+
+    /** Scope planning views to all items or items assigned to the current user. */
+    get planningAssignedFilter(): PlanningAssignedFilter {
+        const raw = this.config.get<string>('planningAssignedFilter', 'all');
+        return raw === 'mine' ? 'mine' : 'all';
+    }
+
+    async setPlanningAssignedFilter(value: PlanningAssignedFilter): Promise<void> {
+        await this.config.update('planningAssignedFilter', value, vscode.ConfigurationTarget.Global);
     }
 
     /** Regex pattern for filtering pull requests. */

@@ -367,16 +367,23 @@ export class AdoClient {
      */
     async getPlanningWorkItems(
         project: string,
-        organization?: string
+        organization?: string,
+        assignedToMe = false
     ): Promise<WorkItem[]> {
         const witApi: IWorkItemTrackingApi = await this.getConnectionFor(organization).getWorkItemTrackingApi();
+        const whereClauses = [
+            `[System.TeamProject] = '${this.escapeWiqlString(project)}'`,
+            `[System.State] NOT IN ('Closed', 'Removed')`
+        ];
+        if (assignedToMe) {
+            whereClauses.push('[System.AssignedTo] = @me');
+        }
         const wiql = {
             query: `SELECT [System.Id], [System.Title], [System.State], [System.WorkItemType],
                            [System.AssignedTo], [System.IterationPath], [System.AreaPath], [System.Tags]
-                    FROM WorkItems
-                    WHERE [System.TeamProject] = '${this.escapeWiqlString(project)}'
-                      AND [System.State] NOT IN ('Closed', 'Removed')
-                    ORDER BY [System.ChangedDate] DESC`
+                     FROM WorkItems
+                     WHERE ${whereClauses.join('\n                       AND ')}
+                     ORDER BY [System.ChangedDate] DESC`
         };
 
         const result = await witApi.queryByWiql(wiql, { project }, false, PLANNING_WORK_ITEM_QUERY_LIMIT);

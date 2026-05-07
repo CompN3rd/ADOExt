@@ -63,6 +63,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 - **Hierarchical Backlog** — View parent/child work item relationships in a collapsible tree
 - **Sprint Planning** — Browse work grouped by sprint/iteration with drag-and-drop reordering
 - **Regex Filtering & Sorting** — Filter and sort items in Backlog and Sprint views by regex pattern or name/date (controls in the editor view toolbar)
+- **Assigned-to-Me Planning Filter** — Toggle Backlog/Sprint/Board trees between all items and items assigned to you
 - **Board View** — See work organized by state columns (To Do, In Progress, Done, etc.)
 - **Editor Views** — Open Backlog and Board editor views for wider planning layouts
 - **State Changes** — Update work item state from planning views; sidebar automatically refreshes
@@ -282,6 +283,7 @@ Happy coding! 🎉
 | `adoext.activePullRequestQueryId` | `""` | Legacy pull request query selector state kept for backward compatibility with older versions. |
 | `adoext.pullRequestFilter` | `mine` | Legacy pull request filter used as compatibility fallback when older settings are migrated. |
 | `adoext.useRemoteWorkItemIcons` | `true` | Prefer Azure DevOps work item type icons (including custom process icons). Disable to force bundled fallback icons. |
+| `adoext.planningAssignedFilter` | `all` | Assignee filter for Backlog/Sprint/Board views (`all` or `mine`). |
 
 ### Query and bucket management
 

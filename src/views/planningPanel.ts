@@ -51,6 +51,12 @@ export class PlanningPanel {
         await panel.refresh();
     }
 
+    static async refreshOpenPanels(): Promise<void> {
+        await Promise.allSettled(
+            [...PlanningPanel._panels.values()].map(panel => panel.refresh())
+        );
+    }
+
     private constructor(
         private readonly _context: vscode.ExtensionContext,
         private readonly _kind: PlanningPanelKind,
@@ -111,8 +117,9 @@ export class PlanningPanel {
     }
 
     private async loadItems(scopes: ProjectScope[]): Promise<ScopedWorkItem[]> {
+        const assignedToMe = this._config.planningAssignedFilter === 'mine';
         const results = await mapWithConcurrencyLimit(scopes, MAX_CONCURRENT_SCOPE_REQUESTS, async scope => {
-            const workItems = await this._client.getPlanningWorkItems(scope.project, scope.organization);
+            const workItems = await this._client.getPlanningWorkItems(scope.project, scope.organization, assignedToMe);
             return workItems.map(workItem => ({ workItem, scope }));
         });
         return results.flat();

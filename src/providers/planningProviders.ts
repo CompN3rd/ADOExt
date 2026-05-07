@@ -346,8 +346,9 @@ async function loadPlanningItems(
     config: ConfigManager
 ): Promise<{ scopes: ProjectScope[]; items: ScopedWorkItem[] }> {
     const scopes = await resolveProjectScopes(client, config);
+    const assignedToMe = config.planningAssignedFilter === 'mine';
     const results = await mapWithConcurrencyLimit(scopes, MAX_CONCURRENT_SCOPE_REQUESTS, async scope => {
-        const workItems = await client.getPlanningWorkItems(scope.project, scope.organization);
+        const workItems = await client.getPlanningWorkItems(scope.project, scope.organization, assignedToMe);
         return workItems.map(workItem => ({ workItem, scope }));
     });
     let items = results.flat();
