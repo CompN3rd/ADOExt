@@ -8,6 +8,13 @@
 - **Updated Azure DevOps logo**: Replaced the old cube/boards glyph with the official infinity-loop mark in both the marketplace icon and the sidebar/tree-view icon.
 - **Hide completed work items**: New setting `adoext.workItemHideStates` (defaults to `["Done"]`) and toggle command `adoext.toggleHideDoneWorkItems` to show/hide work items by state.
 - **Work item type icons**: Fetch type-specific icons from Azure DevOps metadata (including custom process icons) with scoped cache and bundled SVG fallback. Applies consistently across Work Items, Backlog, Sprint, and Board views. Controlled by `adoext.useRemoteWorkItemIcons`.
+- **Bot PR thread differentiation**: Visually distinguish bot/service comments in the PR tree and details views with a "Tool" label and `hubot` icon.
+- **Resolved-thread toggle**: New command `adoext.toggleResolvedPullRequestThreads` and setting `adoext.showResolvedPullRequestThreads` to show/hide resolved PR comment threads.
+- **Hide system PR threads**: New setting `adoext.hideSystemPullRequestThreads` (default `true`) to auto-hide system-generated threads (policy status updates, ref updates, vote notifications) that Azure DevOps also hides in its web UI.
+
+### Fixed
+
+- Work item state hiding (`adoext.workItemHideStates`) now applies to Backlog, Sprint, and Board views in addition to the Work Items tree.
 
 ## 1.4.3 — 2025-05-07
 
