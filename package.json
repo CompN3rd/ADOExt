@@ -2,7 +2,7 @@
   "name": "adoext",
   "displayName": "ADOExt - Azure DevOps Integration",
   "description": "Full-featured Azure DevOps integration for VS Code: work items, pull requests, comments, and multi-account/org support.",
-  "version": "1.4.3",
+  "version": "1.5.0",
   "publisher": "MarcKassubeck",
   "engines": {
     "vscode": "^1.101.0"
@@ -405,6 +405,12 @@
         "title": "Sort Pull Requests",
         "category": "ADOExt",
         "icon": "$(sort-precedence)"
+      },
+      {
+        "command": "adoext.toggleHideDoneWorkItems",
+        "title": "Toggle Hide Done Work Items",
+        "category": "ADOExt",
+        "icon": "$(eye-closed)"
       }
     ],
     "menus": {
@@ -441,6 +447,11 @@
         },
         {
           "command": "adoext.setWorkItemSort",
+          "when": "view == adoext.workItems",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.toggleHideDoneWorkItems",
           "when": "view == adoext.workItems",
           "group": "navigation"
         },
@@ -824,6 +835,14 @@
           "type": "string",
           "default": "",
           "description": "Regex pattern to filter work items by title. Leave empty to show all."
+        },
+        "adoext.workItemHideStates": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "description": "Work item states to hide from the Work Items tree view (e.g. [\"Done\", \"Removed\"]). Applied as a client-side filter; case-insensitive."
         },
         "adoext.workItemSortOrder": {
           "type": "string",

@@ -288,6 +288,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         })
     );
 
+    // Toggle hide "Done" work items
+    function updateWorkItemDoneHiddenContext(): void {
+        const isDoneHidden = config.workItemHideStates.some(s => s.toLowerCase() === 'done');
+        void vscode.commands.executeCommand('setContext', 'adoext.workItemDoneHidden', isDoneHidden);
+    }
+
+    updateWorkItemDoneHiddenContext();
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adoext.toggleHideDoneWorkItems', async () => {
+            const hideStates = config.workItemHideStates;
+            const isDoneHidden = hideStates.some(s => s.toLowerCase() === 'done');
+            const newHideStates = isDoneHidden
+                ? hideStates.filter(s => s.toLowerCase() !== 'done')
+                : [...hideStates, 'Done'];
+            await config.setWorkItemHideStates(newHideStates);
+            updateWorkItemDoneHiddenContext();
+            workItemProvider.refresh();
+        })
+    );
+
     context.subscriptions.push(
         vscode.commands.registerCommand('adoext.refreshBacklog', async () => {
             await ensureSignedIn();
@@ -869,6 +890,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 configDebounceTimer = undefined;
                 if (config.organization && auth.isSignedIn) {
                     client.connect(config.organization);
+                }
+                if (e.affectsConfiguration('adoext.workItemHideStates')) {
+                    updateWorkItemDoneHiddenContext();
                 }
                 refreshAllViews();
                 if (
