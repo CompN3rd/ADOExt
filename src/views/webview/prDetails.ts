@@ -9,7 +9,11 @@ class AdoPrDetailsApp extends LitElement {
     };
 
     static styles = css`
-        :host { display: block; }
+        :host {
+            display: block;
+            --tool-thread-textarea-min-height: 28px;
+            --tool-thread-textarea-font-size: 0.9em;
+        }
         * { box-sizing: border-box; }
         .shell { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); background: var(--vscode-editor-background); padding: 16px; min-height: 100vh; }
         h1 { font-size: 1.3em; margin: 0 0 4px; line-height: 1.35; }
@@ -58,7 +62,7 @@ class AdoPrDetailsApp extends LitElement {
         .reply-disclosure > .reply-form { padding: 8px 0 0; }
         .new-comment-form { padding: 0; flex-direction: column; }
         textarea { flex: 1; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); border-radius: 3px; padding: 4px 6px; font-family: inherit; font-size: inherit; resize: vertical; min-height: 32px; }
-        .tool-thread textarea { min-height: 28px; font-size: 0.9em; }
+        .tool-thread textarea { min-height: var(--tool-thread-textarea-min-height); font-size: var(--tool-thread-textarea-font-size); }
         .empty { color: var(--vscode-descriptionForeground); font-style: italic; }
         @media (max-width: 620px) { .reply-form { flex-direction: column; } .checks-list li { align-items: flex-start; flex-direction: column; } }
     `;
@@ -118,11 +122,30 @@ class AdoPrDetailsApp extends LitElement {
                 </div>
                 <button class="btn-secondary" @click=${() => this.setThreadStatus(thread)}>${thread.isResolved ? 'Reopen' : 'Resolve'}</button>
             </div>
-            ${thread.comments.map(comment => html`<div class="comment ${comment.isTool ? 'tool' : ''}"><div class="comment-author">${comment.author}${comment.isTool ? html`<span class="bot-badge">Bot</span>` : nothing}</div><div class="comment-content">${comment.content}</div></div>`)}
-            ${thread.isToolThread
-                ? html`<details class="reply-disclosure"><summary>Reply (collapsed)</summary><div class="reply-form"><textarea id="reply-${thread.id}" rows="2" placeholder="Reply..."></textarea><button class="btn-primary" @click=${() => this.reply(thread.id)}>Reply</button></div></details>`
-                : html`<div class="reply-form"><textarea id="reply-${thread.id}" rows="2" placeholder="Reply..."></textarea><button class="btn-primary" @click=${() => this.reply(thread.id)}>Reply</button></div>`}
+            ${thread.comments.map(comment => this.renderComment(comment))}
+            ${this.renderReplySection(thread)}
         </article>`;
+    }
+
+    private renderComment(comment: PrThreadViewModel['comments'][number]) {
+        return html`<div class="comment ${comment.isTool ? 'tool' : ''}">
+            <div class="comment-author">
+                ${comment.author}
+                ${comment.isTool ? html`<span class="bot-badge">Bot</span>` : nothing}
+            </div>
+            <div class="comment-content">${comment.content}</div>
+        </div>`;
+    }
+
+    private renderReplySection(thread: PrThreadViewModel) {
+        const replyForm = html`<div class="reply-form">
+            <textarea id="reply-${thread.id}" rows="2" placeholder="Reply..."></textarea>
+            <button class="btn-primary" @click=${() => this.reply(thread.id)}>Reply</button>
+        </div>`;
+
+        return thread.isToolThread
+            ? html`<details class="reply-disclosure"><summary>Reply (expand)</summary>${replyForm}</details>`
+            : replyForm;
     }
 
     private toggleResolvedThreads = (): void => {
