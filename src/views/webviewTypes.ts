@@ -10,6 +10,47 @@ export interface BuildSummaryViewModel {
     statusKind: BuildSummaryStatusKind;
 }
 
+export type PipelineTimelineStatusKind = 'succeeded' | 'failed' | 'running' | 'canceled' | 'other';
+
+export interface PipelineTimelineNodeViewModel {
+    id: string;
+    name: string;
+    recordType: string;
+    statusLabel: string;
+    statusKind: PipelineTimelineStatusKind;
+    startTime: string;
+    duration: string;
+    children: PipelineTimelineNodeViewModel[];
+}
+
+export interface PipelineArtifactViewModel {
+    name: string;
+    downloadUrl: string;
+}
+
+export interface PipelineRunDetailsViewModel {
+    id: number;
+    pipelineName: string;
+    runNumber: string;
+    statusLabel: string;
+    statusKind: PipelineTimelineStatusKind;
+    branch: string;
+    requestedBy: string;
+    reason: string;
+    startTime: string;
+    finishTime: string;
+    duration: string;
+    repository: string;
+    commit: string;
+    yamlFile: string;
+    canRerun: boolean;
+    canCancel: boolean;
+    webUrl: string;
+    logsUrl: string;
+    artifacts: PipelineArtifactViewModel[];
+    timeline: PipelineTimelineNodeViewModel[];
+}
+
 export interface BadgeViewModel {
     label: string;
     className: string;
@@ -173,3 +214,10 @@ export type PlanningMessage =
     | { type: 'setState'; id: number; state: string; organization?: string; project?: string }
     | { type: 'editAssignee'; id: number; organization?: string; project?: string }
     | { type: 'editIteration'; id: number; organization?: string; project?: string };
+
+export type PipelineRunDetailsMessage =
+    | { type: 'openInBrowser' }
+    | { type: 'openLogs' }
+    | { type: 'rerun' }
+    | { type: 'cancel' }
+    | { type: 'openArtifact'; url: string };

@@ -58,8 +58,16 @@ import {
     saveWorkItemQuery,
     savePullRequestQuery
 } from './commands/queryCommands';
+import {
+    cancelPipelineRun,
+    openPipelineRunInBrowser,
+    openPipelineRunLogsInBrowser,
+    rerunPipelineRun,
+    viewPipelineRunDetails
+} from './commands/pipelineCommands';
 import { McpServerManager } from './mcp/mcpServerManager';
 import { TodoCodeActionProvider } from './views/todoCodeActionProvider';
+import { PipelineRunDetailsPanel } from './views/pipelineRunDetailsPanel';
 import { AdoCompletionProvider } from './providers/completionProvider';
 import { installNotificationMirroring, showErrorMessage, showInformationMessage, showOutputChannel, showWarningMessage } from './utils/notifications';
 import { WorkItemHoverProvider, PullRequestHoverProvider } from './providers/hoverProvider';
@@ -344,6 +352,103 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(
         vscode.commands.registerCommand('adoext.refreshPipelines', async () => {
             await ensureSignedIn();
+            pipelinesProvider.refresh();
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.viewPipelineRunDetails',
+            async (node?: import('./providers/pipelinesProvider').PipelineRunNode) => {
+                if (!(await ensureSignedIn())) { return; }
+                await viewPipelineRunDetails(context, node, client, config);
+            }
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.openPipelineRun',
+            async (node?: import('./providers/pipelinesProvider').PipelineRunNode) => {
+                if (!(await ensureSignedIn())) { return; }
+                await openPipelineRunInBrowser(node, client, config);
+            }
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.openPipelineRunLogs',
+            async (node?: import('./providers/pipelinesProvider').PipelineRunNode) => {
+                if (!(await ensureSignedIn())) { return; }
+                await openPipelineRunLogsInBrowser(node, client, config);
+            }
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.rerunPipelineRun',
+            async (node?: import('./providers/pipelinesProvider').PipelineRunNode) => {
+                if (!(await ensureSignedIn())) { return; }
+                const newId = await rerunPipelineRun(node, client, config);
+                if (typeof newId === 'number' && newId > 0) {
+                    await PipelineRunDetailsPanel.show(context, client, config, newId, {
+                        organization: node?.organization,
+                        project: node?.project
+                    });
+                }
+                pipelinesProvider.refresh();
+            }
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.cancelPipelineRun',
+            async (node?: import('./providers/pipelinesProvider').PipelineRunNode) => {
+                if (!(await ensureSignedIn())) { return; }
+                await cancelPipelineRun(node, client, config);
+                pipelinesProvider.refresh();
+            }
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adoext.setPipelineRunsFilter', async () => {
+            const current = config.pipelineRunsFilter;
+            const choice = await vscode.window.showQuickPick(
+                [
+                    { label: 'All runs', value: 'all', picked: current === 'all' },
+                    { label: 'Running', value: 'running', picked: current === 'running' },
+                    { label: 'Failed', value: 'failed', picked: current === 'failed' },
+                    { label: 'Mine', value: 'mine', picked: current === 'mine' }
+                ],
+                { placeHolder: 'Choose which pipeline runs to show' }
+            );
+            if (!choice || choice.value === current) {
+                return;
+            }
+            await config.setPipelineRunsFilter(choice.value as typeof current);
+            pipelinesProvider.refresh();
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adoext.setPipelineRunsGroupBy', async () => {
+            const current = config.pipelineRunsGroupBy;
+            const choice = await vscode.window.showQuickPick(
+                [
+                    { label: 'No grouping', value: 'none', picked: current === 'none' },
+                    { label: 'Group by repository', value: 'repository', picked: current === 'repository' },
+                    { label: 'Group by branch', value: 'branch', picked: current === 'branch' }
+                ],
+                { placeHolder: 'Choose grouping for pipeline runs' }
+            );
+            if (!choice || choice.value === current) {
+                return;
+            }
+            await config.setPipelineRunsGroupBy(choice.value as typeof current);
             pipelinesProvider.refresh();
         })
     );

@@ -167,6 +167,48 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "adoext.setPipelineRunsFilter",
+        "title": "Filter Pipeline Runs",
+        "category": "ADOExt",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "adoext.setPipelineRunsGroupBy",
+        "title": "Group Pipeline Runs",
+        "category": "ADOExt",
+        "icon": "$(list-tree)"
+      },
+      {
+        "command": "adoext.viewPipelineRunDetails",
+        "title": "View Pipeline Run Details",
+        "category": "ADOExt",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "adoext.openPipelineRun",
+        "title": "Open Pipeline Run in Browser",
+        "category": "ADOExt",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "adoext.openPipelineRunLogs",
+        "title": "Open Pipeline Logs in Browser",
+        "category": "ADOExt",
+        "icon": "$(output)"
+      },
+      {
+        "command": "adoext.rerunPipelineRun",
+        "title": "Re-run Pipeline",
+        "category": "ADOExt",
+        "icon": "$(debug-restart)"
+      },
+      {
+        "command": "adoext.cancelPipelineRun",
+        "title": "Cancel Pipeline Run",
+        "category": "ADOExt",
+        "icon": "$(debug-stop)"
+      },
+      {
         "command": "adoext.openBoardView",
         "title": "Open Board in Editor",
         "category": "ADOExt",
@@ -525,6 +567,16 @@
           "group": "navigation"
         },
         {
+          "command": "adoext.setPipelineRunsFilter",
+          "when": "view == adoext.pipelines",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.setPipelineRunsGroupBy",
+          "when": "view == adoext.pipelines",
+          "group": "navigation"
+        },
+        {
           "command": "adoext.setPlanningAssignedFilter",
           "when": "view == adoext.boards",
           "group": "navigation"
@@ -665,6 +717,31 @@
           "command": "adoext.reopenThread",
           "when": "viewItem == prCommentThreadResolved",
           "group": "inline"
+        },
+        {
+          "command": "adoext.viewPipelineRunDetails",
+          "when": "viewItem == pipelineRun || viewItem == pipelineRunRunning",
+          "group": "inline"
+        },
+        {
+          "command": "adoext.openPipelineRun",
+          "when": "viewItem == pipelineRun || viewItem == pipelineRunRunning",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.openPipelineRunLogs",
+          "when": "viewItem == pipelineRun || viewItem == pipelineRunRunning",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.rerunPipelineRun",
+          "when": "viewItem == pipelineRun || viewItem == pipelineRunRunning",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.cancelPipelineRun",
+          "when": "viewItem == pipelineRunRunning",
+          "group": "navigation"
         }
       ],
       "comments/commentThread/context": [
@@ -959,6 +1036,45 @@
             "Sort pull requests by most recent activity"
           ],
           "description": "Sort order for pull requests in the ADOExt Pull Requests view."
+        },
+        "adoext.pipelineRunsFilter": {
+          "type": "string",
+          "default": "all",
+          "enum": [
+            "all",
+            "running",
+            "failed",
+            "mine"
+          ],
+          "enumDescriptions": [
+            "Show all recent runs",
+            "Show only currently running runs",
+            "Show only failed/partially succeeded runs",
+            "Show only runs requested by me"
+          ],
+          "description": "Filter applied to the ADOExt Pipelines view."
+        },
+        "adoext.pipelineRunsGroupBy": {
+          "type": "string",
+          "default": "none",
+          "enum": [
+            "none",
+            "repository",
+            "branch"
+          ],
+          "enumDescriptions": [
+            "Show runs as a flat list",
+            "Group runs by repository",
+            "Group runs by branch"
+          ],
+          "description": "Optional grouping applied under each project scope in the ADOExt Pipelines view."
+        },
+        "adoext.pipelineRunsTop": {
+          "type": "number",
+          "default": 25,
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Maximum number of pipeline runs fetched per project scope for the ADOExt Pipelines view."
         },
         "adoext.showResolvedPullRequestThreads": {
           "type": "boolean",
