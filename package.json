@@ -20,6 +20,7 @@
   "activationEvents": [
     "onStartupFinished"
   ],
+  "icon": "icon.png",
   "main": "./out/extension.js",
   "license": "MIT",
   "repository": {
