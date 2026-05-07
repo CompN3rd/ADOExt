@@ -161,6 +161,12 @@
         "icon": "$(open-preview)"
       },
       {
+        "command": "adoext.setPlanningAssignedFilter",
+        "title": "Filter Planning Items by Assignee",
+        "category": "ADOExt",
+        "icon": "$(person)"
+      },
+      {
         "command": "adoext.openWorkItem",
         "title": "Open Work Item in Browser",
         "category": "ADOExt",
@@ -472,6 +478,11 @@
           "group": "navigation"
         },
         {
+          "command": "adoext.setPlanningAssignedFilter",
+          "when": "view == adoext.backlog",
+          "group": "navigation"
+        },
+        {
           "command": "adoext.openSprintView",
           "when": "view == adoext.sprints",
           "group": "navigation"
@@ -482,12 +493,22 @@
           "group": "navigation"
         },
         {
+          "command": "adoext.setPlanningAssignedFilter",
+          "when": "view == adoext.sprints",
+          "group": "navigation"
+        },
+        {
           "command": "adoext.openBoardView",
           "when": "view == adoext.boards",
           "group": "navigation"
         },
         {
           "command": "adoext.refreshBoards",
+          "when": "view == adoext.boards",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.setPlanningAssignedFilter",
           "when": "view == adoext.boards",
           "group": "navigation"
         },
@@ -890,6 +911,19 @@
             "Sort backlog items by most recent activity"
           ],
           "description": "Sort order for backlog items in the ADOExt Backlog view."
+        },
+        "adoext.planningAssignedFilter": {
+          "type": "string",
+          "default": "all",
+          "enum": [
+            "all",
+            "mine"
+          ],
+          "enumDescriptions": [
+            "Show all planning items",
+            "Show only planning items assigned to me"
+          ],
+          "description": "Assignee filter applied to Backlog, Sprint, and Board views."
         },
         "adoext.pullRequestFilterRegex": {
           "type": "string",

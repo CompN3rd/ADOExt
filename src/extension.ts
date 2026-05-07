@@ -338,6 +338,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
 
     context.subscriptions.push(
+        vscode.commands.registerCommand('adoext.setPlanningAssignedFilter', async () => {
+            const current = config.planningAssignedFilter;
+            const choice = await vscode.window.showQuickPick(
+                [
+                    { label: 'All items', value: 'all', picked: current === 'all' },
+                    { label: 'Assigned to me', value: 'mine', picked: current === 'mine' }
+                ],
+                { placeHolder: 'Choose assignee filter for Backlog, Sprint, and Board views' }
+            );
+            if (!choice || choice.value === current) {
+                return;
+            }
+
+            await config.setPlanningAssignedFilter(choice.value as 'all' | 'mine');
+            backlogProvider.refresh();
+            sprintProvider.refresh();
+            boardProvider.refresh();
+        })
+    );
+
+    context.subscriptions.push(
         vscode.commands.registerCommand('adoext.openBacklogView', async () => {
             if (!(await ensureSignedIn())) { return; }
             await PlanningPanel.show(context, 'backlog', client, config, refreshAllViews);
