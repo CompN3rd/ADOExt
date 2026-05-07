@@ -10,6 +10,7 @@ import {
     type ProjectScope
 } from './projectScopes';
 import { mapWithConcurrencyLimit } from '../utils/async';
+import { WorkItemIconResolver } from './workItemIconResolver';
 
 const MAX_CONCURRENT_SCOPE_REQUESTS = 4;
 
@@ -74,7 +75,8 @@ export class BacklogProvider implements vscode.TreeDataProvider<PlanningTreeNode
 
     constructor(
         private readonly client: AdoClient,
-        private readonly config: ConfigManager
+        private readonly config: ConfigManager,
+        private readonly iconResolver: WorkItemIconResolver
     ) {}
 
     refresh(): void {
@@ -117,6 +119,7 @@ export class BacklogProvider implements vscode.TreeDataProvider<PlanningTreeNode
                 return [createConfigureNode()];
             }
 
+            await this.iconResolver.loadForScopes(scopes);
             this.buildHierarchy(items);
             if (items.length === 0) {
                 return [emptyNode('No backlog work items found')];
@@ -175,10 +178,12 @@ export class BacklogProvider implements vscode.TreeDataProvider<PlanningTreeNode
         return items.map(item => {
             const id = item.workItem.id;
             const hasChildren = typeof id === 'number' && this._childrenByKey.has(itemKey(item.scope, id));
+            const wiType = (item.workItem.fields?.['System.WorkItemType'] as string | undefined) ?? '';
             return new WorkItemNode(
                 item.workItem,
                 item.scope,
-                hasChildren ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None
+                hasChildren ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None,
+                this.iconResolver.resolve(wiType, item.scope)
             );
         });
     }
@@ -193,7 +198,8 @@ export class SprintProvider implements vscode.TreeDataProvider<PlanningTreeNode>
 
     constructor(
         private readonly client: AdoClient,
-        private readonly config: ConfigManager
+        private readonly config: ConfigManager,
+        private readonly iconResolver: WorkItemIconResolver
     ) {}
 
     refresh(): void {
@@ -206,11 +212,11 @@ export class SprintProvider implements vscode.TreeDataProvider<PlanningTreeNode>
 
     async getChildren(element?: PlanningTreeNode): Promise<PlanningTreeNode[]> {
         if (element instanceof PlanningScopeGroup) {
-            return sprintGroups(element.items);
+            return this.sprintGroupNodes(element.items);
         }
 
         if (element instanceof SprintGroup) {
-            return element.items.map(item => new WorkItemNode(item.workItem, item.scope));
+            return this.itemNodes(element.items);
         }
 
         if (this._loading) {
@@ -228,12 +234,15 @@ export class SprintProvider implements vscode.TreeDataProvider<PlanningTreeNode>
             if (scopes.length === 0) {
                 return [createConfigureNode()];
             }
+
+            await this.iconResolver.loadForScopes(scopes);
+
             if (items.length === 0) {
                 return [emptyNode('No sprint work items found')];
             }
 
             if (scopes.length === 1) {
-                return sprintGroups(items);
+                return this.sprintGroupNodes(items);
             }
 
             return groupByScope(items, 'sprintScopeGroup');
@@ -242,6 +251,17 @@ export class SprintProvider implements vscode.TreeDataProvider<PlanningTreeNode>
         } finally {
             this._loading = false;
         }
+    }
+
+    private sprintGroupNodes(items: ScopedWorkItem[]): SprintGroup[] {
+        return sprintGroups(items);
+    }
+
+    private itemNodes(items: ScopedWorkItem[]): WorkItemNode[] {
+        return items.map(item => {
+            const wiType = (item.workItem.fields?.['System.WorkItemType'] as string | undefined) ?? '';
+            return new WorkItemNode(item.workItem, item.scope, vscode.TreeItemCollapsibleState.None, this.iconResolver.resolve(wiType, item.scope));
+        });
     }
 }
 
@@ -254,7 +274,8 @@ export class BoardProvider implements vscode.TreeDataProvider<PlanningTreeNode> 
 
     constructor(
         private readonly client: AdoClient,
-        private readonly config: ConfigManager
+        private readonly config: ConfigManager,
+        private readonly iconResolver: WorkItemIconResolver
     ) {}
 
     refresh(): void {
@@ -267,11 +288,11 @@ export class BoardProvider implements vscode.TreeDataProvider<PlanningTreeNode> 
 
     async getChildren(element?: PlanningTreeNode): Promise<PlanningTreeNode[]> {
         if (element instanceof PlanningScopeGroup) {
-            return boardColumns(element.items);
+            return this.boardColumnNodes(element.items);
         }
 
         if (element instanceof BoardColumnGroup) {
-            return element.items.map(item => new WorkItemNode(item.workItem, item.scope));
+            return this.itemNodes(element.items);
         }
 
         if (this._loading) {
@@ -289,12 +310,15 @@ export class BoardProvider implements vscode.TreeDataProvider<PlanningTreeNode> 
             if (scopes.length === 0) {
                 return [createConfigureNode()];
             }
+
+            await this.iconResolver.loadForScopes(scopes);
+
             if (items.length === 0) {
                 return [emptyNode('No board work items found')];
             }
 
             if (scopes.length === 1) {
-                return boardColumns(items);
+                return this.boardColumnNodes(items);
             }
 
             return groupByScope(items, 'boardScopeGroup');
@@ -303,6 +327,17 @@ export class BoardProvider implements vscode.TreeDataProvider<PlanningTreeNode> 
         } finally {
             this._loading = false;
         }
+    }
+
+    private boardColumnNodes(items: ScopedWorkItem[]): BoardColumnGroup[] {
+        return boardColumns(items);
+    }
+
+    private itemNodes(items: ScopedWorkItem[]): WorkItemNode[] {
+        return items.map(item => {
+            const wiType = (item.workItem.fields?.['System.WorkItemType'] as string | undefined) ?? '';
+            return new WorkItemNode(item.workItem, item.scope, vscode.TreeItemCollapsibleState.None, this.iconResolver.resolve(wiType, item.scope));
+        });
     }
 }
 

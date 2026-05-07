@@ -9,7 +9,8 @@ import {
     type ProjectScope
 } from './projectScopes';
 import { mapWithConcurrencyLimit } from '../utils/async';
-import { bundledWorkItemTypeIconFile, normalizeWorkItemTypeName } from '../utils/workItemTypeIcons';
+import { bundledWorkItemTypeIconFile } from '../utils/workItemTypeIcons';
+import { WorkItemIconResolver } from './workItemIconResolver';
 
 const MAX_CONCURRENT_SCOPE_REQUESTS = 4;
 
@@ -124,12 +125,19 @@ export class WorkItemProvider implements vscode.TreeDataProvider<WorkItemTreeNod
     readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
     private _loading = false;
-    private readonly _workItemTypeIconsByScope = new Map<string, Map<string, vscode.Uri>>();
+    private readonly _iconResolver: WorkItemIconResolver;
 
     constructor(
         private readonly client: AdoClient,
-        private readonly config: ConfigManager
-    ) {}
+        private readonly config: ConfigManager,
+        iconResolver?: WorkItemIconResolver
+    ) {
+        this._iconResolver = iconResolver ?? new WorkItemIconResolver(client, config);
+    }
+
+    get iconResolver(): WorkItemIconResolver {
+        return this._iconResolver;
+    }
 
     refresh(): void {
         this._onDidChangeTreeData.fire();
@@ -151,7 +159,7 @@ export class WorkItemProvider implements vscode.TreeDataProvider<WorkItemTreeNod
                     item.workItem,
                     item.scope,
                     vscode.TreeItemCollapsibleState.None,
-                    this.resolveTypeIcon(workItemType, item.scope)
+                    this._iconResolver.resolve(workItemType, item.scope)
                 );
             });
         }
@@ -172,7 +180,7 @@ export class WorkItemProvider implements vscode.TreeDataProvider<WorkItemTreeNod
                 return [this.createConfigureNode()];
             }
 
-            await this.loadWorkItemTypeIcons(scopes);
+            await this._iconResolver.loadForScopes(scopes);
             const scopedItems = await this.loadWorkItems(scopes);
             if (scopedItems.length === 0) {
                 const node = new vscode.TreeItem('No work items found', vscode.TreeItemCollapsibleState.None);
@@ -251,49 +259,6 @@ export class WorkItemProvider implements vscode.TreeDataProvider<WorkItemTreeNod
             .sort((left, right) => stateSortValue(left.state) - stateSortValue(right.state));
     }
 
-    private async loadWorkItemTypeIcons(scopes: ProjectScope[]): Promise<void> {
-        // This cache mirrors only the currently resolved scopes so state-group expansion
-        // can synchronously resolve icon URIs without additional API calls.
-        const scopeKeys = new Set(scopes.map(scope => scopeKey(scope)));
-        for (const cachedKey of this._workItemTypeIconsByScope.keys()) {
-            if (!scopeKeys.has(cachedKey)) {
-                this._workItemTypeIconsByScope.delete(cachedKey);
-            }
-        }
-
-        if (!this.config.useRemoteWorkItemIcons) {
-            this._workItemTypeIconsByScope.clear();
-            return;
-        }
-
-        await mapWithConcurrencyLimit(scopes, MAX_CONCURRENT_SCOPE_REQUESTS, async scope => {
-            try {
-                const iconsByType = await this.client.getWorkItemTypeIconUrls(scope.project, scope.organization);
-                const normalized = new Map<string, vscode.Uri>();
-                for (const [typeName, iconUrl] of iconsByType.entries()) {
-                    const uri = toHttpsUri(iconUrl);
-                    if (uri) {
-                        normalized.set(typeName, uri);
-                    }
-                }
-                this._workItemTypeIconsByScope.set(scopeKey(scope), normalized);
-            } catch {
-                // Fall back to bundled icons when type icon lookup fails.
-            }
-        });
-    }
-
-    private resolveTypeIcon(wiType: string, scope?: ProjectScope): vscode.ThemeIcon | vscode.Uri {
-        if (this.config.useRemoteWorkItemIcons && scope) {
-            const byType = this._workItemTypeIconsByScope.get(scopeKey(scope));
-            const remoteIcon = byType?.get(normalizeWorkItemTypeName(wiType));
-            if (remoteIcon) {
-                return remoteIcon;
-            }
-        }
-        return bundledTypeIcon(wiType);
-    }
-
     private getSetupNode(): vscode.TreeItem | undefined {
         if (!this.client.isConnected) {
             const node = new vscode.TreeItem('Sign in to Azure DevOps...', vscode.TreeItemCollapsibleState.None);
@@ -352,15 +317,6 @@ export class WorkItemProvider implements vscode.TreeDataProvider<WorkItemTreeNod
         }
 
         return sorted;
-    }
-}
-
-function toHttpsUri(value: string): vscode.Uri | undefined {
-    try {
-        const uri = vscode.Uri.parse(value);
-        return uri.scheme === 'https' ? uri : undefined;
-    } catch {
-        return undefined;
     }
 }
 
