@@ -9,6 +9,7 @@ import {
     type ProjectScope
 } from './projectScopes';
 import { mapWithConcurrencyLimit } from '../utils/async';
+import { bundledWorkItemTypeIconFile, normalizeWorkItemTypeName } from '../utils/workItemTypeIcons';
 
 const MAX_CONCURRENT_SCOPE_REQUESTS = 4;
 
@@ -100,7 +101,7 @@ export function stateIcon(state: string): vscode.ThemeIcon {
 }
 
 function bundledTypeIcon(wiType: string): vscode.ThemeIcon | vscode.Uri {
-    const fileName = workItemTypeIconFile(wiType);
+    const fileName = bundledWorkItemTypeIconFile(wiType);
     if (fileName) {
         const extension = vscode.extensions.getExtension('MarcKassubeck.adoext');
         if (extension) {
@@ -109,28 +110,6 @@ function bundledTypeIcon(wiType: string): vscode.ThemeIcon | vscode.Uri {
     }
 
     return new vscode.ThemeIcon('issues');
-}
-
-function workItemTypeIconFile(wiType: string): string | undefined {
-    switch (wiType.trim().toLowerCase()) {
-        case 'bug':
-            return 'bug.svg';
-        case 'task':
-            return 'task.svg';
-        case 'epic':
-            return 'epic.svg';
-        case 'feature':
-            return 'feature.svg';
-        case 'user story':
-            return 'user-story.svg';
-        case 'product backlog item':
-        case 'pbi':
-            return 'product-backlog-item.svg';
-        case 'issue':
-            return 'issue.svg';
-        default:
-            return undefined;
-    }
 }
 
 type WorkItemTreeNode =
@@ -304,7 +283,7 @@ export class WorkItemProvider implements vscode.TreeDataProvider<WorkItemTreeNod
     private resolveTypeIcon(wiType: string, scope?: ProjectScope): vscode.ThemeIcon | vscode.Uri {
         if (scope) {
             const byType = this._workItemTypeIconsByScope.get(scopeKey(scope));
-            const remoteIcon = byType?.get(normalizeTypeName(wiType));
+            const remoteIcon = byType?.get(normalizeWorkItemTypeName(wiType));
             if (remoteIcon) {
                 return remoteIcon;
             }
@@ -371,10 +350,6 @@ export class WorkItemProvider implements vscode.TreeDataProvider<WorkItemTreeNod
 
         return sorted;
     }
-}
-
-function normalizeTypeName(value: string): string {
-    return value.trim().toLowerCase();
 }
 
 function toHttpsUri(value: string): vscode.Uri | undefined {

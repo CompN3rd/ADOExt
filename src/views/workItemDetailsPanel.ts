@@ -3,6 +3,7 @@ import type { WorkItem, WorkItemComment, Build } from '../api/adoClient';
 import type { AdoClient } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
 import { showErrorMessage, showInformationMessage, showWarningMessage } from '../utils/notifications';
+import { bundledWorkItemTypeIconFile, normalizeWorkItemTypeName } from '../utils/workItemTypeIcons';
 import { buildSummaryData } from './buildSummaryHtml';
 import { buildWebviewDocument, webviewAssetRoots } from './webviewHtml';
 import type { WorkItemDetailsMessage, WorkItemDetailsViewModel } from './webviewTypes';
@@ -173,7 +174,7 @@ export class WorkItemDetailsPanel {
             try {
                 if (workItemType) {
                     const iconUrls = await client.getWorkItemTypeIconUrls(project, organization);
-                    this._workItemTypeIconUrl = this._sanitizeIconUrl(iconUrls.get(normalizeTypeName(workItemType)))
+                    this._workItemTypeIconUrl = this._sanitizeIconUrl(iconUrls.get(normalizeWorkItemTypeName(workItemType)))
                         ?? this._workItemTypeIconUrl;
                 }
             } catch {
@@ -374,7 +375,7 @@ export class WorkItemDetailsPanel {
     }
 
     private _bundledTypeIconUrl(workItemType: string): string | undefined {
-        const fileName = bundledTypeIconFile(workItemType);
+        const fileName = bundledWorkItemTypeIconFile(workItemType);
         if (!fileName) {
             return undefined;
         }
@@ -512,31 +513,5 @@ export class WorkItemDetailsPanel {
 
     private static panelKey(id: number, organization?: string, project?: string): string {
         return JSON.stringify([organization ?? null, project ?? null, id]);
-    }
-}
-
-function normalizeTypeName(value: string): string {
-    return value.trim().toLowerCase();
-}
-
-function bundledTypeIconFile(workItemType: string): string | undefined {
-    switch (normalizeTypeName(workItemType)) {
-        case 'bug':
-            return 'bug.svg';
-        case 'task':
-            return 'task.svg';
-        case 'epic':
-            return 'epic.svg';
-        case 'feature':
-            return 'feature.svg';
-        case 'user story':
-            return 'user-story.svg';
-        case 'product backlog item':
-        case 'pbi':
-            return 'product-backlog-item.svg';
-        case 'issue':
-            return 'issue.svg';
-        default:
-            return undefined;
     }
 }

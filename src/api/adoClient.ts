@@ -8,6 +8,7 @@ import { CommentExpandOptions, QueryExpand, TreeStructureGroup, WorkItemExpand }
 import { GitVersionType, VersionControlChangeType, GitStatusState, PullRequestAsyncStatus, PullRequestMergeFailureType } from 'azure-devops-node-api/interfaces/GitInterfaces';
 import { BuildReason } from 'azure-devops-node-api/interfaces/BuildInterfaces';
 import { Operation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
+import { normalizeWorkItemTypeName } from '../utils/workItemTypeIcons';
 import type {
     WorkItem,
     WorkItemType,
@@ -1357,8 +1358,4 @@ export class AdoClient {
         }
         return 'edit';
     }
-}
-
-function normalizeWorkItemTypeName(value: string): string {
-    return value.trim().toLowerCase();
 }
