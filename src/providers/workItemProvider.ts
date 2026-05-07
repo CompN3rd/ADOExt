@@ -262,6 +262,7 @@ export class WorkItemProvider implements vscode.TreeDataProvider<WorkItemTreeNod
         }
 
         if (!this.config.useRemoteWorkItemIcons) {
+            this._workItemTypeIconsByScope.clear();
             return;
         }
 
@@ -283,7 +284,7 @@ export class WorkItemProvider implements vscode.TreeDataProvider<WorkItemTreeNod
     }
 
     private resolveTypeIcon(wiType: string, scope?: ProjectScope): vscode.ThemeIcon | vscode.Uri {
-        if (scope) {
+        if (this.config.useRemoteWorkItemIcons && scope) {
             const byType = this._workItemTypeIconsByScope.get(scopeKey(scope));
             const remoteIcon = byType?.get(normalizeWorkItemTypeName(wiType));
             if (remoteIcon) {
