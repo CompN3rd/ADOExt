@@ -3,9 +3,16 @@ import type { PrDetailsMessage, PrDetailsViewModel, PrThreadViewModel } from '..
 import { postMessage, readInitialData } from './vscodeApi';
 import './builds';
 
+type ModalMode = 'complete' | 'autoComplete' | null;
+
 class AdoPrDetailsApp extends LitElement {
     static properties: PropertyDeclarations = {
-        data: { state: true }
+        data: { state: true },
+        _modalMode: { state: true },
+        _mergeStrategy: { state: true },
+        _deleteSourceBranch: { state: true },
+        _transitionWorkItems: { state: true },
+        _mergeCommitMessage: { state: true }
     };
 
     static styles = css`
@@ -64,10 +71,29 @@ class AdoPrDetailsApp extends LitElement {
         textarea { flex: 1; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); border-radius: 3px; padding: 4px 6px; font-family: inherit; font-size: inherit; resize: vertical; min-height: 32px; }
         .tool-thread textarea { min-height: var(--tool-thread-textarea-min-height); font-size: var(--tool-thread-textarea-font-size); }
         .empty { color: var(--vscode-descriptionForeground); font-style: italic; }
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        .modal { background: var(--vscode-editor-background); border: 1px solid var(--vscode-panel-border); border-radius: 6px; padding: 20px; width: min(480px, 90vw); max-height: 80vh; overflow-y: auto; box-shadow: 0 4px 24px rgba(0,0,0,0.3); }
+        .modal h2 { margin: 0 0 16px; font-size: 1.1em; }
+        .modal-field { margin-bottom: 12px; }
+        .modal-field label { display: block; font-size: 0.85em; margin-bottom: 4px; color: var(--vscode-descriptionForeground); }
+        .modal-field select, .modal-field textarea { width: 100%; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); border-radius: 3px; padding: 6px 8px; font-family: inherit; font-size: inherit; }
+        .modal-field textarea { resize: vertical; min-height: 60px; }
+        .modal-check { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 0.9em; }
+        .modal-check input[type="checkbox"] { margin: 0; }
+        .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+        .modal-wi-list { font-size: 0.85em; color: var(--vscode-descriptionForeground); margin: 4px 0 0 24px; list-style: disc; }
+        .btn-danger { background: var(--vscode-inputValidation-errorBackground, #5a1d1d); color: var(--vscode-inputValidation-errorForeground, #f48771); border: 1px solid var(--vscode-inputValidation-errorBorder, #be1100); }
+        .btn-danger:hover { opacity: 0.9; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
         @media (max-width: 620px) { .reply-form { flex-direction: column; } .checks-list li { align-items: flex-start; flex-direction: column; } }
     `;
 
     data: PrDetailsViewModel = readInitialData<PrDetailsViewModel>();
+    _modalMode: ModalMode = null;
+    _mergeStrategy = 1;
+    _deleteSourceBranch = true;
+    _transitionWorkItems = true;
+    _mergeCommitMessage = '';
 
     render() {
         return html`<main class="shell">
@@ -76,6 +102,7 @@ class AdoPrDetailsApp extends LitElement {
                 <div class="review-actions" role="group" aria-label="Review actions">
                     ${this.data.reviewActions.map(action => html`<button class="btn-secondary" @click=${() => this.send({ type: 'setVote', vote: action.vote })}>${action.label}</button>`)}
                 </div>
+                ${this.renderCompletionButtons()}
                 <button class="btn-secondary" @click=${() => this.send({ type: 'openInBrowser' })}>Open in Browser</button>
             </div>
             <h1>PR #${this.data.prId}: ${this.data.title}${this.data.isDraft ? html`<span class="badge draft">Draft</span>` : nothing}</h1>
@@ -87,6 +114,7 @@ class AdoPrDetailsApp extends LitElement {
             <section class="section"><h2>Builds</h2><ado-build-list .builds=${this.data.builds} empty-label="No builds found." @adoext-open-build=${this.onOpenBuild}></ado-build-list></section>
             <section class="section"><h2>Comment Threads</h2>${this.renderThreads()}</section>
             <section class="section"><h2>Add Comment</h2><div class="new-comment-form"><textarea id="new-comment" rows="3" placeholder="Write a comment..."></textarea><div><button class="btn-primary" @click=${this.addComment}>Add Comment</button></div></div></section>
+            ${this._modalMode ? this.renderModal() : nothing}
         </main>`;
     }
 
@@ -147,6 +175,111 @@ class AdoPrDetailsApp extends LitElement {
             ? html`<details class="reply-disclosure"><summary>Reply (expand)</summary>${replyForm}</details>`
             : replyForm;
     }
+
+    private renderCompletionButtons() {
+        if (!this.data.canComplete) { return nothing; }
+        if (this.data.autoCompleteSetBy) {
+            return html`
+                <button class="btn-secondary" @click=${() => this.send({ type: 'cancelAutoComplete' })}>Cancel Auto-Complete</button>
+            `;
+        }
+        return html`
+            <button class="btn-primary" @click=${this.openCompleteModal} ?disabled=${this.data.hasConflicts || this.data.isDraft}>Complete</button>
+            <button class="btn-secondary" @click=${this.openAutoCompleteModal} ?disabled=${this.data.isDraft}>Set Auto-Complete</button>
+        `;
+    }
+
+    private renderModal() {
+        const isComplete = this._modalMode === 'complete';
+        const title = isComplete ? 'Complete Pull Request' : 'Set Auto-Complete';
+        const confirmLabel = isComplete ? 'Complete Merge' : 'Set Auto-Complete';
+        return html`
+            <div class="modal-overlay" @click=${this.onOverlayClick}>
+                <div class="modal" @click=${(e: Event) => e.stopPropagation()}>
+                    <h2>${title}</h2>
+                    <div class="modal-field">
+                        <label>Merge Type</label>
+                        <select @change=${this.onMergeStrategyChange}>
+                            <option value="1" ?selected=${this._mergeStrategy === 1}>Merge (no fast-forward)</option>
+                            <option value="2" ?selected=${this._mergeStrategy === 2}>Squash commit</option>
+                            <option value="3" ?selected=${this._mergeStrategy === 3}>Rebase and fast-forward</option>
+                            <option value="4" ?selected=${this._mergeStrategy === 4}>Semi-linear merge (rebase + merge commit)</option>
+                        </select>
+                    </div>
+                    <div class="modal-field">
+                        <label>Commit Message</label>
+                        <textarea rows="3" .value=${this._mergeCommitMessage} @input=${this.onCommitMsgInput}></textarea>
+                    </div>
+                    <label class="modal-check">
+                        <input type="checkbox" .checked=${this._deleteSourceBranch} @change=${this.onDeleteBranchChange}>
+                        Delete source branch after merge
+                    </label>
+                    <label class="modal-check">
+                        <input type="checkbox" .checked=${this._transitionWorkItems} @change=${this.onTransitionWiChange}>
+                        Complete associated work items
+                    </label>
+                    ${this.data.associatedWorkItems.length > 0 ? html`
+                        <ul class="modal-wi-list">
+                            ${this.data.associatedWorkItems.map(wi => html`<li>#${wi.id}: ${wi.title}</li>`)}
+                        </ul>
+                    ` : nothing}
+                    <div class="modal-actions">
+                        <button class="btn-secondary" @click=${this.closeModal}>Cancel</button>
+                        <button class="${isComplete ? 'btn-primary' : 'btn-primary'}" @click=${this.confirmModal}>${confirmLabel}</button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    private openCompleteModal = (): void => {
+        this._mergeCommitMessage = `Merged PR ${this.data.prId}: ${this.data.title}`;
+        this._modalMode = 'complete';
+    };
+
+    private openAutoCompleteModal = (): void => {
+        this._mergeCommitMessage = `Merged PR ${this.data.prId}: ${this.data.title}`;
+        this._modalMode = 'autoComplete';
+    };
+
+    private closeModal = (): void => {
+        this._modalMode = null;
+    };
+
+    private onOverlayClick = (): void => {
+        this.closeModal();
+    };
+
+    private onMergeStrategyChange = (e: Event): void => {
+        this._mergeStrategy = Number((e.target as HTMLSelectElement).value);
+    };
+
+    private onCommitMsgInput = (e: Event): void => {
+        this._mergeCommitMessage = (e.target as HTMLTextAreaElement).value;
+    };
+
+    private onDeleteBranchChange = (e: Event): void => {
+        this._deleteSourceBranch = (e.target as HTMLInputElement).checked;
+    };
+
+    private onTransitionWiChange = (e: Event): void => {
+        this._transitionWorkItems = (e.target as HTMLInputElement).checked;
+    };
+
+    private confirmModal = (): void => {
+        const msg = {
+            mergeStrategy: this._mergeStrategy,
+            deleteSourceBranch: this._deleteSourceBranch,
+            transitionWorkItems: this._transitionWorkItems,
+            mergeCommitMessage: this._mergeCommitMessage
+        };
+        if (this._modalMode === 'complete') {
+            this.send({ type: 'completePr', ...msg });
+        } else if (this._modalMode === 'autoComplete') {
+            this.send({ type: 'setAutoComplete', ...msg });
+        }
+        this._modalMode = null;
+    };
 
     private toggleResolvedThreads = (): void => {
         this.data = {

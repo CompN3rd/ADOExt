@@ -1,14 +1,14 @@
 import * as vscode from 'vscode';
 import type { GitPullRequest, GitPullRequestCommentThread, Comment, PullRequestReviewVote, GitPullRequestStatus, PolicyEvaluationRecord } from '../api/adoClient';
 import type { Build } from '../api/adoClient';
-import { PullRequestReviewVotes, GitStatusState, PolicyEvaluationStatus, PullRequestAsyncStatus, PullRequestMergeFailureType } from '../api/adoClient';
+import { PullRequestReviewVotes, GitStatusState, PolicyEvaluationStatus, PullRequestAsyncStatus, PullRequestMergeFailureType, PullRequestStatus } from '../api/adoClient';
 import type { AdoClient } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
 import { showErrorMessage, showInformationMessage, showWarningMessage } from '../utils/notifications';
 import { isToolIdentity, isSystemThread } from '../utils/prCommentIdentity';
 import { buildSummaryData } from './buildSummaryHtml';
 import { buildWebviewDocument, webviewAssetRoots } from './webviewHtml';
-import type { NamedBadgeRowViewModel, PrDetailsMessage, PrDetailsViewModel } from './webviewTypes';
+import type { NamedBadgeRowViewModel, PrDetailsMessage, PrDetailsViewModel, PrWorkItemRefViewModel } from './webviewTypes';
 // Note: the diff is now opened via VS Code's native diff editor, dispatched
 // through the `adoext.viewPullRequestDiff` command so that the inline
 // comment controller is wired up consistently.
@@ -109,7 +109,7 @@ export class PrDetailsPanel {
         const organization = this._organization ?? client.organization ?? config.organization;
         const projectId = pr.repository?.project?.id;
 
-        const [latestPrResult, threadsResult, statusesResult, policiesResult, buildsResult] = await Promise.allSettled([
+        const [latestPrResult, threadsResult, statusesResult, policiesResult, buildsResult, workItemRefsResult] = await Promise.allSettled([
             client.getPullRequest(project, repoId, prId, organization),
             client.getPullRequestThreads(project, repoId, prId, organization),
             client.getPullRequestStatuses(project, repoId, prId, organization),
@@ -118,7 +118,8 @@ export class PrDetailsPanel {
                 : Promise.resolve([] as PolicyEvaluationRecord[]),
             project && repoId && pr.sourceRefName
                 ? client.getBuildsForPullRequest(project, repoId, pr.sourceRefName, organization)
-                : Promise.resolve([] as Build[])
+                : Promise.resolve([] as Build[]),
+            client.getPullRequestWorkItemRefs(project, repoId, prId, organization)
         ]);
 
         const latestPr = latestPrResult.status === 'fulfilled' && latestPrResult.value ? latestPrResult.value : pr;
@@ -126,9 +127,10 @@ export class PrDetailsPanel {
         const statuses = statusesResult.status === 'fulfilled' ? statusesResult.value : [];
         const policies = policiesResult.status === 'fulfilled' ? policiesResult.value : [];
         const builds = buildsResult.status === 'fulfilled' ? buildsResult.value : [];
+        const workItemRefs = workItemRefsResult.status === 'fulfilled' ? workItemRefsResult.value : [];
 
         this._pr = latestPr;
-        this._panel.webview.html = this._buildHtml(latestPr, threads, statuses, policies, builds);
+        this._panel.webview.html = this._buildHtml(latestPr, threads, statuses, policies, builds, workItemRefs);
     }
 
     private async _handleMessage(msg: PrDetailsMessage): Promise<void> {
@@ -231,6 +233,69 @@ export class PrDetailsPanel {
 
                 await this._refresh(this._client, this._config, this._pr);
                 void vscode.commands.executeCommand('adoext.refreshPullRequests');
+            } else if (msg.type === 'completePr') {
+                if (!organization || !project || !repoId) {
+                    showWarningMessage('Unable to complete PR: missing organization, project, or repository.');
+                    return;
+                }
+                const lastCommitId = this._pr.lastMergeSourceCommit?.commitId;
+                if (!lastCommitId) {
+                    showWarningMessage('Unable to complete PR: merge source commit is unknown. Try refreshing.');
+                    return;
+                }
+                await this._client.completePullRequest(
+                    project,
+                    repoId,
+                    prId,
+                    lastCommitId,
+                    {
+                        mergeStrategy: msg.mergeStrategy,
+                        deleteSourceBranch: msg.deleteSourceBranch,
+                        transitionWorkItems: msg.transitionWorkItems,
+                        mergeCommitMessage: msg.mergeCommitMessage
+                    },
+                    organization
+                );
+                showInformationMessage('Pull request completed.');
+                await this._refresh(this._client, this._config, this._pr);
+                void vscode.commands.executeCommand('adoext.refreshPullRequests');
+            } else if (msg.type === 'setAutoComplete') {
+                if (!organization || !project || !repoId) {
+                    showWarningMessage('Unable to set auto-complete: missing organization, project, or repository.');
+                    return;
+                }
+                await this._client.setAutoComplete(
+                    project,
+                    repoId,
+                    prId,
+                    true,
+                    {
+                        mergeStrategy: msg.mergeStrategy,
+                        deleteSourceBranch: msg.deleteSourceBranch,
+                        transitionWorkItems: msg.transitionWorkItems,
+                        mergeCommitMessage: msg.mergeCommitMessage
+                    },
+                    organization
+                );
+                showInformationMessage('Auto-complete enabled.');
+                await this._refresh(this._client, this._config, this._pr);
+                void vscode.commands.executeCommand('adoext.refreshPullRequests');
+            } else if (msg.type === 'cancelAutoComplete') {
+                if (!organization || !project || !repoId) {
+                    showWarningMessage('Unable to cancel auto-complete: missing organization, project, or repository.');
+                    return;
+                }
+                await this._client.setAutoComplete(
+                    project,
+                    repoId,
+                    prId,
+                    false,
+                    undefined,
+                    organization
+                );
+                showInformationMessage('Auto-complete cancelled.');
+                await this._refresh(this._client, this._config, this._pr);
+                void vscode.commands.executeCommand('adoext.refreshPullRequests');
             }
         } catch (err) {
             showErrorMessage(`Error: ${err}`);
@@ -242,10 +307,11 @@ export class PrDetailsPanel {
         threads: GitPullRequestCommentThread[],
         statuses: GitPullRequestStatus[] = [],
         policies: PolicyEvaluationRecord[] = [],
-        builds: Build[] = []
+        builds: Build[] = [],
+        workItemRefs: { id?: string; url?: string }[] = []
     ): string {
         const webview = this._panel.webview;
-        const data = this._buildViewModel(pr, threads, statuses, policies, builds);
+        const data = this._buildViewModel(pr, threads, statuses, policies, builds, workItemRefs);
         return buildWebviewDocument(this._context, webview, {
             title: `PR #${data.prId}`,
             entry: 'prDetails.js',
@@ -259,7 +325,8 @@ export class PrDetailsPanel {
         threads: GitPullRequestCommentThread[],
         statuses: GitPullRequestStatus[],
         policies: PolicyEvaluationRecord[],
-        builds: Build[]
+        builds: Build[],
+        workItemRefs: { id?: string; url?: string }[] = []
     ): PrDetailsViewModel {
         const prId = pr.pullRequestId ?? 0;
         const title = pr.title ?? '';
@@ -288,6 +355,15 @@ export class PrDetailsPanel {
             ? meaningfulThreads.filter(thread => !isSystemThread(thread))
             : meaningfulThreads;
 
+        const prStatus = pr.status ?? PullRequestStatus.Active;
+        const hasConflicts = pr.mergeStatus === PullRequestAsyncStatus.Conflicts;
+        const autoCompleteSetBy = pr.autoCompleteSetBy?.displayName ?? null;
+        const lastMergeSourceCommitId = pr.lastMergeSourceCommit?.commitId ?? '';
+        const canComplete = prStatus === PullRequestStatus.Active;
+        const associatedWorkItems: PrWorkItemRefViewModel[] = workItemRefs
+            .filter(ref => ref.id)
+            .map(ref => ({ id: Number(ref.id), title: `Work Item ${ref.id}` }));
+
         return {
             prId,
             title,
@@ -297,6 +373,13 @@ export class PrDetailsPanel {
             author,
             isDraft: !!pr.isDraft,
             createdDate,
+            status: prStatus,
+            mergeStatus: this._branchStatusBadge(pr.mergeStatus).label,
+            hasConflicts,
+            autoCompleteSetBy,
+            lastMergeSourceCommitId,
+            associatedWorkItems,
+            canComplete,
             reviewers,
             reviewActions: [
                 { label: 'Approve', vote: PullRequestReviewVotes.approved },

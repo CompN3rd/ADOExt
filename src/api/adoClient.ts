@@ -5,7 +5,7 @@ import type { ICoreApi } from 'azure-devops-node-api/CoreApi';
 import type { IPolicyApi } from 'azure-devops-node-api/PolicyApi';
 import type { IBuildApi } from 'azure-devops-node-api/BuildApi';
 import { CommentExpandOptions, QueryExpand, TreeStructureGroup, WorkItemExpand } from 'azure-devops-node-api/interfaces/WorkItemTrackingInterfaces';
-import { GitVersionType, VersionControlChangeType, GitStatusState, PullRequestAsyncStatus, PullRequestMergeFailureType } from 'azure-devops-node-api/interfaces/GitInterfaces';
+import { GitVersionType, VersionControlChangeType, GitStatusState, PullRequestAsyncStatus, PullRequestMergeFailureType, PullRequestStatus } from 'azure-devops-node-api/interfaces/GitInterfaces';
 import { BuildReason } from 'azure-devops-node-api/interfaces/BuildInterfaces';
 import { Operation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
 import { normalizeWorkItemTypeName, workItemTypeScopeKey } from '../utils/workItemTypeIcons';
@@ -23,6 +23,7 @@ import type {
     GitPullRequestCommentThread,
     GitPullRequestChange,
     GitPullRequestStatus,
+    GitPullRequestCompletionOptions,
     FileDiff,
     GitPullRequestSearchCriteria,
     Comment,
@@ -31,7 +32,7 @@ import type {
 } from 'azure-devops-node-api/interfaces/GitInterfaces';
 import type { Build } from 'azure-devops-node-api/interfaces/BuildInterfaces';
 import type { TeamProject } from 'azure-devops-node-api/interfaces/CoreInterfaces';
-import type { IdentityRef, JsonPatchDocument, JsonPatchOperation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
+import type { IdentityRef, JsonPatchDocument, JsonPatchOperation, ResourceRef } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
 import type { PolicyEvaluationRecord } from 'azure-devops-node-api/interfaces/PolicyInterfaces';
 import { PolicyEvaluationStatus } from 'azure-devops-node-api/interfaces/PolicyInterfaces';
 
@@ -52,7 +53,7 @@ export type {
     Build,
     PolicyEvaluationRecord
 };
-export { GitStatusState, PolicyEvaluationStatus, PullRequestAsyncStatus, PullRequestMergeFailureType };
+export { GitStatusState, PolicyEvaluationStatus, PullRequestAsyncStatus, PullRequestMergeFailureType, PullRequestStatus };
 
 /** A flattened representation of a saved query (non-folder). */
 export interface SavedQuery {
@@ -1347,6 +1348,73 @@ export class AdoClient {
             stream.on('error', reject);
             stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
         });
+    }
+
+    /**
+     * Get work item references associated with a pull request.
+     */
+    async getPullRequestWorkItemRefs(
+        project: string,
+        repositoryId: string,
+        pullRequestId: number,
+        organization?: string
+    ): Promise<ResourceRef[]> {
+        const gitApi: IGitApi = await this.getConnectionFor(organization).getGitApi();
+        return gitApi.getPullRequestWorkItemRefs(repositoryId, pullRequestId, project);
+    }
+
+    /**
+     * Complete (merge) a pull request.
+     */
+    async completePullRequest(
+        project: string,
+        repositoryId: string,
+        pullRequestId: number,
+        lastMergeSourceCommitId: string,
+        completionOptions: GitPullRequestCompletionOptions,
+        organization?: string
+    ): Promise<GitPullRequest> {
+        const gitApi: IGitApi = await this.getConnectionFor(organization).getGitApi();
+        const updatedPr: GitPullRequest = {
+            status: PullRequestStatus.Completed,
+            lastMergeSourceCommit: { commitId: lastMergeSourceCommitId },
+            completionOptions
+        };
+        return gitApi.updatePullRequest(updatedPr, repositoryId, pullRequestId, project);
+    }
+
+    /**
+     * Set or cancel auto-complete on a pull request.
+     * When enabling, pass completionOptions to define merge behavior.
+     * When disabling, pass enable=false (completionOptions is ignored).
+     */
+    async setAutoComplete(
+        project: string,
+        repositoryId: string,
+        pullRequestId: number,
+        enable: boolean,
+        completionOptions: GitPullRequestCompletionOptions | undefined,
+        organization?: string
+    ): Promise<GitPullRequest> {
+        const gitApi: IGitApi = await this.getConnectionFor(organization).getGitApi();
+
+        let autoCompleteSetBy: IdentityRef;
+        if (enable) {
+            const userId = await this.getCurrentUserId(organization);
+            if (!userId) {
+                throw new Error('Unable to determine the current Azure DevOps user.');
+            }
+            autoCompleteSetBy = { id: userId };
+        } else {
+            // Setting id to empty string cancels auto-complete
+            autoCompleteSetBy = { id: '' };
+        }
+
+        const updatedPr: GitPullRequest = {
+            autoCompleteSetBy,
+            completionOptions: enable ? completionOptions : undefined
+        };
+        return gitApi.updatePullRequest(updatedPr, repositoryId, pullRequestId, project);
     }
 
     private formatChangeType(changeType: VersionControlChangeType | undefined): string {

@@ -12,6 +12,7 @@
 - **Resolved-thread toggle**: New command `adoext.toggleResolvedPullRequestThreads` and setting `adoext.showResolvedPullRequestThreads` to show/hide resolved PR comment threads.
 - **Hide system PR threads**: New setting `adoext.hideSystemPullRequestThreads` (default `true`) to auto-hide system-generated threads (policy status updates, ref updates, vote notifications) that Azure DevOps also hides in its web UI.
 - **Assignee-scoped planning filter**: New setting `adoext.planningAssignedFilter` (`all` or `mine`) to filter Backlog, Sprint, and Board views by assigned user.
+- **PR merge & auto-complete**: Complete or set auto-complete on pull requests directly from the PR details panel. An in-panel modal lets you choose merge strategy, edit commit message, delete source branch, and transition associated work items.
 
 ### Fixed
 

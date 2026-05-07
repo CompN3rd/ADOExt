@@ -46,6 +46,11 @@ export interface PrThreadViewModel {
     comments: PrCommentViewModel[];
 }
 
+export interface PrWorkItemRefViewModel {
+    id: number;
+    title: string;
+}
+
 export interface PrDetailsViewModel {
     prId: number;
     title: string;
@@ -55,6 +60,13 @@ export interface PrDetailsViewModel {
     author: string;
     isDraft: boolean;
     createdDate: string;
+    status: number;
+    mergeStatus: string;
+    hasConflicts: boolean;
+    autoCompleteSetBy: string | null;
+    lastMergeSourceCommitId: string;
+    associatedWorkItems: PrWorkItemRefViewModel[];
+    canComplete: boolean;
     reviewers: PrReviewerViewModel[];
     reviewActions: PrReviewActionViewModel[];
     branchStatuses: NamedBadgeRowViewModel[];
@@ -141,7 +153,10 @@ export type PrDetailsMessage =
     | { type: 'reply'; threadId: number; content: string }
     | { type: 'setStatus'; threadId: number; status: number }
     | { type: 'setShowResolvedThreads'; showResolved: boolean }
-    | { type: 'openBuild'; buildId: number };
+    | { type: 'openBuild'; buildId: number }
+    | { type: 'completePr'; mergeStrategy: number; deleteSourceBranch: boolean; transitionWorkItems: boolean; mergeCommitMessage: string }
+    | { type: 'setAutoComplete'; mergeStrategy: number; deleteSourceBranch: boolean; transitionWorkItems: boolean; mergeCommitMessage: string }
+    | { type: 'cancelAutoComplete' };
 
 export type WorkItemDetailsMessage =
     | { type: 'openInBrowser' }
