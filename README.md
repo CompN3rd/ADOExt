@@ -277,6 +277,7 @@ Happy coding! 🎉
 | `adoext.workItemQueries` | `[]` | Saved work item query definitions. When empty, ADOExt falls back to `adoext.workItemQuery`. |
 | `adoext.activeWorkItemQueryId` | `""` | Active saved work item query ID. Falls back to the first saved query or the legacy query setting. |
 | `adoext.workItemQuery` | `assigned` | Legacy work item filter used when no saved work item queries are defined. |
+| `adoext.workItemHideStates` | `[]` | Work item states to hide from the Work Items tree view (e.g. `["Done", "Removed"]`). Case-insensitive. |
 | `adoext.pullRequestQueries` | `[]` | Saved pull request bucket definitions. These are appended below built-in buckets in the Pull Requests view. |
 | `adoext.activePullRequestQueryId` | `""` | Legacy pull request query selector state kept for backward compatibility with older versions. |
 | `adoext.pullRequestFilter` | `mine` | Legacy pull request filter used as compatibility fallback when older settings are migrated. |
@@ -284,6 +285,10 @@ Happy coding! 🎉
 ### Query and bucket management
 
 Use **ADOExt: Select Work Item Query** to switch the active work item preset. In the Pull Requests view, built-in review buckets are always shown (Waiting for My Review, Created by Me, All Open), and **ADOExt: Save Pull Request Query Preset** adds custom buckets to that list. Use the inline refresh action on a bucket to reload only that bucket.
+
+### Hiding work item states
+
+Use the **Toggle Hide Done Work Items** button in the Work Items view title bar (or run **ADOExt: Toggle Hide Done Work Items** from the Command Palette) to quickly add or remove `Done` from `adoext.workItemHideStates`. For finer control, edit the `adoext.workItemHideStates` setting directly to exclude any combination of states (e.g. `["Done", "Removed"]`).
 
 ## Development
 

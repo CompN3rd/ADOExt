@@ -231,12 +231,21 @@ export class WorkItemProvider implements vscode.TreeDataProvider<WorkItemTreeNod
     }
 
     private buildStateGroups(items: ScopedWorkItem[]): WorkItemStateGroup[] {
-        // Apply filtering
+        // Apply regex filtering
         const filtered = items.filter(item => this.matchesFilter(item));
+
+        // Apply state hide list
+        const hideStates = new Set(this.config.workItemHideStates.map(s => s.toLowerCase()));
+        const stateFiltered = hideStates.size > 0
+            ? filtered.filter(item => {
+                const state = (item.workItem.fields?.['System.State'] as string | undefined) ?? 'Unknown';
+                return !hideStates.has(state.toLowerCase());
+            })
+            : filtered;
 
         // Apply sorting within each group
         const byState = new Map<string, ScopedWorkItem[]>();
-        for (const item of filtered) {
+        for (const item of stateFiltered) {
             const state = (item.workItem.fields?.['System.State'] as string | undefined) ?? 'Unknown';
             if (!byState.has(state)) {
                 byState.set(state, []);

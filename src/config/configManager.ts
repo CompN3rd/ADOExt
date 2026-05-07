@@ -291,6 +291,15 @@ export class ConfigManager {
         await this.config.update('workItemSortOrder', value, vscode.ConfigurationTarget.Global);
     }
 
+    /** Work item states to hide from the Work Items tree view. */
+    get workItemHideStates(): string[] {
+        return this.config.get<string[]>('workItemHideStates', []);
+    }
+
+    async setWorkItemHideStates(states: string[]): Promise<void> {
+        await this.config.update('workItemHideStates', states, vscode.ConfigurationTarget.Global);
+    }
+
     /** Regex pattern for filtering backlog items. */
     get backlogFilterRegex(): string {
         return this.config.get<string>('backlogFilterRegex', '');
