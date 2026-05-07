@@ -47,6 +47,7 @@ import {
     replyToComment,
     resolveThread,
     reopenThread,
+    toggleResolvedPullRequestThreads,
     openPullRequestSourceBranch,
     openPullRequestCommit
 } from './commands/pullRequestCommands';
@@ -688,6 +689,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             'adoext.reopenThread',
             async (node: PullRequestThreadNode) => {
                 await reopenThread(node, client, config);
+                pullRequestProvider.refresh();
+            }
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.toggleResolvedPullRequestThreads',
+            async () => {
+                await toggleResolvedPullRequestThreads(config);
                 pullRequestProvider.refresh();
             }
         )

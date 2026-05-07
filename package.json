@@ -411,6 +411,12 @@
         "title": "Toggle Hide Done Work Items",
         "category": "ADOExt",
         "icon": "$(eye-closed)"
+      },
+      {
+        "command": "adoext.toggleResolvedPullRequestThreads",
+        "title": "Show/Hide Resolved PR Threads",
+        "category": "ADOExt",
+        "icon": "$(eye-closed)"
       }
     ],
     "menus": {
@@ -517,6 +523,11 @@
         },
         {
           "command": "adoext.setPullRequestSort",
+          "when": "view == adoext.pullRequests",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.toggleResolvedPullRequestThreads",
           "when": "view == adoext.pullRequests",
           "group": "navigation"
         }
@@ -897,6 +908,11 @@
             "Sort pull requests by most recent activity"
           ],
           "description": "Sort order for pull requests in the ADOExt Pull Requests view."
+        },
+        "adoext.showResolvedPullRequestThreads": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show resolved pull request comment threads in tree and details views."
         },
         "adoext.notifyOnNewPullRequestComments": {
           "type": "boolean",

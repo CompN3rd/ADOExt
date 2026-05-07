@@ -5,6 +5,7 @@ import { PullRequestReviewVotes, GitStatusState, PolicyEvaluationStatus, PullReq
 import type { AdoClient } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
 import { showErrorMessage, showInformationMessage, showWarningMessage } from '../utils/notifications';
+import { isToolIdentity } from '../utils/prCommentIdentity';
 import { buildSummaryData } from './buildSummaryHtml';
 import { buildWebviewDocument, webviewAssetRoots } from './webviewHtml';
 import type { NamedBadgeRowViewModel, PrDetailsMessage, PrDetailsViewModel } from './webviewTypes';
@@ -162,6 +163,9 @@ export class PrDetailsPanel {
                 );
                 showInformationMessage('Comment added.');
                 await this._refresh(this._client, this._config, this._pr);
+            } else if (msg.type === 'setShowResolvedThreads') {
+                await this._config.setShowResolvedPullRequestThreads(msg.showResolved);
+                await this._refresh(this._client, this._config, this._pr);
             } else if (msg.type === 'openInBrowser') {
                 const org = organization;
                 const projectName = project;
@@ -292,15 +296,19 @@ export class PrDetailsPanel {
             ],
             branchStatuses: this._buildBranchStatusRows(pr),
             checks: this._buildCheckRows(statuses, policies),
+            showResolvedThreads: this._config.showResolvedPullRequestThreads,
             threads: meaningfulThreads.map(thread => {
                 const isResolved = thread.status === 2 || thread.status === 4;
+                const firstComment = thread.comments?.[0];
                 return {
                     id: thread.id ?? 0,
                     isResolved,
+                    isToolThread: isToolIdentity(firstComment?.author),
                     statusLabel: isResolved ? 'Resolved' : 'Active',
                     comments: (thread.comments ?? []).map((comment: Comment) => ({
                         author: comment.author?.displayName ?? 'Unknown',
-                        content: comment.content ?? ''
+                        content: comment.content ?? '',
+                        isTool: isToolIdentity(comment.author)
                     }))
                 };
             }),
