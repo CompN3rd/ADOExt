@@ -2,7 +2,7 @@
   "name": "adoext",
   "displayName": "ADOExt - Azure DevOps Integration",
   "description": "Full-featured Azure DevOps integration for VS Code: work items, pull requests, comments, and multi-account/org support.",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "publisher": "MarcKassubeck",
   "engines": {
     "vscode": "^1.101.0"
@@ -818,6 +818,60 @@
             "All active PRs"
           ],
           "description": "Legacy default pull request filter retained for backward compatibility with older extension versions."
+        },
+        "adoext.workItemFilterRegex": {
+          "type": "string",
+          "default": "",
+          "description": "Regex pattern to filter work items by title. Leave empty to show all."
+        },
+        "adoext.workItemSortOrder": {
+          "type": "string",
+          "default": "name",
+          "enum": [
+            "name",
+            "date"
+          ],
+          "enumDescriptions": [
+            "Sort work items alphabetically by title",
+            "Sort work items by most recent activity"
+          ],
+          "description": "Sort order for work items in the ADOExt Work Items view."
+        },
+        "adoext.backlogFilterRegex": {
+          "type": "string",
+          "default": "",
+          "description": "Regex pattern to filter backlog items by title. Leave empty to show all."
+        },
+        "adoext.backlogSortOrder": {
+          "type": "string",
+          "default": "name",
+          "enum": [
+            "name",
+            "date"
+          ],
+          "enumDescriptions": [
+            "Sort backlog items alphabetically by title",
+            "Sort backlog items by most recent activity"
+          ],
+          "description": "Sort order for backlog items in the ADOExt Backlog view."
+        },
+        "adoext.pullRequestFilterRegex": {
+          "type": "string",
+          "default": "",
+          "description": "Regex pattern to filter pull requests by title. Leave empty to show all."
+        },
+        "adoext.pullRequestSortOrder": {
+          "type": "string",
+          "default": "title",
+          "enum": [
+            "title",
+            "date"
+          ],
+          "enumDescriptions": [
+            "Sort pull requests alphabetically by title",
+            "Sort pull requests by most recent activity"
+          ],
+          "description": "Sort order for pull requests in the ADOExt Pull Requests view."
         },
         "adoext.notifyOnNewPullRequestComments": {
           "type": "boolean",

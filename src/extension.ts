@@ -815,39 +815,58 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     // React to Microsoft auth session changes so token refreshes are picked up
     // without requiring a full window reload.
+    let handlingSessionChange = false;
     context.subscriptions.push(
         vscode.authentication.onDidChangeSessions(async e => {
             if (e.provider.id !== 'microsoft') {
                 return;
             }
-
-            const wasSignedIn = auth.isSignedIn;
-            const restored = await auth.tryRestoreSession();
-
-            if (restored) {
-                rebuildClient();
-                if (config.isConfigured) {
-                    refreshAllViews();
-                }
+            // Guard against re-entrancy: getSession() can fire onDidChangeSessions
+            if (handlingSessionChange) {
                 return;
             }
+            handlingSessionChange = true;
+            try {
+                const wasSignedIn = auth.isSignedIn;
+                const restored = await auth.tryRestoreSession();
 
-            if (wasSignedIn) {
-                auth.signOut();
-                client.disconnect();
-                updateSignedInContext();
-                mcpManager.refresh();
-                showWarningMessage(
-                    'Azure DevOps session changed or expired. Please sign in again.'
-                );
+                if (restored) {
+                    rebuildClient();
+                    if (config.isConfigured) {
+                        refreshAllViews();
+                    }
+                    return;
+                }
+
+                if (wasSignedIn) {
+                    auth.signOut();
+                    client.disconnect();
+                    updateSignedInContext();
+                    mcpManager.refresh();
+                    showWarningMessage(
+                        'Azure DevOps session changed or expired. Please sign in again.'
+                    );
+                }
+            } finally {
+                handlingSessionChange = false;
             }
         })
     );
 
-    // React to configuration changes
+    // React to configuration changes.
+    // Debounce to avoid redundant refreshes when commands write multiple
+    // settings in quick succession (each update fires onDidChangeConfiguration).
+    let configDebounceTimer: ReturnType<typeof setTimeout> | undefined;
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration(e => {
-            if (e.affectsConfiguration('adoext')) {
+            if (!e.affectsConfiguration('adoext')) {
+                return;
+            }
+            if (configDebounceTimer) {
+                clearTimeout(configDebounceTimer);
+            }
+            configDebounceTimer = setTimeout(() => {
+                configDebounceTimer = undefined;
                 if (config.organization && auth.isSignedIn) {
                     client.connect(config.organization);
                 }
@@ -863,7 +882,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 ) {
                     notificationService.applyConfig();
                 }
-            }
+            }, 300);
         })
     );
 }
