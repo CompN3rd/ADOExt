@@ -11,6 +11,7 @@
 - **Bot PR thread differentiation**: Visually distinguish bot/service comments in the PR tree and details views with a "Tool" label and `hubot` icon.
 - **Resolved-thread toggle**: New command `adoext.toggleResolvedPullRequestThreads` and setting `adoext.showResolvedPullRequestThreads` to show/hide resolved PR comment threads.
 - **Hide system PR threads**: New setting `adoext.hideSystemPullRequestThreads` (default `true`) to auto-hide system-generated threads (policy status updates, ref updates, vote notifications) that Azure DevOps also hides in its web UI.
+- **Assignee-scoped planning filter**: New setting `adoext.planningAssignedFilter` (`all` or `mine`) to filter Backlog, Sprint, and Board views by assigned user.
 
 ### Fixed
 
