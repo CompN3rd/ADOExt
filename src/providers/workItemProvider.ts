@@ -252,6 +252,8 @@ export class WorkItemProvider implements vscode.TreeDataProvider<WorkItemTreeNod
     }
 
     private async loadWorkItemTypeIcons(scopes: ProjectScope[]): Promise<void> {
+        // This cache mirrors only the currently resolved scopes so state-group expansion
+        // can synchronously resolve icon URIs without additional API calls.
         const scopeKeys = new Set(scopes.map(scope => scopeKey(scope)));
         for (const cachedKey of this._workItemTypeIconsByScope.keys()) {
             if (!scopeKeys.has(cachedKey)) {

@@ -8,7 +8,7 @@ import { CommentExpandOptions, QueryExpand, TreeStructureGroup, WorkItemExpand }
 import { GitVersionType, VersionControlChangeType, GitStatusState, PullRequestAsyncStatus, PullRequestMergeFailureType } from 'azure-devops-node-api/interfaces/GitInterfaces';
 import { BuildReason } from 'azure-devops-node-api/interfaces/BuildInterfaces';
 import { Operation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
-import { normalizeWorkItemTypeName } from '../utils/workItemTypeIcons';
+import { normalizeWorkItemTypeName, workItemTypeScopeKey } from '../utils/workItemTypeIcons';
 import type {
     WorkItem,
     WorkItemType,
@@ -553,7 +553,7 @@ export class AdoClient {
         project: string,
         organization?: string
     ): Promise<Map<string, string>> {
-        const cacheKey = JSON.stringify([organization ?? this._organization ?? null, project]);
+        const cacheKey = workItemTypeScopeKey(organization ?? this._organization, project);
         const now = Date.now();
         const cached = this._workItemTypeIconsByScope.get(cacheKey);
         if (cached && cached.expiresAt > now) {

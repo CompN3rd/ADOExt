@@ -174,8 +174,10 @@ export class WorkItemDetailsPanel {
             try {
                 if (workItemType) {
                     const iconUrls = await client.getWorkItemTypeIconUrls(project, organization);
-                    this._workItemTypeIconUrl = this._sanitizeIconUrl(iconUrls.get(normalizeWorkItemTypeName(workItemType)))
-                        ?? this._workItemTypeIconUrl;
+                    const remoteIconUrl = this._sanitizeIconUrl(iconUrls.get(normalizeWorkItemTypeName(workItemType)));
+                    if (remoteIconUrl) {
+                        this._workItemTypeIconUrl = remoteIconUrl;
+                    }
                 }
             } catch {
                 // Fall back to the bundled icon badge presentation in the webview.

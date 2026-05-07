@@ -2,6 +2,10 @@ export function normalizeWorkItemTypeName(value: string): string {
     return value.trim().toLowerCase();
 }
 
+export function workItemTypeScopeKey(organization: string | undefined, project: string): string {
+    return `${organization ?? ''}\u0000${project}`;
+}
+
 export function bundledWorkItemTypeIconFile(workItemType: string): string | undefined {
     switch (normalizeWorkItemTypeName(workItemType)) {
         case 'bug':
