@@ -1,10 +1,14 @@
 # Changelog
 
-## Unreleased
+## 1.6.0 — 2026-05-07
 
 ### Added
 
 - **PR merge & auto-complete**: Complete or set auto-complete on pull requests directly from the PR details panel. An in-panel modal lets you choose merge strategy, edit commit message, delete source branch, and transition associated work items.
+
+### Fixed
+
+- Marketplace icon background now fills corners (removed rounded corner radius).
 
 ## 1.5.0 — 2026-05-07
 
