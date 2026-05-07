@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Custom marketplace icon**: New trinity-style icon combining Azure DevOps, Git, and MCP logos on a three-way gradient background.
+- **Updated Azure DevOps logo**: Replaced the old cube/boards glyph with the official infinity-loop mark in both the marketplace icon and the sidebar/tree-view icon.
+- **Hide completed work items**: New setting `adoext.workItemHideStates` (defaults to `["Done"]`) and toggle command `adoext.toggleHideDoneWorkItems` to show/hide work items by state.
+- **Work item type icons**: Fetch type-specific icons from Azure DevOps metadata (including custom process icons) with scoped cache and bundled SVG fallback. Applies consistently across Work Items, Backlog, Sprint, and Board views. Controlled by `adoext.useRemoteWorkItemIcons`.
+
 ## 1.4.3 — 2025-05-07
 
 ### Fixed
