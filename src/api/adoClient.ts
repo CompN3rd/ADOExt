@@ -4,9 +4,11 @@ import type { IGitApi } from 'azure-devops-node-api/GitApi';
 import type { ICoreApi } from 'azure-devops-node-api/CoreApi';
 import type { IPolicyApi } from 'azure-devops-node-api/PolicyApi';
 import type { IBuildApi } from 'azure-devops-node-api/BuildApi';
+import type { ITestApi } from 'azure-devops-node-api/TestApi';
 import { CommentExpandOptions, QueryExpand, TreeStructureGroup, WorkItemExpand } from 'azure-devops-node-api/interfaces/WorkItemTrackingInterfaces';
 import { GitVersionType, VersionControlChangeType, GitStatusState, PullRequestAsyncStatus, PullRequestMergeFailureType, PullRequestStatus } from 'azure-devops-node-api/interfaces/GitInterfaces';
 import { BuildReason, BuildResult, BuildStatus } from 'azure-devops-node-api/interfaces/BuildInterfaces';
+import { ResultDetails, TestOutcome } from 'azure-devops-node-api/interfaces/TestInterfaces';
 import { Operation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
 import { normalizeWorkItemTypeName, workItemTypeScopeKey } from '../utils/workItemTypeIcons';
 import type {
@@ -35,6 +37,7 @@ import type { TeamProject } from 'azure-devops-node-api/interfaces/CoreInterface
 import type { IdentityRef, JsonPatchDocument, JsonPatchOperation, ResourceRef } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
 import type { PolicyEvaluationRecord } from 'azure-devops-node-api/interfaces/PolicyInterfaces';
 import { PolicyEvaluationStatus } from 'azure-devops-node-api/interfaces/PolicyInterfaces';
+import type { TestCaseResult, TestRun } from 'azure-devops-node-api/interfaces/TestInterfaces';
 
 export type {
     WorkItem,
@@ -54,7 +57,9 @@ export type {
     BuildArtifact,
     BuildLog,
     Timeline,
-    PolicyEvaluationRecord
+    PolicyEvaluationRecord,
+    TestCaseResult,
+    TestRun
 };
 export { GitStatusState, PolicyEvaluationStatus, PullRequestAsyncStatus, PullRequestMergeFailureType, PullRequestStatus, BuildReason, BuildResult, BuildStatus };
 
@@ -1167,6 +1172,57 @@ export class AdoClient {
             )
         );
         return builds.filter((b): b is Build => b !== undefined);
+    }
+
+    // -------------------------------------------------------------------------
+    // Tests
+    // -------------------------------------------------------------------------
+
+    /**
+     * Fetch test runs associated with a build.
+     * Uses the Test API and filters by the build's vstfs URI.
+     */
+    async getTestRunsForBuild(
+        project: string,
+        buildId: number,
+        organization?: string
+    ): Promise<TestRun[]> {
+        const testApi: ITestApi = await this.getConnectionFor(organization).getTestApi();
+        const buildUri = `vstfs:///Build/Build/${buildId}`;
+        const runs = await testApi.getTestRuns(
+            project,
+            buildUri,
+            undefined, // owner
+            undefined, // tmiRunId
+            undefined, // planId
+            true, // includeRunDetails
+            undefined, // automated
+            0, // skip
+            25 // top
+        );
+        return runs ?? [];
+    }
+
+    /**
+     * Fetch failed test results for a test run.
+     * Returns core result fields (Outcome, ErrorMessage, StackTrace, etc.).
+     */
+    async getFailedTestResultsForRun(
+        project: string,
+        runId: number,
+        organization?: string,
+        top = 25
+    ): Promise<TestCaseResult[]> {
+        const testApi: ITestApi = await this.getConnectionFor(organization).getTestApi();
+        const results = await testApi.getTestResults(
+            project,
+            runId,
+            ResultDetails.None,
+            0, // skip
+            top,
+            [TestOutcome.Failed]
+        );
+        return results ?? [];
     }
 
     /**

@@ -8,7 +8,8 @@ import { showErrorMessage, showInformationMessage, showWarningMessage } from '..
 import { isToolIdentity, isSystemThread } from '../utils/prCommentIdentity';
 import { buildSummaryData } from './buildSummaryHtml';
 import { buildWebviewDocument, webviewAssetRoots } from './webviewHtml';
-import type { NamedBadgeRowViewModel, PrDetailsMessage, PrDetailsViewModel, PrWorkItemRefViewModel } from './webviewTypes';
+import { mapWithConcurrencyLimit } from '../utils/async';
+import type { NamedBadgeRowViewModel, PrDetailsMessage, PrDetailsViewModel, PrTestResultsViewModel, PrWorkItemRefViewModel } from './webviewTypes';
 // Note: the diff is now opened via VS Code's native diff editor, dispatched
 // through the `adoext.viewPullRequestDiff` command so that the inline
 // comment controller is wired up consistently.
@@ -109,17 +110,25 @@ export class PrDetailsPanel {
         const organization = this._organization ?? client.organization ?? config.organization;
         const projectId = pr.repository?.project?.id;
 
-        const [latestPrResult, threadsResult, statusesResult, policiesResult, buildsResult, workItemRefsResult] = await Promise.allSettled([
+        const buildsPromise = project && repoId && pr.sourceRefName
+            ? client.getBuildsForPullRequest(project, repoId, pr.sourceRefName, organization)
+            : Promise.resolve([] as Build[]);
+        const testResultsPromise = buildsPromise.then(builds =>
+            project
+                ? this._buildTestResultsViewModel(project, organization, builds)
+                : undefined
+        );
+
+        const [latestPrResult, threadsResult, statusesResult, policiesResult, buildsResult, workItemRefsResult, testResultsResult] = await Promise.allSettled([
             client.getPullRequest(project, repoId, prId, organization),
             client.getPullRequestThreads(project, repoId, prId, organization),
             client.getPullRequestStatuses(project, repoId, prId, organization),
             projectId
                 ? client.getPullRequestPolicyEvaluations(project, prId, projectId, organization)
                 : Promise.resolve([] as PolicyEvaluationRecord[]),
-            project && repoId && pr.sourceRefName
-                ? client.getBuildsForPullRequest(project, repoId, pr.sourceRefName, organization)
-                : Promise.resolve([] as Build[]),
-            client.getPullRequestWorkItemRefs(project, repoId, prId, organization)
+            buildsPromise,
+            client.getPullRequestWorkItemRefs(project, repoId, prId, organization),
+            testResultsPromise
         ]);
 
         const latestPr = latestPrResult.status === 'fulfilled' && latestPrResult.value ? latestPrResult.value : pr;
@@ -128,9 +137,10 @@ export class PrDetailsPanel {
         const policies = policiesResult.status === 'fulfilled' ? policiesResult.value : [];
         const builds = buildsResult.status === 'fulfilled' ? buildsResult.value : [];
         const workItemRefs = workItemRefsResult.status === 'fulfilled' ? workItemRefsResult.value : [];
+        const testResults = testResultsResult.status === 'fulfilled' ? testResultsResult.value : undefined;
 
         this._pr = latestPr;
-        this._panel.webview.html = this._buildHtml(latestPr, threads, statuses, policies, builds, workItemRefs);
+        this._panel.webview.html = this._buildHtml(latestPr, threads, statuses, policies, builds, workItemRefs, testResults);
     }
 
     private async _handleMessage(msg: PrDetailsMessage): Promise<void> {
@@ -199,6 +209,18 @@ export class PrDetailsPanel {
                 }
                 const buildUrl = `https://dev.azure.com/${encodeURIComponent(organization)}/${encodeURIComponent(project)}/_build/results?buildId=${msg.buildId}`;
                 void vscode.env.openExternal(vscode.Uri.parse(buildUrl));
+            } else if (msg.type === 'openTestRun' && typeof msg.runId === 'number') {
+                if (!organization || !project || msg.runId <= 0) {
+                    showWarningMessage(
+                        'Unable to open test run because organization, project, or run ID is missing.'
+                    );
+                    return;
+                }
+                const runUrl = this._testRunUrl(organization, project, msg.runId);
+                void vscode.env.openExternal(vscode.Uri.parse(runUrl));
+            } else if (msg.type === 'copyText' && typeof msg.text === 'string') {
+                await vscode.env.clipboard.writeText(msg.text);
+                showInformationMessage('Copied to clipboard.');
             } else if (msg.type === 'openDiff') {
                 await vscode.commands.executeCommand('adoext.viewPullRequestDiff', {
                     pr: this._pr,
@@ -308,10 +330,11 @@ export class PrDetailsPanel {
         statuses: GitPullRequestStatus[] = [],
         policies: PolicyEvaluationRecord[] = [],
         builds: Build[] = [],
-        workItemRefs: { id?: string; url?: string }[] = []
+        workItemRefs: { id?: string; url?: string }[] = [],
+        testResults?: PrTestResultsViewModel
     ): string {
         const webview = this._panel.webview;
-        const data = this._buildViewModel(pr, threads, statuses, policies, builds, workItemRefs);
+        const data = this._buildViewModel(pr, threads, statuses, policies, builds, workItemRefs, testResults);
         return buildWebviewDocument(this._context, webview, {
             title: `PR #${data.prId}`,
             entry: 'prDetails.js',
@@ -326,7 +349,8 @@ export class PrDetailsPanel {
         statuses: GitPullRequestStatus[],
         policies: PolicyEvaluationRecord[],
         builds: Build[],
-        workItemRefs: { id?: string; url?: string }[] = []
+        workItemRefs: { id?: string; url?: string }[] = [],
+        testResults?: PrTestResultsViewModel
     ): PrDetailsViewModel {
         const prId = pr.pullRequestId ?? 0;
         const title = pr.title ?? '';
@@ -390,6 +414,7 @@ export class PrDetailsPanel {
             ],
             branchStatuses: this._buildBranchStatusRows(pr),
             checks: this._buildCheckRows(statuses, policies),
+            testResults,
             showResolvedThreads: this._config.showResolvedPullRequestThreads,
             threads: visibleThreads.map(thread => {
                 const isResolved = thread.status === 2 || thread.status === 4;
@@ -407,6 +432,149 @@ export class PrDetailsPanel {
                 };
             }),
             builds: builds.map(buildSummaryData)
+        };
+    }
+
+    private _testRunUrl(organization: string, project: string, runId: number): string {
+        return `https://dev.azure.com/${encodeURIComponent(organization)}/${encodeURIComponent(project)}/_testManagement/runs?_a=runCharts&runId=${runId}`;
+    }
+
+    private _formatDuration(ms: number): string {
+        if (!Number.isFinite(ms) || ms <= 0) {
+            return '';
+        }
+
+        const totalSeconds = Math.floor(ms / 1000);
+        const seconds = totalSeconds % 60;
+        const totalMinutes = Math.floor(totalSeconds / 60);
+        const minutes = totalMinutes % 60;
+        const hours = Math.floor(totalMinutes / 60);
+
+        const pad = (n: number) => n.toString().padStart(2, '0');
+        return hours > 0
+            ? `${hours}:${pad(minutes)}:${pad(seconds)}`
+            : `${minutes}:${pad(seconds)}`;
+    }
+
+    private _snippet(text: string | undefined, maxChars: number): string {
+        const value = (text ?? '').trim();
+        if (!value) {
+            return '';
+        }
+        if (value.length <= maxChars) {
+            return value;
+        }
+        return `${value.slice(0, maxChars - 1)}…`;
+    }
+
+    private async _buildTestResultsViewModel(
+        project: string,
+        organization: string | undefined,
+        builds: Build[]
+    ): Promise<PrTestResultsViewModel | undefined> {
+        const buildInfos = (builds ?? [])
+            .map(build => ({
+                id: build.id ?? 0,
+                label: build.buildNumber ?? (build.id ? `#${build.id}` : '')
+            }))
+            .filter(info => info.id > 0);
+
+        if (buildInfos.length === 0) {
+            return undefined;
+        }
+
+        const runsByBuild = await mapWithConcurrencyLimit(buildInfos, 4, async (buildInfo) => {
+            try {
+                const runs = await this._client.getTestRunsForBuild(project, buildInfo.id, organization);
+                return runs.map(run => ({ run, buildInfo }));
+            } catch {
+                return [];
+            }
+        });
+
+        const runsWithBuild = runsByBuild.flat();
+        if (runsWithBuild.length === 0) {
+            return undefined;
+        }
+
+        runsWithBuild.sort((a, b) => {
+            const aTime = a.run.completedDate ? new Date(a.run.completedDate).getTime() : 0;
+            const bTime = b.run.completedDate ? new Date(b.run.completedDate).getTime() : 0;
+            return bTime - aTime;
+        });
+
+        const runViewModels = runsWithBuild.map(({ run, buildInfo }) => {
+            const passedTests = run.passedTests ?? 0;
+            const failedTests = run.unanalyzedTests ?? 0;
+            const skippedTests = (run.notApplicableTests ?? 0) + (run.incompleteTests ?? 0);
+            const totalTests = run.totalTests ?? (passedTests + failedTests + skippedTests);
+
+            const durationMs = run.startedDate && run.completedDate
+                ? new Date(run.completedDate).getTime() - new Date(run.startedDate).getTime()
+                : 0;
+
+            return {
+                runId: run.id,
+                runName: run.name,
+                runUrl: organization ? this._testRunUrl(organization, project, run.id) : '',
+                buildId: buildInfo.id,
+                buildLabel: buildInfo.label,
+                totalTests,
+                passedTests,
+                failedTests,
+                skippedTests,
+                durationLabel: this._formatDuration(durationMs)
+            };
+        });
+
+        const failingRuns = runsWithBuild
+            .filter(({ run }) => (run.unanalyzedTests ?? 0) > 0)
+            .slice(0, 10);
+
+        const failuresByRun = await mapWithConcurrencyLimit(failingRuns, 4, async ({ run, buildInfo }) => {
+            try {
+                const results = await this._client.getFailedTestResultsForRun(project, run.id, organization, 25);
+                return results.map(result => ({
+                    testName: result.automatedTestName ?? result.testCaseTitle ?? `Test #${result.id ?? 0}`,
+                    errorMessageSnippet: this._snippet(result.errorMessage, 300),
+                    stackTraceSnippet: this._snippet(result.stackTrace, 600),
+                    runId: run.id,
+                    runName: run.name,
+                    runUrl: organization ? this._testRunUrl(organization, project, run.id) : '',
+                    buildId: buildInfo.id,
+                    buildLabel: buildInfo.label
+                }));
+            } catch {
+                return [];
+            }
+        });
+
+        const failures = failuresByRun.flat();
+
+        const summary = runViewModels.reduce(
+            (acc, run) => {
+                acc.totalTests += run.totalTests;
+                acc.passedTests += run.passedTests;
+                acc.failedTests += run.failedTests;
+                acc.skippedTests += run.skippedTests;
+                return acc;
+            },
+            { totalTests: 0, passedTests: 0, failedTests: 0, skippedTests: 0 }
+        );
+
+        const totalDurationMs = runsWithBuild.reduce((acc, { run }) => {
+            if (!run.startedDate || !run.completedDate) {
+                return acc;
+            }
+            const duration = new Date(run.completedDate).getTime() - new Date(run.startedDate).getTime();
+            return duration > 0 ? acc + duration : acc;
+        }, 0);
+
+        return {
+            ...summary,
+            durationLabel: this._formatDuration(totalDurationMs),
+            runs: runViewModels,
+            failures
         };
     }
 

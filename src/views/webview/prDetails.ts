@@ -1,5 +1,5 @@
 import { LitElement, css, html, nothing, type PropertyDeclarations } from 'lit';
-import type { PrDetailsMessage, PrDetailsViewModel, PrThreadViewModel } from '../webviewTypes';
+import type { PrDetailsMessage, PrDetailsViewModel, PrTestResultsViewModel, PrThreadViewModel } from '../webviewTypes';
 import { postMessage, readInitialData } from './vscodeApi';
 import './builds';
 
@@ -71,6 +71,19 @@ class AdoPrDetailsApp extends LitElement {
         textarea { flex: 1; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); border-radius: 3px; padding: 4px 6px; font-family: inherit; font-size: inherit; resize: vertical; min-height: 32px; }
         .tool-thread textarea { min-height: var(--tool-thread-textarea-min-height); font-size: var(--tool-thread-textarea-font-size); }
         .empty { color: var(--vscode-descriptionForeground); font-style: italic; }
+        .test-summary { display: flex; gap: 10px; flex-wrap: wrap; font-size: 0.85em; color: var(--vscode-descriptionForeground); margin-bottom: 8px; }
+        .test-run-list, .test-failure-list { list-style: none; padding: 0; margin: 0; }
+        .test-run { display: flex; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--vscode-panel-border); }
+        .test-run:last-child { border-bottom: none; }
+        .test-run-name { flex: 1; min-width: 140px; }
+        .test-counts { font-size: 0.85em; color: var(--vscode-descriptionForeground); white-space: nowrap; }
+        .test-failure { border: 1px solid var(--vscode-panel-border); border-radius: 4px; margin-bottom: 8px; }
+        .test-failure > summary { cursor: pointer; padding: 6px 10px; background: var(--vscode-sideBarSectionHeader-background); border-radius: 4px; display: flex; gap: 10px; align-items: center; }
+        .test-failure-name { flex: 1; font-weight: 600; }
+        .test-failure-meta { font-size: 0.85em; color: var(--vscode-descriptionForeground); }
+        .test-failure-body { padding: 8px 10px; }
+        .test-failure-body h3 { margin: 10px 0 6px; font-size: 0.9em; }
+        .test-failure-body pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-family: var(--vscode-editor-font-family); font-size: 0.85em; padding: 8px; border: 1px solid var(--vscode-panel-border); border-radius: 4px; background: var(--vscode-textBlockQuote-background, rgba(127,127,127,0.08)); }
         .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
         .modal { background: var(--vscode-editor-background); border: 1px solid var(--vscode-panel-border); border-radius: 6px; padding: 20px; width: min(480px, 90vw); max-height: 80vh; overflow-y: auto; box-shadow: 0 4px 24px rgba(0,0,0,0.3); }
         .modal h2 { margin: 0 0 16px; font-size: 1.1em; }
@@ -111,11 +124,74 @@ class AdoPrDetailsApp extends LitElement {
             ${this.data.reviewers.length > 0 ? html`<section class="section"><h2>Reviewers</h2><ul class="reviewers">${this.data.reviewers.map(reviewer => html`<li><span class="vote ${reviewer.voteClass}">${reviewer.voteLabel}</span>${reviewer.displayName}</li>`)}</ul></section>` : nothing}
             ${this.renderRows('Branch Status', this.data.branchStatuses)}
             ${this.renderRows('Build & Policy Status', this.data.checks)}
+            ${this.renderTestResults(this.data.testResults)}
             <section class="section"><h2>Builds</h2><ado-build-list .builds=${this.data.builds} empty-label="No builds found." @adoext-open-build=${this.onOpenBuild}></ado-build-list></section>
             <section class="section"><h2>Comment Threads</h2>${this.renderThreads()}</section>
             <section class="section"><h2>Add Comment</h2><div class="new-comment-form"><textarea id="new-comment" rows="3" placeholder="Write a comment..."></textarea><div><button class="btn-primary" @click=${this.addComment}>Add Comment</button></div></div></section>
             ${this._modalMode ? this.renderModal() : nothing}
         </main>`;
+    }
+
+    private renderTestResults(testResults: PrTestResultsViewModel | undefined) {
+        if (!testResults) { return nothing; }
+
+        const failures = testResults.failures ?? [];
+        const runs = testResults.runs ?? [];
+
+        return html`
+            <section class="section">
+                <h2>Test Results</h2>
+                <div class="test-summary">
+                    <span>Total: ${testResults.totalTests}</span>
+                    <span>Passed: ${testResults.passedTests}</span>
+                    <span>Failed: ${testResults.failedTests}</span>
+                    <span>Skipped: ${testResults.skippedTests}</span>
+                    ${testResults.durationLabel ? html`<span>Duration: ${testResults.durationLabel}</span>` : nothing}
+                </div>
+                <div class="toolbar">
+                    ${failures.length > 0
+                        ? html`<button class="btn-secondary" @click=${() => this.copyFailureSummary(testResults)}>Copy Failure Summary</button>`
+                        : nothing}
+                </div>
+                ${runs.length === 0
+                    ? html`<p class="empty">No test runs found.</p>`
+                    : html`
+                        <ul class="test-run-list">
+                            ${runs.map(run => html`
+                                <li class="test-run">
+                                    <span class="test-run-name">${run.runName}</span>
+                                    <span class="test-counts">${run.passedTests}P / ${run.failedTests}F / ${run.skippedTests}S · ${run.totalTests} total${run.durationLabel ? html` · ${run.durationLabel}` : nothing}</span>
+                                    <button class="btn-secondary" @click=${() => this.openTestRun(run.runId)}>Open Run</button>
+                                    ${run.buildId ? html`<button class="btn-secondary" @click=${() => this.send({ type: 'openBuild', buildId: run.buildId! })}>Open Build</button>` : nothing}
+                                </li>
+                            `)}
+                        </ul>
+                    `}
+                ${failures.length === 0
+                    ? html`<p class="empty">No failing tests.</p>`
+                    : html`
+                        <h3>Failed Tests</h3>
+                        <div class="test-failure-list">
+                            ${failures.map(failure => html`
+                                <details class="test-failure">
+                                    <summary>
+                                        <span class="test-failure-name">${failure.testName}</span>
+                                        <span class="test-failure-meta">${failure.buildLabel ? `${failure.buildLabel} · ` : ''}${failure.runName}</span>
+                                    </summary>
+                                    <div class="test-failure-body">
+                                        ${failure.errorMessageSnippet ? html`<h3>Error</h3><pre>${failure.errorMessageSnippet}</pre>` : html`<p class="empty">No error message provided.</p>`}
+                                        ${failure.stackTraceSnippet ? html`<h3>Stack Trace</h3><pre>${failure.stackTraceSnippet}</pre>` : nothing}
+                                        <div class="toolbar">
+                                            <button class="btn-secondary" @click=${() => this.openTestRun(failure.runId)}>Open Run</button>
+                                            ${failure.buildId ? html`<button class="btn-secondary" @click=${() => this.send({ type: 'openBuild', buildId: failure.buildId! })}>Open Build</button>` : nothing}
+                                        </div>
+                                    </div>
+                                </details>
+                            `)}
+                        </div>
+                    `}
+            </section>
+        `;
     }
 
     private renderRows(title: string, rows: PrDetailsViewModel['checks']) {
@@ -314,6 +390,28 @@ class AdoPrDetailsApp extends LitElement {
         if (Number.isFinite(buildId) && buildId > 0) {
             this.send({ type: 'openBuild', buildId });
         }
+    };
+
+    private openTestRun = (runId: number): void => {
+        if (Number.isFinite(runId) && runId > 0) {
+            this.send({ type: 'openTestRun', runId });
+        }
+    };
+
+    private copyFailureSummary = (testResults: PrTestResultsViewModel): void => {
+        const failures = testResults.failures ?? [];
+        if (failures.length === 0) { return; }
+
+        const lines = [
+            `Test failures (${failures.length})`,
+            ...failures.map(failure => {
+                const location = [failure.buildLabel, failure.runName].filter(Boolean).join(' · ');
+                const msg = failure.errorMessageSnippet ? `\n  ${failure.errorMessageSnippet.split('\n')[0]}` : '';
+                return `- ${failure.testName}${location ? ` (${location})` : ''}${msg}`;
+            })
+        ];
+
+        this.send({ type: 'copyText', text: lines.join('\n') });
     };
 
     private send(message: PrDetailsMessage): void {

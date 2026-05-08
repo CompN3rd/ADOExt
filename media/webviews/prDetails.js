@@ -803,6 +803,27 @@
           this.send({ type: "openBuild", buildId });
         }
       };
+      this.openTestRun = (runId) => {
+        if (Number.isFinite(runId) && runId > 0) {
+          this.send({ type: "openTestRun", runId });
+        }
+      };
+      this.copyFailureSummary = (testResults) => {
+        const failures = testResults.failures ?? [];
+        if (failures.length === 0) {
+          return;
+        }
+        const lines = [
+          `Test failures (${failures.length})`,
+          ...failures.map((failure) => {
+            const location = [failure.buildLabel, failure.runName].filter(Boolean).join(" \xB7 ");
+            const msg = failure.errorMessageSnippet ? `
+  ${failure.errorMessageSnippet.split("\n")[0]}` : "";
+            return `- ${failure.testName}${location ? ` (${location})` : ""}${msg}`;
+          })
+        ];
+        this.send({ type: "copyText", text: lines.join("\n") });
+      };
     }
     render() {
       return b2`<main class="shell">
@@ -820,11 +841,67 @@
             ${this.data.reviewers.length > 0 ? b2`<section class="section"><h2>Reviewers</h2><ul class="reviewers">${this.data.reviewers.map((reviewer) => b2`<li><span class="vote ${reviewer.voteClass}">${reviewer.voteLabel}</span>${reviewer.displayName}</li>`)}</ul></section>` : A}
             ${this.renderRows("Branch Status", this.data.branchStatuses)}
             ${this.renderRows("Build & Policy Status", this.data.checks)}
+            ${this.renderTestResults(this.data.testResults)}
             <section class="section"><h2>Builds</h2><ado-build-list .builds=${this.data.builds} empty-label="No builds found." @adoext-open-build=${this.onOpenBuild}></ado-build-list></section>
             <section class="section"><h2>Comment Threads</h2>${this.renderThreads()}</section>
             <section class="section"><h2>Add Comment</h2><div class="new-comment-form"><textarea id="new-comment" rows="3" placeholder="Write a comment..."></textarea><div><button class="btn-primary" @click=${this.addComment}>Add Comment</button></div></div></section>
             ${this._modalMode ? this.renderModal() : A}
         </main>`;
+    }
+    renderTestResults(testResults) {
+      if (!testResults) {
+        return A;
+      }
+      const failures = testResults.failures ?? [];
+      const runs = testResults.runs ?? [];
+      return b2`
+            <section class="section">
+                <h2>Test Results</h2>
+                <div class="test-summary">
+                    <span>Total: ${testResults.totalTests}</span>
+                    <span>Passed: ${testResults.passedTests}</span>
+                    <span>Failed: ${testResults.failedTests}</span>
+                    <span>Skipped: ${testResults.skippedTests}</span>
+                    ${testResults.durationLabel ? b2`<span>Duration: ${testResults.durationLabel}</span>` : A}
+                </div>
+                <div class="toolbar">
+                    ${failures.length > 0 ? b2`<button class="btn-secondary" @click=${() => this.copyFailureSummary(testResults)}>Copy Failure Summary</button>` : A}
+                </div>
+                ${runs.length === 0 ? b2`<p class="empty">No test runs found.</p>` : b2`
+                        <ul class="test-run-list">
+                            ${runs.map((run) => b2`
+                                <li class="test-run">
+                                    <span class="test-run-name">${run.runName}</span>
+                                    <span class="test-counts">${run.passedTests}P / ${run.failedTests}F / ${run.skippedTests}S · ${run.totalTests} total${run.durationLabel ? b2` · ${run.durationLabel}` : A}</span>
+                                    <button class="btn-secondary" @click=${() => this.openTestRun(run.runId)}>Open Run</button>
+                                    ${run.buildId ? b2`<button class="btn-secondary" @click=${() => this.send({ type: "openBuild", buildId: run.buildId })}>Open Build</button>` : A}
+                                </li>
+                            `)}
+                        </ul>
+                    `}
+                ${failures.length === 0 ? b2`<p class="empty">No failing tests.</p>` : b2`
+                        <h3>Failed Tests</h3>
+                        <div class="test-failure-list">
+                            ${failures.map((failure) => b2`
+                                <details class="test-failure">
+                                    <summary>
+                                        <span class="test-failure-name">${failure.testName}</span>
+                                        <span class="test-failure-meta">${failure.buildLabel ? `${failure.buildLabel} \xB7 ` : ""}${failure.runName}</span>
+                                    </summary>
+                                    <div class="test-failure-body">
+                                        ${failure.errorMessageSnippet ? b2`<h3>Error</h3><pre>${failure.errorMessageSnippet}</pre>` : b2`<p class="empty">No error message provided.</p>`}
+                                        ${failure.stackTraceSnippet ? b2`<h3>Stack Trace</h3><pre>${failure.stackTraceSnippet}</pre>` : A}
+                                        <div class="toolbar">
+                                            <button class="btn-secondary" @click=${() => this.openTestRun(failure.runId)}>Open Run</button>
+                                            ${failure.buildId ? b2`<button class="btn-secondary" @click=${() => this.send({ type: "openBuild", buildId: failure.buildId })}>Open Build</button>` : A}
+                                        </div>
+                                    </div>
+                                </details>
+                            `)}
+                        </div>
+                    `}
+            </section>
+        `;
     }
     renderRows(title, rows) {
       if (rows.length === 0) {
@@ -1011,6 +1088,19 @@
         textarea { flex: 1; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); border-radius: 3px; padding: 4px 6px; font-family: inherit; font-size: inherit; resize: vertical; min-height: 32px; }
         .tool-thread textarea { min-height: var(--tool-thread-textarea-min-height); font-size: var(--tool-thread-textarea-font-size); }
         .empty { color: var(--vscode-descriptionForeground); font-style: italic; }
+        .test-summary { display: flex; gap: 10px; flex-wrap: wrap; font-size: 0.85em; color: var(--vscode-descriptionForeground); margin-bottom: 8px; }
+        .test-run-list, .test-failure-list { list-style: none; padding: 0; margin: 0; }
+        .test-run { display: flex; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--vscode-panel-border); }
+        .test-run:last-child { border-bottom: none; }
+        .test-run-name { flex: 1; min-width: 140px; }
+        .test-counts { font-size: 0.85em; color: var(--vscode-descriptionForeground); white-space: nowrap; }
+        .test-failure { border: 1px solid var(--vscode-panel-border); border-radius: 4px; margin-bottom: 8px; }
+        .test-failure > summary { cursor: pointer; padding: 6px 10px; background: var(--vscode-sideBarSectionHeader-background); border-radius: 4px; display: flex; gap: 10px; align-items: center; }
+        .test-failure-name { flex: 1; font-weight: 600; }
+        .test-failure-meta { font-size: 0.85em; color: var(--vscode-descriptionForeground); }
+        .test-failure-body { padding: 8px 10px; }
+        .test-failure-body h3 { margin: 10px 0 6px; font-size: 0.9em; }
+        .test-failure-body pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-family: var(--vscode-editor-font-family); font-size: 0.85em; padding: 8px; border: 1px solid var(--vscode-panel-border); border-radius: 4px; background: var(--vscode-textBlockQuote-background, rgba(127,127,127,0.08)); }
         .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
         .modal { background: var(--vscode-editor-background); border: 1px solid var(--vscode-panel-border); border-radius: 6px; padding: 20px; width: min(480px, 90vw); max-height: 80vh; overflow-y: auto; box-shadow: 0 4px 24px rgba(0,0,0,0.3); }
         .modal h2 { margin: 0 0 16px; font-size: 1.1em; }
