@@ -59,6 +59,7 @@ import {
     saveWorkItemQuery,
     savePullRequestQuery
 } from './commands/queryCommands';
+import { openWorkItemSchemaInspector } from './commands/schemaInspectorCommands';
 import {
     cancelPipelineRun,
     openPipelineRunInBrowser,
@@ -536,6 +537,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('adoext.openSavedQuery', async () => {
             if (!(await ensureSignedIn())) { return; }
             await openSavedQuery(context, client, config);
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adoext.openWorkItemSchemaInspector', async () => {
+            if (!(await ensureSignedIn())) { return; }
+            await openWorkItemSchemaInspector(context, client, config);
         })
     );
 
