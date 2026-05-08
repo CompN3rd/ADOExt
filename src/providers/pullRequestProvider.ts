@@ -10,6 +10,8 @@ import {
     type ProjectScope
 } from './projectScopes';
 import { mapWithConcurrencyLimit } from '../utils/async';
+import type { AuthRecoveryHandler } from '../utils/authRecovery';
+import { handleProviderError } from './providerErrors';
 
 const MAX_CONCURRENT_SCOPE_REQUESTS = 4;
 
@@ -551,7 +553,8 @@ export class PullRequestProvider implements vscode.TreeDataProvider<PullRequestT
 
     constructor(
         private readonly client: AdoClient,
-        private readonly config: ConfigManager
+        private readonly config: ConfigManager,
+        private readonly onAuthError?: AuthRecoveryHandler
     ) {}
 
     refresh(): void {
@@ -663,9 +666,7 @@ export class PullRequestProvider implements vscode.TreeDataProvider<PullRequestT
             this._bucketScopeGrouping.set(bucket.bucketId, forceScopeGrouping);
             return this.buildBucketNodes(prs, forceScopeGrouping);
         } catch (err) {
-            const node = new vscode.TreeItem(`Error: ${err}`, vscode.TreeItemCollapsibleState.None);
-            node.iconPath = new vscode.ThemeIcon('error');
-            return [node];
+            return handleProviderError(err, `pullRequests:${bucket.bucketId}`, this.onAuthError);
         }
     }
 
@@ -824,9 +825,7 @@ export class PullRequestProvider implements vscode.TreeDataProvider<PullRequestT
             }
             return visible.map(thread => new PullRequestThreadNode(thread, pr, scope));
         } catch (err) {
-            const node = new vscode.TreeItem(`Error loading comments: ${err}`, vscode.TreeItemCollapsibleState.None);
-            node.iconPath = new vscode.ThemeIcon('error');
-            return [node];
+            return handleProviderError(err, 'pullRequestComments', this.onAuthError, 'Error loading comments');
         }
     }
 

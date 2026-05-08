@@ -11,6 +11,8 @@ import {
 } from './projectScopes';
 import { mapWithConcurrencyLimit } from '../utils/async';
 import { WorkItemIconResolver } from './workItemIconResolver';
+import type { AuthRecoveryHandler } from '../utils/authRecovery';
+import { handleProviderError } from './providerErrors';
 
 const MAX_CONCURRENT_SCOPE_REQUESTS = 4;
 
@@ -76,7 +78,8 @@ export class BacklogProvider implements vscode.TreeDataProvider<PlanningTreeNode
     constructor(
         private readonly client: AdoClient,
         private readonly config: ConfigManager,
-        private readonly iconResolver: WorkItemIconResolver
+        private readonly iconResolver: WorkItemIconResolver,
+        private readonly onAuthError?: AuthRecoveryHandler
     ) {}
 
     refresh(): void {
@@ -131,7 +134,7 @@ export class BacklogProvider implements vscode.TreeDataProvider<PlanningTreeNode
 
             return groupByScope(items, 'backlogScopeGroup');
         } catch (err) {
-            return [errorNode(err)];
+            return handleProviderError(err, 'backlog', this.onAuthError);
         } finally {
             this._loading = false;
         }
@@ -199,7 +202,8 @@ export class SprintProvider implements vscode.TreeDataProvider<PlanningTreeNode>
     constructor(
         private readonly client: AdoClient,
         private readonly config: ConfigManager,
-        private readonly iconResolver: WorkItemIconResolver
+        private readonly iconResolver: WorkItemIconResolver,
+        private readonly onAuthError?: AuthRecoveryHandler
     ) {}
 
     refresh(): void {
@@ -247,7 +251,7 @@ export class SprintProvider implements vscode.TreeDataProvider<PlanningTreeNode>
 
             return groupByScope(items, 'sprintScopeGroup');
         } catch (err) {
-            return [errorNode(err)];
+            return handleProviderError(err, 'sprints', this.onAuthError);
         } finally {
             this._loading = false;
         }
@@ -275,7 +279,8 @@ export class BoardProvider implements vscode.TreeDataProvider<PlanningTreeNode> 
     constructor(
         private readonly client: AdoClient,
         private readonly config: ConfigManager,
-        private readonly iconResolver: WorkItemIconResolver
+        private readonly iconResolver: WorkItemIconResolver,
+        private readonly onAuthError?: AuthRecoveryHandler
     ) {}
 
     refresh(): void {
@@ -323,7 +328,7 @@ export class BoardProvider implements vscode.TreeDataProvider<PlanningTreeNode> 
 
             return groupByScope(items, 'boardScopeGroup');
         } catch (err) {
-            return [errorNode(err)];
+            return handleProviderError(err, 'boards', this.onAuthError);
         } finally {
             this._loading = false;
         }
@@ -516,8 +521,3 @@ function emptyNode(label: string): vscode.TreeItem {
     return node;
 }
 
-function errorNode(err: unknown): vscode.TreeItem {
-    const node = new vscode.TreeItem(`Error: ${err}`, vscode.TreeItemCollapsibleState.None);
-    node.iconPath = new vscode.ThemeIcon('error');
-    return node;
-}

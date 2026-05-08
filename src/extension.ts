@@ -62,12 +62,17 @@ import { TodoCodeActionProvider } from './views/todoCodeActionProvider';
 import { AdoCompletionProvider } from './providers/completionProvider';
 import { installNotificationMirroring, showErrorMessage, showInformationMessage, showOutputChannel, showWarningMessage } from './utils/notifications';
 import { WorkItemHoverProvider, PullRequestHoverProvider } from './providers/hoverProvider';
+import { adoErrorFingerprint, classifyAdoAuthError } from './utils/adoErrors';
+import type { AuthRecoveryResult } from './utils/authRecovery';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
     installNotificationMirroring();
     const auth = new AuthProvider();
     const config = new ConfigManager();
     const client = new AdoClient('');  // token will be set after sign-in
+    const attemptedForbiddenRecoveries = new Set<string>();
+    let authRecoveryPromise: Promise<AuthRecoveryResult> | undefined;
+    let reauthenticationPromptActive = false;
 
     // -------------------------------------------------------------------------
     // Helper: ensure the user is signed in and the client is connected
@@ -113,15 +118,94 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         boardProvider.refresh();
     }
 
+    function disconnectAfterAuthLost(): void {
+        auth.signOut();
+        client.disconnect();
+        updateSignedInContext();
+        notificationService.applyConfig();
+        mcpManager.refresh();
+        refreshAllViews();
+    }
+
+    async function recoverAuthAfterAdoError(error: unknown, source: string): Promise<AuthRecoveryResult> {
+        const classification = classifyAdoAuthError(error);
+        if (classification.kind === 'none') {
+            return 'not-auth';
+        }
+
+        if (classification.kind === 'forbidden-refresh-candidate') {
+            const fingerprint = adoErrorFingerprint(error, source);
+            if (attemptedForbiddenRecoveries.has(fingerprint)) {
+                return 'not-auth';
+            }
+            attemptedForbiddenRecoveries.add(fingerprint);
+        }
+
+        if (authRecoveryPromise) {
+            return authRecoveryPromise;
+        }
+
+        authRecoveryPromise = doRecoverAuthAfterAdoError(classification.kind);
+        try {
+            return await authRecoveryPromise;
+        } finally {
+            authRecoveryPromise = undefined;
+        }
+    }
+
+    async function doRecoverAuthAfterAdoError(kind: 'refreshable' | 'forbidden-refresh-candidate'): Promise<AuthRecoveryResult> {
+        const refreshResult = await auth.refreshSession();
+        if (refreshResult === 'refreshed') {
+            rebuildClient();
+            refreshAllViews();
+            return 'refreshed';
+        }
+
+        if (kind === 'forbidden-refresh-candidate' && refreshResult === 'unchanged') {
+            return 'not-auth';
+        }
+
+        disconnectAfterAuthLost();
+        void promptForReauthentication();
+        return 'signed-out';
+    }
+
+    async function promptForReauthentication(): Promise<void> {
+        if (reauthenticationPromptActive) {
+            return;
+        }
+
+        reauthenticationPromptActive = true;
+        try {
+            const choice = await showWarningMessage(
+                'Azure DevOps authentication expired or could not be refreshed. Sign in again to continue using ADOExt.',
+                'Sign In'
+            );
+            if (choice !== 'Sign In') {
+                return;
+            }
+
+            const ok = await auth.reauthenticate();
+            if (ok) {
+                attemptedForbiddenRecoveries.clear();
+                rebuildClient();
+                showInformationMessage(`Signed in as ${auth.accountName}`);
+                refreshAllViews();
+            }
+        } finally {
+            reauthenticationPromptActive = false;
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Tree providers
     // -------------------------------------------------------------------------
     const workItemIconResolver = new WorkItemIconResolver(client, config);
-    const workItemProvider = new WorkItemProvider(client, config, workItemIconResolver);
-    const pullRequestProvider = new PullRequestProvider(client, config);
-    const backlogProvider = new BacklogProvider(client, config, workItemIconResolver);
-    const sprintProvider = new SprintProvider(client, config, workItemIconResolver);
-    const boardProvider = new BoardProvider(client, config, workItemIconResolver);
+    const workItemProvider = new WorkItemProvider(client, config, workItemIconResolver, recoverAuthAfterAdoError);
+    const pullRequestProvider = new PullRequestProvider(client, config, recoverAuthAfterAdoError);
+    const backlogProvider = new BacklogProvider(client, config, workItemIconResolver, recoverAuthAfterAdoError);
+    const sprintProvider = new SprintProvider(client, config, workItemIconResolver, recoverAuthAfterAdoError);
+    const boardProvider = new BoardProvider(client, config, workItemIconResolver, recoverAuthAfterAdoError);
 
     context.subscriptions.push(
         vscode.window.registerTreeDataProvider('adoext.workItems', workItemProvider),
@@ -150,7 +234,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         new PrCommentHandler(client, config, context.globalState),
         new PrReviewRequestHandler(client, config, context.globalState),
         new PrStatusChangeHandler(client, config, context.globalState)
-    ]);
+    ], recoverAuthAfterAdoError);
     context.subscriptions.push(notificationService);
 
     // -------------------------------------------------------------------------
@@ -165,9 +249,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
 
     context.subscriptions.push(
-        vscode.commands.registerCommand('adoext.signIn', async () => {
-            const ok = await auth.signIn();
+        vscode.commands.registerCommand('adoext.signIn', async (forceNewSession?: boolean) => {
+            const ok = forceNewSession ? await auth.reauthenticate() : await auth.signIn();
             if (ok) {
+                attemptedForbiddenRecoveries.clear();
                 rebuildClient();
                 showInformationMessage(
                     `Signed in as ${auth.accountName}`
@@ -183,6 +268,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             auth.signOut();
             client.updateToken('');
             updateSignedInContext();
+            notificationService.applyConfig();
             mcpManager.refresh();
             showInformationMessage('Signed out from Azure DevOps.');
             refreshAllViews();
@@ -891,6 +977,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const restored = await auth.tryRestoreSession();
 
                 if (restored) {
+                    attemptedForbiddenRecoveries.clear();
                     rebuildClient();
                     if (config.isConfigured) {
                         refreshAllViews();
@@ -899,10 +986,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
 
                 if (wasSignedIn) {
-                    auth.signOut();
-                    client.disconnect();
-                    updateSignedInContext();
-                    mcpManager.refresh();
+                    disconnectAfterAuthLost();
                     showWarningMessage(
                         'Azure DevOps session changed or expired. Please sign in again.'
                     );

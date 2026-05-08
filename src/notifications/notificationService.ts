@@ -3,6 +3,7 @@ import type { AdoClient, GitPullRequest } from '../api/adoClient';
 import type { ConfigManager, PullRequestQueryFilter } from '../config/configManager';
 import { resolveProjectScopes } from '../providers/projectScopes';
 import { mapWithConcurrencyLimit } from '../utils/async';
+import type { AuthRecoveryHandler } from '../utils/authRecovery';
 import type { INotificationHandler, PrWithScope } from './iNotificationHandler';
 
 const MAX_CONCURRENT_REQUESTS = 4;
@@ -29,7 +30,8 @@ export class NotificationService implements vscode.Disposable {
     constructor(
         private readonly _client: AdoClient,
         private readonly _config: ConfigManager,
-        private readonly _handlers: readonly INotificationHandler[]
+        private readonly _handlers: readonly INotificationHandler[],
+        private readonly _onAuthError?: AuthRecoveryHandler
     ) {}
 
     /**
@@ -86,7 +88,15 @@ export class NotificationService implements vscode.Disposable {
         if (!this._client.isConnected) { return; }
         this._polling = true;
         try {
-            const scopes = await resolveProjectScopes(this._client, this._config);
+            let scopes;
+            try {
+                scopes = await resolveProjectScopes(this._client, this._config);
+            } catch (err) {
+                if (await this.handleAuthError(err, 'notifications:resolveProjectScopes')) {
+                    return;
+                }
+                return;
+            }
             if (scopes.length === 0) { return; }
 
             const enabledHandlers = this._handlers.filter(h => h.isEnabled);
@@ -107,15 +117,25 @@ export class NotificationService implements vscode.Disposable {
                                     undefined,
                                     scope.organization
                                 );
-                            } catch {
+                            } catch (err) {
+                                if (await this.handleAuthError(err, `notifications:${scope.organization}/${scope.project}:${filter}`)) {
+                                    return undefined;
+                                }
                                 return [] as GitPullRequest[];
                             }
                         })
                     );
 
+                    if (prsByFilter.some(prs => prs === undefined)) {
+                        return undefined;
+                    }
+                    const resolvedPrsByFilter = prsByFilter.filter(
+                        (prs): prs is GitPullRequest[] => prs !== undefined
+                    );
+
                     const merged: PrWithScope[] = [];
                     const seen = new Set<string>();
-                    for (const prs of prsByFilter) {
+                    for (const prs of resolvedPrsByFilter) {
                         for (const pr of prs) {
                             const key = makePullRequestKey(scope.organization, scope.project, pr);
                             if (!key || seen.has(key)) {
@@ -128,13 +148,29 @@ export class NotificationService implements vscode.Disposable {
                     return merged;
                 }
             );
-            const prs = prsByScope.flat();
+
+            if (prsByScope.some(prs => prs === undefined)) {
+                return;
+            }
+
+            const resolvedPrsByScope = prsByScope.filter(
+                (prs): prs is PrWithScope[] => prs !== undefined
+            );
+            const prs = resolvedPrsByScope.flat();
             if (prs.length === 0) { return; }
 
             await Promise.all(enabledHandlers.map(h => h.poll(prs)));
         } finally {
             this._polling = false;
         }
+    }
+
+    private async handleAuthError(error: unknown, source: string): Promise<boolean> {
+        if (!this._onAuthError) {
+            return false;
+        }
+        const result = await this._onAuthError(error, source);
+        return result !== 'not-auth';
     }
 }
 

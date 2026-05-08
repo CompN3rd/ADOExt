@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.1 — 2026-05-08
+
+### Fixed
+
+- **Auth reliability**: Recover from stale Azure DevOps tokens when API calls reject the cached Microsoft session, refresh affected views and notifications, and preserve real permission errors after a one-time refresh attempt.
+
 ## 1.6.0 — 2026-05-07
 
 ### Added

@@ -11,6 +11,8 @@ import {
 import { mapWithConcurrencyLimit } from '../utils/async';
 import { bundledWorkItemTypeIconFile } from '../utils/workItemTypeIcons';
 import { WorkItemIconResolver } from './workItemIconResolver';
+import type { AuthRecoveryHandler } from '../utils/authRecovery';
+import { handleProviderError } from './providerErrors';
 
 const MAX_CONCURRENT_SCOPE_REQUESTS = 4;
 
@@ -130,7 +132,8 @@ export class WorkItemProvider implements vscode.TreeDataProvider<WorkItemTreeNod
     constructor(
         private readonly client: AdoClient,
         private readonly config: ConfigManager,
-        iconResolver?: WorkItemIconResolver
+        iconResolver?: WorkItemIconResolver,
+        private readonly onAuthError?: AuthRecoveryHandler
     ) {
         this._iconResolver = iconResolver ?? new WorkItemIconResolver(client, config);
     }
@@ -207,9 +210,7 @@ export class WorkItemProvider implements vscode.TreeDataProvider<WorkItemTreeNod
                 .map(([key, items]) => new WorkItemScopeGroup(scopeByKey.get(key)!, items))
                 .sort((left, right) => `${left.label}`.localeCompare(`${right.label}`));
         } catch (err) {
-            const node = new vscode.TreeItem(`Error: ${err}`, vscode.TreeItemCollapsibleState.None);
-            node.iconPath = new vscode.ThemeIcon('error');
-            return [node];
+            return handleProviderError(err, 'workItems', this.onAuthError);
         } finally {
             this._loading = false;
         }

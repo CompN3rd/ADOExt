@@ -38,16 +38,73 @@ export class AuthProvider {
      */
     async signIn(): Promise<boolean> {
         try {
-            this._session = await vscode.authentication.getSession(
-                'microsoft',
-                [ADO_SCOPE],
-                { createIfNone: true }
-            );
+            this._session = await this.getInteractiveSession(false);
             return this._session !== undefined;
         } catch (err) {
             showErrorMessage(`Failed to sign in: ${err}`);
             return false;
         }
+    }
+
+    /**
+     * Reauthenticate interactively even if VS Code still has a cached session.
+     */
+    async reauthenticate(): Promise<boolean> {
+        try {
+            this._session = await this.getInteractiveSession(true);
+            return this._session !== undefined;
+        } catch (err) {
+            showErrorMessage(`Failed to sign in: ${err}`);
+            return false;
+        }
+    }
+
+    /**
+     * Ask VS Code's Microsoft auth provider for the current session again.
+     * This is intentionally silent; true forced token reminting is interactive
+     * in the VS Code API and is handled by reauthenticate().
+     */
+    async refreshSession(): Promise<'refreshed' | 'unchanged' | 'missing'> {
+        const previousToken = this._session?.accessToken;
+        try {
+            const session = await vscode.authentication.getSession(
+                'microsoft',
+                [ADO_SCOPE],
+                { createIfNone: false, silent: true }
+            );
+            if (!session) {
+                this._session = undefined;
+                return 'missing';
+            }
+
+            this._session = session;
+            if (!previousToken || session.accessToken !== previousToken) {
+                return 'refreshed';
+            }
+            return 'unchanged';
+        } catch {
+            return 'missing';
+        }
+    }
+
+    private getInteractiveSession(forceNewSession: boolean): Thenable<vscode.AuthenticationSession> {
+        if (forceNewSession) {
+            return vscode.authentication.getSession(
+                'microsoft',
+                [ADO_SCOPE],
+                {
+                    forceNewSession: {
+                        detail: 'Azure DevOps rejected the current token. Sign in again to refresh ADOExt access.'
+                    }
+                }
+            );
+        }
+
+        return vscode.authentication.getSession(
+            'microsoft',
+            [ADO_SCOPE],
+            { createIfNone: true }
+        );
     }
 
     /**
