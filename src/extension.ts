@@ -13,6 +13,7 @@ import {
 import { PipelinesProvider, type PipelineRunNode, type PipelineStepLogNode } from './providers/pipelinesProvider';
 import { BacklogProvider, SprintProvider, BoardProvider } from './providers/planningProviders';
 import { WorkItemIconResolver } from './providers/workItemIconResolver';
+import { WikiProvider, WikiPageNode } from './providers/wikiProvider';
 import { PlanningPanel } from './views/planningPanel';
 import { PrCommentController, type CommentReply } from './views/prCommentController';
 import { PrDiffCache, PrDiffContentProvider, PR_DIFF_SCHEME } from './views/prContentProvider';
@@ -66,6 +67,7 @@ import {
     rerunPipelineRun,
     viewPipelineRunDetails
 } from './commands/pipelineCommands';
+import { clearWikiSearch, copyWikiPageLink, openWikiPageInBrowser, refreshWiki, searchWikiPages, viewWikiPage } from './commands/wikiCommands';
 import { McpServerManager } from './mcp/mcpServerManager';
 import { TodoCodeActionProvider } from './views/todoCodeActionProvider';
 import { PipelineRunDetailsPanel } from './views/pipelineRunDetailsPanel';
@@ -136,6 +138,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         backlogProvider.refresh();
         sprintProvider.refresh();
         boardProvider.refresh();
+        wikiProvider.refresh();
     }
 
     function disconnectAfterAuthLost(): void {
@@ -228,6 +231,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const backlogProvider = new BacklogProvider(client, config, workItemIconResolver, recoverAuthAfterAdoError);
     const sprintProvider = new SprintProvider(client, config, workItemIconResolver, recoverAuthAfterAdoError);
     const boardProvider = new BoardProvider(client, config, workItemIconResolver, recoverAuthAfterAdoError);
+    const wikiProvider = new WikiProvider(client, config, recoverAuthAfterAdoError);
 
     context.subscriptions.push(
         vscode.window.registerTreeDataProvider('adoext.workItems', workItemProvider),
@@ -235,7 +239,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.window.registerTreeDataProvider('adoext.pipelines', pipelinesProvider),
         vscode.window.registerTreeDataProvider('adoext.backlog', backlogProvider),
         vscode.window.registerTreeDataProvider('adoext.sprints', sprintProvider),
-        vscode.window.registerTreeDataProvider('adoext.boards', boardProvider)
+        vscode.window.registerTreeDataProvider('adoext.boards', boardProvider),
+        vscode.window.registerTreeDataProvider('adoext.wiki', wikiProvider)
     );
 
     // -------------------------------------------------------------------------
@@ -448,6 +453,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('adoext.refreshBoards', async () => {
             await ensureSignedIn();
             boardProvider.refresh();
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adoext.refreshWiki', async () => {
+            await ensureSignedIn();
+            await refreshWiki(wikiProvider);
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adoext.searchWikiPages', async () => {
+            await ensureSignedIn();
+            await searchWikiPages(wikiProvider);
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adoext.clearWikiSearch', async () => {
+            await ensureSignedIn();
+            await clearWikiSearch(wikiProvider);
         })
     );
 
@@ -896,6 +922,36 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 });
                 const document = await vscode.workspace.openTextDocument(uri);
                 await vscode.window.showTextDocument(document, { preview: false });
+            }
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.viewWikiPage',
+            async (node: WikiPageNode) => {
+                if (!(await ensureSignedIn())) { return; }
+                await viewWikiPage(context, client, config, node);
+            }
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.openWikiPageInBrowser',
+            async (node: WikiPageNode) => {
+                if (!(await ensureSignedIn())) { return; }
+                await openWikiPageInBrowser(node);
+            }
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.copyWikiPageLink',
+            async (node: WikiPageNode) => {
+                if (!(await ensureSignedIn())) { return; }
+                await copyWikiPageLink(node);
             }
         )
     );
