@@ -84,6 +84,12 @@
           "name": "Pipelines",
           "icon": "media/icons/ado.svg",
           "contextualTitle": "Azure DevOps Pipelines"
+        },
+        {
+          "id": "adoext.deployments",
+          "name": "Deployments",
+          "icon": "media/icons/ado.svg",
+          "contextualTitle": "Azure DevOps Deployments"
         }
       ]
     },
@@ -233,6 +239,12 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "adoext.refreshDeployments",
+        "title": "Refresh Deployments",
+        "category": "ADOExt",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "adoext.setPipelineRunsFilter",
         "title": "Filter Pipeline Runs",
         "category": "ADOExt",
@@ -249,6 +261,24 @@
         "title": "View Pipeline Run Details",
         "category": "ADOExt",
         "icon": "$(eye)"
+      },
+      {
+        "command": "adoext.viewReleaseDetails",
+        "title": "View Release Details",
+        "category": "ADOExt",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "adoext.openClassicRelease",
+        "title": "Open Release in Browser",
+        "category": "ADOExt",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "adoext.openClassicReleaseEnvironment",
+        "title": "Open Release Environment in Browser",
+        "category": "ADOExt",
+        "icon": "$(link-external)"
       },
       {
         "command": "adoext.openPipelineRun",
@@ -579,12 +609,12 @@
         },
         {
           "command": "adoext.detectRepoContext",
-          "when": "view == adoext.workItems || view == adoext.backlog || view == adoext.sprints || view == adoext.boards || view == adoext.pullRequests || view == adoext.pipelines",
+          "when": "view == adoext.workItems || view == adoext.backlog || view == adoext.sprints || view == adoext.boards || view == adoext.pullRequests || view == adoext.pipelines || view == adoext.deployments",
           "group": "navigation"
         },
         {
           "command": "adoext.signIn",
-          "when": "(view == adoext.workItems || view == adoext.backlog || view == adoext.sprints || view == adoext.boards || view == adoext.pullRequests || view == adoext.pipelines) && !adoext.isSignedIn",
+          "when": "(view == adoext.workItems || view == adoext.backlog || view == adoext.sprints || view == adoext.boards || view == adoext.pullRequests || view == adoext.pipelines || view == adoext.deployments) && !adoext.isSignedIn",
           "group": "navigation"
         },
         {
@@ -615,6 +645,11 @@
         {
           "command": "adoext.refreshPipelines",
           "when": "view == adoext.pipelines",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.refreshDeployments",
+          "when": "view == adoext.deployments",
           "group": "navigation"
         },
         {
@@ -730,8 +765,23 @@
           "group": "inline"
         },
         {
+          "command": "adoext.viewReleaseDetails",
+          "when": "viewItem == classicRelease || viewItem == classicReleaseEnvironment",
+          "group": "inline"
+        },
+        {
           "command": "adoext.openPipelineRun",
           "when": "viewItem == pipelineRun || viewItem == pipelineRunRunning",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.openClassicRelease",
+          "when": "viewItem == classicRelease || viewItem == classicReleaseEnvironment",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.openClassicReleaseEnvironment",
+          "when": "viewItem == classicReleaseEnvironment",
           "group": "navigation"
         },
         {
@@ -1086,6 +1136,13 @@
           "minimum": 1,
           "maximum": 100,
           "description": "Maximum number of pipeline runs fetched per project scope for the ADOExt Pipelines view."
+        },
+        "adoext.classicReleasesTop": {
+          "type": "number",
+          "default": 10,
+          "minimum": 1,
+          "maximum": 50,
+          "description": "Maximum number of classic releases fetched per project scope for the ADOExt Deployments view."
         },
         "adoext.showResolvedPullRequestThreads": {
           "type": "boolean",

@@ -411,6 +411,13 @@ export class ConfigManager {
         return Math.max(1, Math.min(100, top));
     }
 
+    /** Max classic releases fetched per scope for the Deployments view (1-50). */
+    get classicReleasesTop(): number {
+        const raw = this.config.get<number>('classicReleasesTop', 10);
+        const top = Math.floor(raw);
+        return Math.max(1, Math.min(50, top));
+    }
+
     /** Returns true if both organization and project are configured. */
     get isConfigured(): boolean {
         const organizations = this.selectedOrganizations;

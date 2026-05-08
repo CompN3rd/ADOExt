@@ -11,6 +11,7 @@ import {
     PullRequestThreadNode
 } from './providers/pullRequestProvider';
 import { PipelinesProvider, type PipelineRunNode, type PipelineStepLogNode } from './providers/pipelinesProvider';
+import { DeploymentsProvider, type ClassicReleaseNode, type ClassicReleaseEnvironmentNode } from './providers/deploymentsProvider';
 import { BacklogProvider, SprintProvider, BoardProvider } from './providers/planningProviders';
 import { WorkItemIconResolver } from './providers/workItemIconResolver';
 import { PlanningPanel } from './views/planningPanel';
@@ -66,6 +67,11 @@ import {
     rerunPipelineRun,
     viewPipelineRunDetails
 } from './commands/pipelineCommands';
+import {
+    openClassicReleaseEnvironmentInBrowser,
+    openClassicReleaseInBrowser,
+    viewReleaseDetails
+} from './commands/deploymentsCommands';
 import { McpServerManager } from './mcp/mcpServerManager';
 import { TodoCodeActionProvider } from './views/todoCodeActionProvider';
 import { PipelineRunDetailsPanel } from './views/pipelineRunDetailsPanel';
@@ -124,6 +130,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         workItemProvider.refresh();
         pullRequestProvider.refresh();
         pipelinesProvider.refresh();
+        deploymentsProvider.refresh();
         pipelineLogContentProvider.clear();
         backlogProvider.refresh();
         sprintProvider.refresh();
@@ -216,6 +223,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const workItemProvider = new WorkItemProvider(client, config, workItemIconResolver, recoverAuthAfterAdoError);
     const pullRequestProvider = new PullRequestProvider(client, config, recoverAuthAfterAdoError);
     const pipelinesProvider = new PipelinesProvider(client, config);
+    const deploymentsProvider = new DeploymentsProvider(client, config);
     const pipelineLogContentProvider = new PipelineLogContentProvider(client);
     const backlogProvider = new BacklogProvider(client, config, workItemIconResolver, recoverAuthAfterAdoError);
     const sprintProvider = new SprintProvider(client, config, workItemIconResolver, recoverAuthAfterAdoError);
@@ -225,6 +233,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.window.registerTreeDataProvider('adoext.workItems', workItemProvider),
         vscode.window.registerTreeDataProvider('adoext.pullRequests', pullRequestProvider),
         vscode.window.registerTreeDataProvider('adoext.pipelines', pipelinesProvider),
+        vscode.window.registerTreeDataProvider('adoext.deployments', deploymentsProvider),
         vscode.window.registerTreeDataProvider('adoext.backlog', backlogProvider),
         vscode.window.registerTreeDataProvider('adoext.sprints', sprintProvider),
         vscode.window.registerTreeDataProvider('adoext.boards', boardProvider)
@@ -840,11 +849,48 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
 
     context.subscriptions.push(
+        vscode.commands.registerCommand('adoext.refreshDeployments', async () => {
+            await ensureSignedIn();
+            deploymentsProvider.refresh();
+        })
+    );
+
+    context.subscriptions.push(
         vscode.commands.registerCommand(
             'adoext.viewPipelineRunDetails',
             async (node?: PipelineRunNode) => {
                 if (!(await ensureSignedIn())) { return; }
                 await viewPipelineRunDetails(context, node, client, config);
+            }
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.viewReleaseDetails',
+            async (node?: ClassicReleaseNode | ClassicReleaseEnvironmentNode) => {
+                if (!(await ensureSignedIn())) { return; }
+                await viewReleaseDetails(context, node, client, config);
+            }
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.openClassicRelease',
+            async (node?: ClassicReleaseNode | ClassicReleaseEnvironmentNode) => {
+                if (!(await ensureSignedIn())) { return; }
+                await openClassicReleaseInBrowser(node, client, config);
+            }
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.openClassicReleaseEnvironment',
+            async (node?: ClassicReleaseEnvironmentNode) => {
+                if (!(await ensureSignedIn())) { return; }
+                await openClassicReleaseEnvironmentInBrowser(node, client, config);
             }
         )
     );
