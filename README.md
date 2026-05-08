@@ -205,6 +205,7 @@ Open VS Code Settings (Ctrl+, / Cmd+,) and search for `adoext` to customize:
 | `adoext.workItemQueries` | Custom saved work item query filters | (defaults) |
 | `adoext.pullRequestQueries` | Custom saved PR query filters | (defaults) |
 | `adoext.projectsByOrganization` | Multi-org project selection | `{}` |
+| `adoext.enableWikiView` | Enable the optional Wiki view (read-only) | `false` |
 
 ---
 
@@ -286,6 +287,7 @@ Happy coding! 🎉
 | `adoext.pullRequestFilter` | `mine` | Legacy pull request filter used as compatibility fallback when older settings are migrated. |
 | `adoext.useRemoteWorkItemIcons` | `true` | Prefer Azure DevOps work item type icons (including custom process icons). Disable to force bundled fallback icons. |
 | `adoext.planningAssignedFilter` | `all` | Assignee filter for Backlog/Sprint/Board views (`all` or `mine`). |
+| `adoext.enableWikiView` | `false` | Enable the optional Wiki view (read-only) for browsing Azure DevOps wiki pages. |
 
 ### Query and bucket management
 

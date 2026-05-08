@@ -417,6 +417,11 @@ export class ConfigManager {
         return organizations.length > 0 && organizations.some(org => this.getProjectSelection(org).length > 0);
     }
 
+    /** Enables the optional Wiki view contribution. */
+    get enableWikiView(): boolean {
+        return this.config.get<boolean>('enableWikiView', false);
+    }
+
     private normalizeList(values: readonly string[]): string[] {
         const seen = new Set<string>();
         const normalized: string[] = [];

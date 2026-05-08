@@ -4,8 +4,9 @@ import type { IGitApi } from 'azure-devops-node-api/GitApi';
 import type { ICoreApi } from 'azure-devops-node-api/CoreApi';
 import type { IPolicyApi } from 'azure-devops-node-api/PolicyApi';
 import type { IBuildApi } from 'azure-devops-node-api/BuildApi';
+import type { IWikiApi } from 'azure-devops-node-api/WikiApi';
 import { CommentExpandOptions, QueryExpand, TreeStructureGroup, WorkItemExpand } from 'azure-devops-node-api/interfaces/WorkItemTrackingInterfaces';
-import { GitVersionType, VersionControlChangeType, GitStatusState, PullRequestAsyncStatus, PullRequestMergeFailureType, PullRequestStatus } from 'azure-devops-node-api/interfaces/GitInterfaces';
+import { GitVersionType, VersionControlChangeType, VersionControlRecursionType, GitStatusState, PullRequestAsyncStatus, PullRequestMergeFailureType, PullRequestStatus } from 'azure-devops-node-api/interfaces/GitInterfaces';
 import { BuildReason, BuildResult, BuildStatus } from 'azure-devops-node-api/interfaces/BuildInterfaces';
 import { Operation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
 import { normalizeWorkItemTypeName, workItemTypeScopeKey } from '../utils/workItemTypeIcons';
@@ -35,6 +36,8 @@ import type { TeamProject } from 'azure-devops-node-api/interfaces/CoreInterface
 import type { IdentityRef, JsonPatchDocument, JsonPatchOperation, ResourceRef } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
 import type { PolicyEvaluationRecord } from 'azure-devops-node-api/interfaces/PolicyInterfaces';
 import { PolicyEvaluationStatus } from 'azure-devops-node-api/interfaces/PolicyInterfaces';
+import type { WikiPageDetail, WikiV2 } from 'azure-devops-node-api/interfaces/WikiInterfaces';
+import type { IncomingMessage } from 'http';
 
 export type {
     WorkItem,
@@ -59,6 +62,13 @@ export type {
 export { GitStatusState, PolicyEvaluationStatus, PullRequestAsyncStatus, PullRequestMergeFailureType, PullRequestStatus, BuildReason, BuildResult, BuildStatus };
 
 export type PipelineRunsFilter = 'all' | 'running' | 'failed' | 'mine';
+
+export interface WikiPageContent {
+    path: string;
+    markdown: string;
+    lastModified?: string;
+    etag?: string;
+}
 
 /** A flattened representation of a saved query (non-folder). */
 export interface SavedQuery {
@@ -1470,6 +1480,50 @@ export class AdoClient {
         } catch {
             return '';
         }
+    }
+
+    async listWikis(project: string, organization?: string): Promise<WikiV2[]> {
+        const wikiApi: IWikiApi = await this.getConnectionFor(organization).getWikiApi();
+        return wikiApi.getAllWikis(project);
+    }
+
+    async listWikiPages(project: string, wikiIdentifier: string, organization?: string): Promise<WikiPageDetail[]> {
+        const wikiApi: IWikiApi = await this.getConnectionFor(organization).getWikiApi();
+        const pages = await wikiApi.getPagesBatch({ top: 1000 }, project, wikiIdentifier);
+        return Array.isArray(pages) ? pages : [];
+    }
+
+    async getWikiPageMarkdown(
+        project: string,
+        wikiIdentifier: string,
+        pagePath: string,
+        organization?: string
+    ): Promise<WikiPageContent> {
+        const wikiApi: IWikiApi = await this.getConnectionFor(organization).getWikiApi();
+        const stream = await wikiApi.getPageText(
+            project,
+            wikiIdentifier,
+            pagePath,
+            VersionControlRecursionType.None
+        );
+        const message = stream as unknown as IncomingMessage;
+        const lastModified = typeof message.headers['last-modified'] === 'string'
+            ? message.headers['last-modified']
+            : Array.isArray(message.headers['last-modified'])
+                ? message.headers['last-modified'][0]
+                : undefined;
+        const etag = typeof message.headers.etag === 'string'
+            ? message.headers.etag
+            : Array.isArray(message.headers.etag)
+                ? message.headers.etag[0]
+                : undefined;
+
+        return {
+            path: pagePath,
+            markdown: await this.streamToString(message),
+            ...(lastModified ? { lastModified } : {}),
+            ...(etag ? { etag } : {})
+        };
     }
 
     private streamToString(stream: NodeJS.ReadableStream): Promise<string> {
