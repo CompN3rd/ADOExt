@@ -4,10 +4,12 @@ import type { IGitApi } from 'azure-devops-node-api/GitApi';
 import type { ICoreApi } from 'azure-devops-node-api/CoreApi';
 import type { IPolicyApi } from 'azure-devops-node-api/PolicyApi';
 import type { IBuildApi } from 'azure-devops-node-api/BuildApi';
+import type { IReleaseApi } from 'azure-devops-node-api/ReleaseApi';
 import { CommentExpandOptions, QueryExpand, TreeStructureGroup, WorkItemExpand } from 'azure-devops-node-api/interfaces/WorkItemTrackingInterfaces';
 import { GitVersionType, VersionControlChangeType, GitStatusState, PullRequestAsyncStatus, PullRequestMergeFailureType, PullRequestStatus } from 'azure-devops-node-api/interfaces/GitInterfaces';
 import { BuildReason, BuildResult, BuildStatus } from 'azure-devops-node-api/interfaces/BuildInterfaces';
 import { Operation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
+import { ReleaseExpands, ReleaseQueryOrder } from 'azure-devops-node-api/interfaces/ReleaseInterfaces';
 import { normalizeWorkItemTypeName, workItemTypeScopeKey } from '../utils/workItemTypeIcons';
 import type {
     WorkItem,
@@ -35,6 +37,7 @@ import type { TeamProject } from 'azure-devops-node-api/interfaces/CoreInterface
 import type { IdentityRef, JsonPatchDocument, JsonPatchOperation, ResourceRef } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
 import type { PolicyEvaluationRecord } from 'azure-devops-node-api/interfaces/PolicyInterfaces';
 import { PolicyEvaluationStatus } from 'azure-devops-node-api/interfaces/PolicyInterfaces';
+import type { Release, ReleaseEnvironment } from 'azure-devops-node-api/interfaces/ReleaseInterfaces';
 
 export type {
     WorkItem,
@@ -54,6 +57,8 @@ export type {
     BuildArtifact,
     BuildLog,
     Timeline,
+    Release,
+    ReleaseEnvironment,
     PolicyEvaluationRecord
 };
 export { GitStatusState, PolicyEvaluationStatus, PullRequestAsyncStatus, PullRequestMergeFailureType, PullRequestStatus, BuildReason, BuildResult, BuildStatus };
@@ -1295,6 +1300,81 @@ export class AdoClient {
             project,
             buildId
         );
+    }
+
+    /**
+     * List classic Releases (Release Management / "Releases" UI) for a project.
+     *
+     * This API can be unavailable or permission-gated; callers should catch
+     * errors and degrade gracefully.
+     */
+    async listClassicReleases(
+        project: string,
+        organization?: string,
+        options?: {
+            top?: number;
+        }
+    ): Promise<Release[]> {
+        const releaseApi: IReleaseApi = await this.getConnectionFor(organization).getReleaseApi();
+        const top = options?.top ?? 10;
+        const expand = ReleaseExpands.Environments | ReleaseExpands.Artifacts | ReleaseExpands.Approvals;
+
+        return releaseApi.getReleases(
+            project,
+            undefined, // definitionId
+            undefined, // definitionEnvironmentId
+            undefined, // searchText
+            undefined, // createdBy
+            undefined, // statusFilter
+            undefined, // environmentStatusFilter
+            undefined, // minCreatedTime
+            undefined, // maxCreatedTime
+            ReleaseQueryOrder.Descending,
+            top,
+            undefined, // continuationToken
+            expand
+        );
+    }
+
+    /**
+     * Fetch a single classic release with expanded environments/artifacts.
+     *
+     * `getRelease()` does not support expanding environments/artifacts, so we
+     * query `getReleases()` with a releaseId filter.
+     */
+    async getClassicRelease(
+        project: string,
+        releaseId: number,
+        organization?: string
+    ): Promise<Release | undefined> {
+        const releaseApi: IReleaseApi = await this.getConnectionFor(organization).getReleaseApi();
+        const expand = ReleaseExpands.Environments | ReleaseExpands.Artifacts | ReleaseExpands.Approvals;
+
+        const releases = await releaseApi.getReleases(
+            project,
+            undefined, // definitionId
+            undefined, // definitionEnvironmentId
+            undefined, // searchText
+            undefined, // createdBy
+            undefined, // statusFilter
+            undefined, // environmentStatusFilter
+            undefined, // minCreatedTime
+            undefined, // maxCreatedTime
+            ReleaseQueryOrder.Descending,
+            1,
+            undefined, // continuationToken
+            expand,
+            undefined, // artifactTypeId
+            undefined, // sourceId
+            undefined, // artifactVersionId
+            undefined, // sourceBranchFilter
+            undefined, // isDeleted
+            undefined, // tagFilter
+            undefined, // propertyFilters
+            [releaseId] // releaseIdFilter
+        );
+
+        return releases?.[0];
     }
 
     get organization(): string | undefined {

@@ -79,6 +79,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 ### 🏗️ **Build & Integration**
 - **Build Summaries** — Lightweight build status cards in PR and work item detail panels
 - **Pipelines View** — Browse recent Azure Pipelines runs across selected scopes; filter/group runs, inspect timeline details, open step logs from the tree or details timeline in VS Code, and open artifacts
+- **Deployments View** — Read-only visibility into classic Releases environments plus recent pipeline runs across selected scopes
 - **MCP Server** — Foundry integration for AI-powered workflows and automations
 - **Azure Boards Integration** — Full WIQL query support for advanced filtering and bulk operations
 
@@ -124,7 +125,8 @@ code --install-extension ./adoext-<version>.vsix
    - **Backlog** — Hierarchical view of all work
    - **Sprints** — Current and future sprint planning
    - **Boards** — Kanban-style board view
-  - **Pipelines** — Recent CI/CD runs across your selected scopes
+   - **Pipelines** — Recent CI/CD runs across your selected scopes
+   - **Deployments** — Classic release environment status plus recent pipeline runs (read-only)
 
 ---
 
