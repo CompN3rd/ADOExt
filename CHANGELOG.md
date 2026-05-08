@@ -5,6 +5,7 @@
 ### Added
 
 - **Pipelines view**: Browse recent Azure Pipelines runs across selected organization/project scopes, filter by all/running/failed/mine, group by repository or branch, inspect timeline/artifacts, open step logs from tree nodes or details timeline links in read-only VS Code documents, and re-run or cancel runs with confirmation prompts.
+- **Open Extension Management in Browser** (`ADOExt: Open Extension Management in Browser`): Command-palette shortcut to open the Azure DevOps extension management settings page (`_settings/extensions`) for a selected organization in the browser. Prompts for org selection when multiple organizations are configured.
 
 ## 1.6.1 — 2026-05-08
 

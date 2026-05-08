@@ -222,6 +222,7 @@ Open VS Code Settings (Ctrl+, / Cmd+,) and search for `adoext` to customize:
 | `ADOExt: Refresh Work Items` | — | Manually refresh work items tree |
 | `ADOExt: Refresh Pull Requests` | — | Manually refresh PR tree |
 | `ADOExt: Checkout Pull Request Branch` | — | Check out a PR branch locally |
+| `ADOExt: Open Extension Management in Browser` | — | Open the Azure DevOps extension management page for a selected organization |
 
 ---
 
