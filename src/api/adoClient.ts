@@ -5,12 +5,14 @@ import type { ICoreApi } from 'azure-devops-node-api/CoreApi';
 import type { IPolicyApi } from 'azure-devops-node-api/PolicyApi';
 import type { IBuildApi } from 'azure-devops-node-api/BuildApi';
 import type { ITestApi } from 'azure-devops-node-api/TestApi';
+import type { ITaskAgentApi } from 'azure-devops-node-api/TaskAgentApi';
 import { CommentExpandOptions, QueryExpand, TreeStructureGroup, WorkItemExpand } from 'azure-devops-node-api/interfaces/WorkItemTrackingInterfaces';
 import { GitVersionType, VersionControlChangeType, GitStatusState, PullRequestAsyncStatus, PullRequestMergeFailureType, PullRequestStatus } from 'azure-devops-node-api/interfaces/GitInterfaces';
 import { BuildReason, BuildResult, BuildStatus } from 'azure-devops-node-api/interfaces/BuildInterfaces';
 import { ResultDetails, TestOutcome } from 'azure-devops-node-api/interfaces/TestInterfaces';
 import { Operation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
 import { normalizeWorkItemTypeName, workItemTypeScopeKey } from '../utils/workItemTypeIcons';
+import { formatAdoError } from '../utils/adoErrors';
 import type {
     WorkItem,
     WorkItemType,
@@ -38,6 +40,8 @@ import type { IdentityRef, JsonPatchDocument, JsonPatchOperation, ResourceRef } 
 import type { PolicyEvaluationRecord } from 'azure-devops-node-api/interfaces/PolicyInterfaces';
 import { PolicyEvaluationStatus } from 'azure-devops-node-api/interfaces/PolicyInterfaces';
 import type { TestCaseResult, TestRun } from 'azure-devops-node-api/interfaces/TestInterfaces';
+import type { TaskAgent, TaskAgentJobRequest, TaskAgentQueue } from 'azure-devops-node-api/interfaces/TaskAgentInterfaces';
+import { TaskAgentStatus } from 'azure-devops-node-api/interfaces/TaskAgentInterfaces';
 
 export type {
     WorkItem,
@@ -64,6 +68,28 @@ export type {
 export { GitStatusState, PolicyEvaluationStatus, PullRequestAsyncStatus, PullRequestMergeFailureType, PullRequestStatus, BuildReason, BuildResult, BuildStatus };
 
 export type PipelineRunsFilter = 'all' | 'running' | 'failed' | 'mine';
+
+export interface AgentPoolDiagnosticsAgentSummary {
+    name: string;
+    isOnline: boolean;
+    isEnabled: boolean;
+    isBusy: boolean;
+    currentJobName?: string;
+}
+
+export interface AgentPoolDiagnostics {
+    queueId: number;
+    queueName: string;
+    poolId: number;
+    poolName: string;
+    onlineAgents: number;
+    offlineAgents: number;
+    busyAgents: number;
+    idleAgents: number;
+    pendingRequests: number;
+    pendingRequestsLabel: string;
+    busyAgentSummary: AgentPoolDiagnosticsAgentSummary[];
+}
 
 /** A flattened representation of a saved query (non-folder). */
 export interface SavedQuery {
@@ -1372,6 +1398,91 @@ export class AdoClient {
         return this.getCurrentUserId(organization);
     }
 
+    async getAgentPoolDiagnosticsForQueue(
+        project: string,
+        queueId: number | undefined,
+        organization?: string
+    ): Promise<AgentPoolDiagnostics | undefined> {
+        if (!queueId) {
+            return undefined;
+        }
+
+        let taskAgentApi: ITaskAgentApi;
+        try {
+            taskAgentApi = await this.getConnectionFor(organization).getTaskAgentApi();
+        } catch {
+            return undefined;
+        }
+
+        let queue: TaskAgentQueue;
+        try {
+            queue = await taskAgentApi.getAgentQueue(queueId, project);
+        } catch (err) {
+            if (shouldSilenceAgentDiagnosticsError(err)) {
+                return undefined;
+            }
+            throw err;
+        }
+
+        const poolId = queue.pool?.id;
+        const poolName = queue.pool?.name ?? '';
+        if (!poolId || !poolName) {
+            return undefined;
+        }
+
+        let agents: TaskAgent[] = [];
+        try {
+            agents = await taskAgentApi.getAgents(
+                poolId,
+                undefined, // agentName
+                false, // includeCapabilities
+                true, // includeAssignedRequest
+                false // includeLastCompletedRequest
+            );
+        } catch (err) {
+            if (shouldSilenceAgentDiagnosticsError(err)) {
+                return undefined;
+            }
+            throw err;
+        }
+
+        let requests: TaskAgentJobRequest[] = [];
+        let requestContinuationToken = '';
+        try {
+            const paged = await taskAgentApi.getAgentRequestsForQueue(project, queueId, 100);
+            requests = Array.isArray(paged) ? paged : [];
+            requestContinuationToken = typeof paged?.continuationToken === 'string' ? paged.continuationToken : '';
+        } catch {
+            // Queue requests may be restricted; omit pressure details.
+        }
+
+        const online = agents.filter(agent => agent.status === TaskAgentStatus.Online && agent.enabled !== false);
+        const offline = agents.filter(agent => agent.status !== TaskAgentStatus.Online || agent.enabled === false);
+        const busyAgents = online.filter(agent => isAgentBusy(agent));
+        const idleAgents = online.filter(agent => !isAgentBusy(agent));
+        const pendingRequests = requests.filter(request => !request.finishTime).length;
+        const pendingRequestsLabel = requestContinuationToken ? `${pendingRequests}+` : String(pendingRequests);
+
+        const busyAgentSummary = busyAgents
+            .map(agent => summarizeAgent(agent))
+            .filter(summary => summary !== undefined)
+            .slice(0, 10);
+
+        return {
+            queueId,
+            queueName: queue.name ?? `Queue ${queueId}`,
+            poolId,
+            poolName,
+            onlineAgents: online.length,
+            offlineAgents: offline.length,
+            busyAgents: busyAgents.length,
+            idleAgents: idleAgents.length,
+            pendingRequests,
+            pendingRequestsLabel,
+            busyAgentSummary
+        };
+    }
+
     private async getCurrentUserId(organization?: string): Promise<string | undefined> {
         const cacheKey = organization ?? this._organization ?? '';
         const cached = this._currentUserIds.get(cacheKey);
@@ -1624,4 +1735,76 @@ export class AdoClient {
         }
         return 'edit';
     }
+}
+
+function summarizeAgent(agent: TaskAgent): AgentPoolDiagnosticsAgentSummary | undefined {
+    const name = agent.name ?? '';
+    if (!name) {
+        return undefined;
+    }
+
+    const assigned = agent.assignedRequest;
+    const currentJobName = assigned?.jobName ?? assigned?.owner?.name ?? '';
+
+    return {
+        name,
+        isOnline: agent.status === TaskAgentStatus.Online,
+        isEnabled: agent.enabled !== false,
+        isBusy: isAgentBusy(agent),
+        currentJobName: currentJobName || undefined
+    };
+}
+
+function isAgentBusy(agent: TaskAgent): boolean {
+    const assigned = agent.assignedRequest;
+    if (!assigned) {
+        return false;
+    }
+    if (assigned.finishTime) {
+        return false;
+    }
+    return true;
+}
+
+function shouldSilenceAgentDiagnosticsError(error: unknown): boolean {
+    const message = formatAdoError(error).toLowerCase();
+    const statusCode = findStatusCode(error);
+    if (statusCode === 401 || statusCode === 403 || statusCode === 404) {
+        return true;
+    }
+    if (message.includes('access denied') || message.includes('forbidden') || message.includes('unauthorized')) {
+        return true;
+    }
+    return false;
+}
+
+function findStatusCode(error: unknown, depth = 0, seen = new Set<unknown>()): number | undefined {
+    if (!error || typeof error !== 'object' || depth > 4 || seen.has(error)) {
+        return undefined;
+    }
+    seen.add(error);
+
+    const record = error as Record<string, unknown>;
+    for (const key of ['statusCode', 'status']) {
+        const value = record[key];
+        if (typeof value === 'number' && value >= 100 && value <= 599) {
+            return value;
+        }
+        if (typeof value === 'string') {
+            const parsed = Number(value);
+            if (Number.isInteger(parsed) && parsed >= 100 && parsed <= 599) {
+                return parsed;
+            }
+        }
+    }
+
+    for (const key of ['response', 'result', 'serverError', 'error']) {
+        const value = record[key];
+        const nested = findStatusCode(value, depth + 1, seen);
+        if (nested !== undefined) {
+            return nested;
+        }
+    }
+
+    return undefined;
 }

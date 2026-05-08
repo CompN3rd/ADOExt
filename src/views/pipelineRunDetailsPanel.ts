@@ -1,12 +1,13 @@
 import * as vscode from 'vscode';
-import type { AdoClient, Build, BuildArtifact, Timeline } from '../api/adoClient';
+import type { AdoClient, AgentPoolDiagnostics, Build, BuildArtifact, Timeline } from '../api/adoClient';
 import { BuildReason, BuildResult, BuildStatus } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
 import { showErrorMessage, showInformationMessage } from '../utils/notifications';
-import { pipelineRunUrl } from '../utils/pipelineUrls';
+import { agentPoolUrl, agentQueueUrl, pipelineRunUrl } from '../utils/pipelineUrls';
 import { createPipelineLogUri } from './pipelineLogContentProvider';
 import { buildMessageDocument, buildWebviewDocument, webviewAssetRoots } from './webviewHtml';
 import type {
+    AgentPoolDiagnosticsViewModel,
     PipelineArtifactViewModel,
     PipelineRunDetailsMessage,
     PipelineRunDetailsViewModel,
@@ -40,6 +41,8 @@ export class PipelineRunDetailsPanel {
     private readonly _organization?: string;
     private readonly _project?: string;
     private _buildId: number;
+    private _agentDiagnosticsSummary = '';
+    private _agentDiagnosticsUrls: { poolUrl: string; queueUrl: string } | undefined;
     private _disposables: vscode.Disposable[] = [];
 
     static async show(
@@ -120,7 +123,20 @@ export class PipelineRunDetailsPanel {
         const timeline = timelineResult.status === 'fulfilled' ? timelineResult.value : undefined;
         const artifacts = artifactsResult.status === 'fulfilled' ? artifactsResult.value : [];
 
-        const viewModel = buildViewModel(build, timeline, artifacts, organization, project);
+        let agentDiagnostics: AgentPoolDiagnostics | undefined;
+        if (build.status === BuildStatus.NotStarted) {
+            try {
+                agentDiagnostics = await client.getAgentPoolDiagnosticsForQueue(project, build.queue?.id, organization);
+            } catch {
+                agentDiagnostics = undefined;
+            }
+        }
+
+        const viewModel = buildViewModel(build, timeline, artifacts, organization, project, agentDiagnostics);
+        this._agentDiagnosticsSummary = viewModel.agentDiagnostics ? formatAgentDiagnosticsSummary(viewModel) : '';
+        this._agentDiagnosticsUrls = viewModel.agentDiagnostics
+            ? { poolUrl: viewModel.agentDiagnostics.poolUrl, queueUrl: viewModel.agentDiagnostics.queueUrl }
+            : undefined;
         this._panel.title = `${viewModel.pipelineName} #${viewModel.runNumber}`;
         this._panel.webview.html = buildWebviewDocument(this._context, this._panel.webview, {
             title: `Pipeline Run #${viewModel.runNumber}`,
@@ -138,6 +154,9 @@ export class PipelineRunDetailsPanel {
         }
 
         switch (msg.type) {
+            case 'refresh':
+                await this._refresh(this._client, this._config);
+                return;
             case 'openInBrowser':
                 await vscode.env.openExternal(vscode.Uri.parse(pipelineRunUrl(organization, project, this._buildId, 'results')));
                 return;
@@ -162,6 +181,25 @@ export class PipelineRunDetailsPanel {
                     await vscode.env.openExternal(vscode.Uri.parse(msg.url));
                 }
                 return;
+            case 'openAgentPool': {
+                const url = this._agentDiagnosticsUrls?.poolUrl ?? agentPoolUrl(organization);
+                await vscode.env.openExternal(vscode.Uri.parse(url));
+                return;
+            }
+            case 'openAgentQueue': {
+                const url = this._agentDiagnosticsUrls?.queueUrl ?? agentQueueUrl(organization, project);
+                await vscode.env.openExternal(vscode.Uri.parse(url));
+                return;
+            }
+            case 'copyAgentDiagnostics': {
+                if (!this._agentDiagnosticsSummary) {
+                    showInformationMessage('No agent diagnostics available for this run.');
+                    return;
+                }
+                await vscode.env.clipboard.writeText(this._agentDiagnosticsSummary);
+                showInformationMessage('Copied agent diagnostics to clipboard.');
+                return;
+            }
             case 'rerun': {
                 const choice = await vscode.window.showInformationMessage(
                     `Re-run pipeline #${this._buildId}?`,
@@ -227,7 +265,8 @@ function buildViewModel(
     timeline: Timeline | undefined,
     artifacts: BuildArtifact[],
     organization: string,
-    project: string
+    project: string,
+    agentDiagnostics: AgentPoolDiagnostics | undefined
 ): PipelineRunDetailsViewModel {
     const pipelineName = build.definition?.name ?? 'Pipeline';
     const runNumber = build.buildNumber ?? String(build.id ?? '');
@@ -242,6 +281,12 @@ function buildViewModel(
     const commit = build.sourceVersion ?? '';
     const repository = build.repository?.name ?? '';
     const yamlFile = (build as unknown as { yamlFilename?: string }).yamlFilename ?? '';
+
+    const agentDiagnosticsViewModel = agentDiagnostics
+        ? toAgentDiagnosticsViewModel(agentDiagnostics, organization, project)
+        : build.status === BuildStatus.NotStarted
+            ? undefined
+            : undefined;
 
     return {
         id,
@@ -263,8 +308,62 @@ function buildViewModel(
         webUrl: pipelineRunUrl(organization, project, id, 'results'),
         logsUrl: pipelineRunUrl(organization, project, id, 'logs'),
         artifacts: artifacts.map(artifactViewModel),
-        timeline: buildTimelineViewModel(timeline)
+        timeline: buildTimelineViewModel(timeline),
+        agentDiagnostics: agentDiagnosticsViewModel
     };
+}
+
+function toAgentDiagnosticsViewModel(
+    diagnostics: AgentPoolDiagnostics,
+    organization: string,
+    project: string
+): AgentPoolDiagnosticsViewModel {
+    const onlineIdle = diagnostics.idleAgents;
+    const hint = onlineIdle === 0
+        ? 'No idle agents are currently online for this pool. Queued runs may be waiting for an agent.'
+        : undefined;
+
+    return {
+        poolName: diagnostics.poolName,
+        poolId: diagnostics.poolId,
+        queueName: diagnostics.queueName,
+        queueId: diagnostics.queueId,
+        onlineAgents: diagnostics.onlineAgents,
+        offlineAgents: diagnostics.offlineAgents,
+        busyAgents: diagnostics.busyAgents,
+        idleAgents: diagnostics.idleAgents,
+        pendingRequestsLabel: diagnostics.pendingRequestsLabel,
+        busyAgentSummary: diagnostics.busyAgentSummary.map(agent => ({
+            name: agent.name,
+            currentJobName: agent.currentJobName
+        })),
+        poolUrl: agentPoolUrl(organization, diagnostics.poolId),
+        queueUrl: agentQueueUrl(organization, project, diagnostics.queueId),
+        hint
+    };
+}
+
+function formatAgentDiagnosticsSummary(viewModel: PipelineRunDetailsViewModel): string {
+    const d = viewModel.agentDiagnostics;
+    if (!d) {
+        return '';
+    }
+
+    const busyLines = d.busyAgentSummary
+        .map(agent => `- ${agent.name}${agent.currentJobName ? `: ${agent.currentJobName}` : ''}`)
+        .join('\n');
+
+    return [
+        `Pipeline: ${viewModel.pipelineName} #${viewModel.runNumber}`,
+        `Status: ${viewModel.statusLabel}`,
+        `Pool: ${d.poolName} (ID: ${d.poolId})`,
+        `Queue: ${d.queueName} (ID: ${d.queueId})`,
+        `Online: ${d.onlineAgents} | Offline: ${d.offlineAgents} | Busy: ${d.busyAgents} | Idle: ${d.idleAgents}`,
+        `Pending requests: ${d.pendingRequestsLabel}`,
+        busyLines ? `Busy agents:\n${busyLines}` : 'Busy agents: none',
+        `Pool URL: ${d.poolUrl}`,
+        `Queue URL: ${d.queueUrl}`
+    ].join('\n');
 }
 
 function artifactViewModel(artifact: BuildArtifact): PipelineArtifactViewModel {

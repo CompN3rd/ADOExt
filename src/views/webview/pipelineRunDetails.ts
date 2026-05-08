@@ -54,6 +54,7 @@ class AdoPipelineRunDetailsApp extends LitElement {
 
         return html`<main class="shell">
             <div class="toolbar">
+                <button class="btn-secondary" @click=${() => this.send({ type: 'refresh' })}>Refresh</button>
                 <button class="btn-primary" @click=${() => this.send({ type: 'openInBrowser' })}>Open in Browser</button>
                 <button class="btn-secondary" @click=${() => this.send({ type: 'openLogs' })}>Open Logs</button>
                 <button class="btn-secondary" ?disabled=${!this.data.canRerun} @click=${() => this.send({ type: 'rerun' })}>Re-run</button>
@@ -76,6 +77,8 @@ class AdoPipelineRunDetailsApp extends LitElement {
                     : html`${this.renderTimeline(this.data.timeline)}`}
             </section>
 
+            ${this.renderAgentDiagnostics()}
+
             <section class="section">
                 <h2>Artifacts</h2>
                 ${this.data.artifacts.length === 0
@@ -90,6 +93,50 @@ class AdoPipelineRunDetailsApp extends LitElement {
                     </div>`}
             </section>
         </main>`;
+    }
+
+    private renderAgentDiagnostics(): unknown {
+        const diagnostics = this.data.agentDiagnostics;
+        const isQueued = this.data.statusLabel.toLowerCase().includes('queued');
+        if (!diagnostics && !isQueued) {
+            return nothing;
+        }
+
+        if (!diagnostics) {
+            return html`<section class="section">
+                <h2>Agent Pool Diagnostics</h2>
+                <p class="empty">Agent pool details are not available for this run.</p>
+            </section>`;
+        }
+
+        const hint = diagnostics.hint ?? '';
+        const busy = diagnostics.busyAgentSummary ?? [];
+
+        return html`<section class="section">
+            <h2>Agent Pool Diagnostics</h2>
+            <div class="toolbar">
+                <button class="btn-secondary" @click=${() => this.send({ type: 'openAgentPool' })}>Open Pool</button>
+                <button class="btn-secondary" @click=${() => this.send({ type: 'openAgentQueue' })}>Open Queue</button>
+                <button class="btn-secondary" @click=${() => this.send({ type: 'copyAgentDiagnostics' })}>Copy Summary</button>
+            </div>
+            ${hint ? html`<div class="meta">${hint}</div>` : nothing}
+            <div class="meta">
+                <div>Pool: <code>${diagnostics.poolName}</code> (ID: ${diagnostics.poolId})</div>
+                <div>Queue: <code>${diagnostics.queueName}</code> (ID: ${diagnostics.queueId})</div>
+                <div>Online: ${diagnostics.onlineAgents} · Offline: ${diagnostics.offlineAgents} · Busy: ${diagnostics.busyAgents} · Idle: ${diagnostics.idleAgents}</div>
+                <div>Pending requests: ${diagnostics.pendingRequestsLabel}</div>
+            </div>
+            ${busy.length === 0
+                ? html`<p class="empty">No busy agents reported.</p>`
+                : html`<ul class="timeline">
+                    ${busy.map(agent => html`<li>
+                        <div class="node">
+                            <span>${agent.name}</span>
+                            ${agent.currentJobName ? html`<span class="meta">· ${agent.currentJobName}</span>` : nothing}
+                        </div>
+                    </li>`)}
+                </ul>`}
+        </section>`;
     }
 
     private renderTimeline(nodes: PipelineTimelineNodeViewModel[]): unknown {
