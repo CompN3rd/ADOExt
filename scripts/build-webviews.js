@@ -9,6 +9,7 @@ const outdir = path.join(root, 'media', 'webviews');
 const buildOptions = {
     entryPoints: [
         path.join(root, 'src', 'views', 'webview', 'builds.ts'),
+        path.join(root, 'src', 'views', 'webview', 'pipelineRunDetails.ts'),
         path.join(root, 'src', 'views', 'webview', 'prDetails.ts'),
         path.join(root, 'src', 'views', 'webview', 'workItemDetails.ts'),
         path.join(root, 'src', 'views', 'webview', 'planning.ts')

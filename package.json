@@ -78,6 +78,12 @@
           "name": "Pull Requests",
           "icon": "media/icons/ado.svg",
           "contextualTitle": "Azure DevOps Pull Requests"
+        },
+        {
+          "id": "adoext.pipelines",
+          "name": "Pipelines",
+          "icon": "media/icons/ado.svg",
+          "contextualTitle": "Azure DevOps Pipelines"
         }
       ]
     },
@@ -219,6 +225,60 @@
         "title": "Refresh Pull Requests",
         "category": "ADOExt",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "adoext.refreshPipelines",
+        "title": "Refresh Pipelines",
+        "category": "ADOExt",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "adoext.setPipelineRunsFilter",
+        "title": "Filter Pipeline Runs",
+        "category": "ADOExt",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "adoext.setPipelineRunsGroupBy",
+        "title": "Group Pipeline Runs",
+        "category": "ADOExt",
+        "icon": "$(list-tree)"
+      },
+      {
+        "command": "adoext.viewPipelineRunDetails",
+        "title": "View Pipeline Run Details",
+        "category": "ADOExt",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "adoext.openPipelineRun",
+        "title": "Open Pipeline Run in Browser",
+        "category": "ADOExt",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "adoext.openPipelineRunLogs",
+        "title": "Open Pipeline Logs in Browser",
+        "category": "ADOExt",
+        "icon": "$(output)"
+      },
+      {
+        "command": "adoext.openPipelineStepLog",
+        "title": "Open Step Log",
+        "category": "ADOExt",
+        "icon": "$(output)"
+      },
+      {
+        "command": "adoext.rerunPipelineRun",
+        "title": "Re-run Pipeline",
+        "category": "ADOExt",
+        "icon": "$(debug-restart)"
+      },
+      {
+        "command": "adoext.cancelPipelineRun",
+        "title": "Cancel Pipeline Run",
+        "category": "ADOExt",
+        "icon": "$(debug-stop)"
       },
       {
         "command": "adoext.savePullRequestQuery",
@@ -514,17 +574,17 @@
         },
         {
           "command": "adoext.selectOrganization",
-          "when": "view == adoext.workItems || view == adoext.backlog || view == adoext.sprints || view == adoext.boards || view == adoext.pullRequests",
+          "when": "view == adoext.workItems || view == adoext.backlog || view == adoext.sprints || view == adoext.boards || view == adoext.pullRequests || view == adoext.pipelines",
           "group": "navigation"
         },
         {
           "command": "adoext.detectRepoContext",
-          "when": "view == adoext.workItems || view == adoext.backlog || view == adoext.sprints || view == adoext.boards || view == adoext.pullRequests",
+          "when": "view == adoext.workItems || view == adoext.backlog || view == adoext.sprints || view == adoext.boards || view == adoext.pullRequests || view == adoext.pipelines",
           "group": "navigation"
         },
         {
           "command": "adoext.signIn",
-          "when": "(view == adoext.workItems || view == adoext.backlog || view == adoext.sprints || view == adoext.boards || view == adoext.pullRequests) && !adoext.isSignedIn",
+          "when": "(view == adoext.workItems || view == adoext.backlog || view == adoext.sprints || view == adoext.boards || view == adoext.pullRequests || view == adoext.pipelines) && !adoext.isSignedIn",
           "group": "navigation"
         },
         {
@@ -550,6 +610,21 @@
         {
           "command": "adoext.toggleResolvedPullRequestThreads",
           "when": "view == adoext.pullRequests",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.refreshPipelines",
+          "when": "view == adoext.pipelines",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.setPipelineRunsFilter",
+          "when": "view == adoext.pipelines",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.setPipelineRunsGroupBy",
+          "when": "view == adoext.pipelines",
           "group": "navigation"
         }
       ],
@@ -647,6 +722,36 @@
         {
           "command": "adoext.reopenThread",
           "when": "viewItem == prCommentThreadResolved",
+          "group": "inline"
+        },
+        {
+          "command": "adoext.viewPipelineRunDetails",
+          "when": "viewItem == pipelineRun || viewItem == pipelineRunRunning",
+          "group": "inline"
+        },
+        {
+          "command": "adoext.openPipelineRun",
+          "when": "viewItem == pipelineRun || viewItem == pipelineRunRunning",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.openPipelineRunLogs",
+          "when": "viewItem == pipelineRun || viewItem == pipelineRunRunning",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.rerunPipelineRun",
+          "when": "viewItem == pipelineRun || viewItem == pipelineRunRunning",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.cancelPipelineRun",
+          "when": "viewItem == pipelineRunRunning",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.openPipelineStepLog",
+          "when": "viewItem == pipelineStepLog",
           "group": "inline"
         }
       ],
@@ -943,6 +1048,45 @@
           ],
           "description": "Sort order for pull requests in the ADOExt Pull Requests view."
         },
+        "adoext.pipelineRunsFilter": {
+          "type": "string",
+          "default": "all",
+          "enum": [
+            "all",
+            "running",
+            "failed",
+            "mine"
+          ],
+          "enumDescriptions": [
+            "Show all recent runs",
+            "Show only currently running or queued runs",
+            "Show only failed or partially succeeded runs",
+            "Show only runs requested by me"
+          ],
+          "description": "Filter applied to the ADOExt Pipelines view."
+        },
+        "adoext.pipelineRunsGroupBy": {
+          "type": "string",
+          "default": "none",
+          "enum": [
+            "none",
+            "repository",
+            "branch"
+          ],
+          "enumDescriptions": [
+            "Show runs as a flat list",
+            "Group runs by repository",
+            "Group runs by branch"
+          ],
+          "description": "Optional grouping applied under each project scope in the ADOExt Pipelines view."
+        },
+        "adoext.pipelineRunsTop": {
+          "type": "number",
+          "default": 25,
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Maximum number of pipeline runs fetched per project scope for the ADOExt Pipelines view."
+        },
         "adoext.showResolvedPullRequestThreads": {
           "type": "boolean",
           "default": true,
@@ -988,15 +1132,15 @@
     "watch:types": "tsc -watch -p ./ --noEmit",
     "watch:host": "node ./scripts/build-extension-host.js --watch",
     "watch:webviews": "node ./scripts/build-webviews.js --watch",
-    "lint": "eslint src --ext ts"
+    "lint": "eslint src --ext ts --max-warnings=0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/vscode": "1.101.0",
-    "@typescript-eslint/eslint-plugin": "^7.0.0",
-    "@typescript-eslint/parser": "^7.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.59.2",
+    "@typescript-eslint/parser": "^8.59.2",
     "esbuild": "^0.28.0",
-    "eslint": "^8.56.0",
+    "eslint": "^8.57.1",
     "lit": "^3.3.2",
     "typescript": "^5.3.0"
   },

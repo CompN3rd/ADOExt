@@ -190,7 +190,7 @@ export class WorkItemDetailsPanel {
         let builds: Build[] = [];
         try {
             builds = await client.getBuildsForWorkItem(project, fullItem, organization);
-        } catch (err) {
+        } catch {
             // show panel anyway, builds will just be empty
         }
 

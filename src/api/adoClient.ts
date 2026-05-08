@@ -6,7 +6,7 @@ import type { IPolicyApi } from 'azure-devops-node-api/PolicyApi';
 import type { IBuildApi } from 'azure-devops-node-api/BuildApi';
 import { CommentExpandOptions, QueryExpand, TreeStructureGroup, WorkItemExpand } from 'azure-devops-node-api/interfaces/WorkItemTrackingInterfaces';
 import { GitVersionType, VersionControlChangeType, GitStatusState, PullRequestAsyncStatus, PullRequestMergeFailureType, PullRequestStatus } from 'azure-devops-node-api/interfaces/GitInterfaces';
-import { BuildReason } from 'azure-devops-node-api/interfaces/BuildInterfaces';
+import { BuildReason, BuildResult, BuildStatus } from 'azure-devops-node-api/interfaces/BuildInterfaces';
 import { Operation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
 import { normalizeWorkItemTypeName, workItemTypeScopeKey } from '../utils/workItemTypeIcons';
 import type {
@@ -30,7 +30,7 @@ import type {
     CommentThreadStatus,
     IdentityRefWithVote
 } from 'azure-devops-node-api/interfaces/GitInterfaces';
-import type { Build } from 'azure-devops-node-api/interfaces/BuildInterfaces';
+import type { Build, BuildArtifact, BuildLog, Timeline } from 'azure-devops-node-api/interfaces/BuildInterfaces';
 import type { TeamProject } from 'azure-devops-node-api/interfaces/CoreInterfaces';
 import type { IdentityRef, JsonPatchDocument, JsonPatchOperation, ResourceRef } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
 import type { PolicyEvaluationRecord } from 'azure-devops-node-api/interfaces/PolicyInterfaces';
@@ -51,9 +51,14 @@ export type {
     IdentityRef,
     TeamProject,
     Build,
+    BuildArtifact,
+    BuildLog,
+    Timeline,
     PolicyEvaluationRecord
 };
-export { GitStatusState, PolicyEvaluationStatus, PullRequestAsyncStatus, PullRequestMergeFailureType, PullRequestStatus };
+export { GitStatusState, PolicyEvaluationStatus, PullRequestAsyncStatus, PullRequestMergeFailureType, PullRequestStatus, BuildReason, BuildResult, BuildStatus };
+
+export type PipelineRunsFilter = 'all' | 'running' | 'failed' | 'mine';
 
 /** A flattened representation of a saved query (non-folder). */
 export interface SavedQuery {
@@ -618,7 +623,7 @@ export class AdoClient {
 
         // Limit PR results to prevent UI freeze with large lists
         const PR_LIMIT = 100;
-        (searchCriteria as any).top = PR_LIMIT;
+        (searchCriteria as GitPullRequestSearchCriteria & { top?: number }).top = PR_LIMIT;
 
         if (filter === 'created' && currentUserDescriptor) {
             searchCriteria.creatorId = currentUserDescriptor;
@@ -1162,6 +1167,134 @@ export class AdoClient {
             )
         );
         return builds.filter((b): b is Build => b !== undefined);
+    }
+
+    /**
+     * Lists recent pipeline runs for a project using the Build API, which covers
+     * both classic and YAML-backed Azure Pipelines.
+     */
+    async listPipelineRuns(
+        project: string,
+        organization?: string,
+        options?: {
+            top?: number;
+            filter?: PipelineRunsFilter;
+        }
+    ): Promise<Build[]> {
+        const buildApi: IBuildApi = await this.getConnectionFor(organization).getBuildApi();
+        const top = options?.top ?? 25;
+        const filter = options?.filter ?? 'all';
+
+        const statusFilter = filter === 'running'
+            ? (BuildStatus.InProgress | BuildStatus.Cancelling | BuildStatus.NotStarted)
+            : undefined;
+
+        const resultFilter = filter === 'failed'
+            ? (BuildResult.Failed | BuildResult.PartiallySucceeded)
+            : undefined;
+
+        const builds = await buildApi.getBuilds(
+            project,
+            undefined, // definitions
+            undefined, // queues
+            undefined, // buildNumber
+            undefined, // minTime
+            undefined, // maxTime
+            undefined, // requestedFor
+            undefined, // reasonFilter
+            statusFilter,
+            resultFilter,
+            undefined, // tagFilters
+            undefined, // properties
+            top
+        );
+
+        const items = builds ?? [];
+        if (filter !== 'mine') {
+            return items;
+        }
+
+        const currentUserId = await this.getCurrentUserIdFor(organization);
+        if (!currentUserId) {
+            return items;
+        }
+
+        return items.filter(build => build.requestedFor?.id === currentUserId);
+    }
+
+    async getPipelineRun(
+        project: string,
+        buildId: number,
+        organization?: string
+    ): Promise<Build> {
+        const buildApi: IBuildApi = await this.getConnectionFor(organization).getBuildApi();
+        return buildApi.getBuild(project, buildId);
+    }
+
+    async getPipelineRunTimeline(
+        project: string,
+        buildId: number,
+        organization?: string
+    ): Promise<Timeline | undefined> {
+        const buildApi: IBuildApi = await this.getConnectionFor(organization).getBuildApi();
+        return buildApi.getBuildTimeline(project, buildId);
+    }
+
+    async getPipelineRunArtifacts(
+        project: string,
+        buildId: number,
+        organization?: string
+    ): Promise<BuildArtifact[]> {
+        const buildApi: IBuildApi = await this.getConnectionFor(organization).getBuildApi();
+        const artifacts = await buildApi.getArtifacts(project, buildId);
+        return artifacts ?? [];
+    }
+
+    async getPipelineRunLogLines(
+        project: string,
+        buildId: number,
+        logId: number,
+        organization?: string,
+        startLine?: number,
+        endLine?: number
+    ): Promise<string[]> {
+        const buildApi: IBuildApi = await this.getConnectionFor(organization).getBuildApi();
+        return buildApi.getBuildLogLines(project, buildId, logId, startLine, endLine);
+    }
+
+    async rerunPipelineRun(
+        project: string,
+        buildId: number,
+        organization?: string
+    ): Promise<Build> {
+        const build = await this.getPipelineRun(project, buildId, organization);
+        const definitionId = build.definition?.id;
+        if (!definitionId) {
+            throw new Error('Build definition not found for this run.');
+        }
+
+        const buildApi: IBuildApi = await this.getConnectionFor(organization).getBuildApi();
+        return buildApi.queueBuild(
+            {
+                definition: { id: definitionId },
+                sourceBranch: build.sourceBranch,
+                parameters: build.parameters
+            } as unknown as Build,
+            project
+        );
+    }
+
+    async cancelPipelineRun(
+        project: string,
+        buildId: number,
+        organization?: string
+    ): Promise<Build> {
+        const buildApi: IBuildApi = await this.getConnectionFor(organization).getBuildApi();
+        return buildApi.updateBuild(
+            { status: BuildStatus.Cancelling } as unknown as Build,
+            project,
+            buildId
+        );
     }
 
     get organization(): string | undefined {

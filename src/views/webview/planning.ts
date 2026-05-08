@@ -196,7 +196,11 @@ class AdoPlanningApp extends LitElement {
 
     private toggle(key: string): void {
         const next = new Set(this.collapsed);
-        next.has(key) ? next.delete(key) : next.add(key);
+        if (next.has(key)) {
+            next.delete(key);
+        } else {
+            next.add(key);
+        }
         this.collapsed = next;
     }
 

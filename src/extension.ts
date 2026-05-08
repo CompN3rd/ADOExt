@@ -10,12 +10,14 @@ import {
     PullRequestCommentNode,
     PullRequestThreadNode
 } from './providers/pullRequestProvider';
+import { PipelinesProvider, type PipelineRunNode, type PipelineStepLogNode } from './providers/pipelinesProvider';
 import { BacklogProvider, SprintProvider, BoardProvider } from './providers/planningProviders';
 import { WorkItemIconResolver } from './providers/workItemIconResolver';
 import { PlanningPanel } from './views/planningPanel';
 import { PrCommentController, type CommentReply } from './views/prCommentController';
 import { PrDiffCache, PrDiffContentProvider, PR_DIFF_SCHEME } from './views/prContentProvider';
 import { PrDetailsPanel } from './views/prDetailsPanel';
+import { PipelineLogContentProvider, PIPELINE_LOG_SCHEME } from './views/pipelineLogContentProvider';
 import { NotificationService } from './notifications/notificationService';
 import { PrCommentHandler } from './notifications/handlers/prCommentHandler';
 import { PrReviewRequestHandler } from './notifications/handlers/prReviewRequestHandler';
@@ -57,8 +59,16 @@ import {
     saveWorkItemQuery,
     savePullRequestQuery
 } from './commands/queryCommands';
+import {
+    cancelPipelineRun,
+    openPipelineRunInBrowser,
+    openPipelineRunLogsInBrowser,
+    rerunPipelineRun,
+    viewPipelineRunDetails
+} from './commands/pipelineCommands';
 import { McpServerManager } from './mcp/mcpServerManager';
 import { TodoCodeActionProvider } from './views/todoCodeActionProvider';
+import { PipelineRunDetailsPanel } from './views/pipelineRunDetailsPanel';
 import { AdoCompletionProvider } from './providers/completionProvider';
 import { installNotificationMirroring, showErrorMessage, showInformationMessage, showOutputChannel, showWarningMessage } from './utils/notifications';
 import { WorkItemHoverProvider, PullRequestHoverProvider } from './providers/hoverProvider';
@@ -113,6 +123,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     function refreshAllViews(): void {
         workItemProvider.refresh();
         pullRequestProvider.refresh();
+        pipelinesProvider.refresh();
+        pipelineLogContentProvider.clear();
         backlogProvider.refresh();
         sprintProvider.refresh();
         boardProvider.refresh();
@@ -203,6 +215,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const workItemIconResolver = new WorkItemIconResolver(client, config);
     const workItemProvider = new WorkItemProvider(client, config, workItemIconResolver, recoverAuthAfterAdoError);
     const pullRequestProvider = new PullRequestProvider(client, config, recoverAuthAfterAdoError);
+    const pipelinesProvider = new PipelinesProvider(client, config);
+    const pipelineLogContentProvider = new PipelineLogContentProvider(client);
     const backlogProvider = new BacklogProvider(client, config, workItemIconResolver, recoverAuthAfterAdoError);
     const sprintProvider = new SprintProvider(client, config, workItemIconResolver, recoverAuthAfterAdoError);
     const boardProvider = new BoardProvider(client, config, workItemIconResolver, recoverAuthAfterAdoError);
@@ -210,6 +224,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(
         vscode.window.registerTreeDataProvider('adoext.workItems', workItemProvider),
         vscode.window.registerTreeDataProvider('adoext.pullRequests', pullRequestProvider),
+        vscode.window.registerTreeDataProvider('adoext.pipelines', pipelinesProvider),
         vscode.window.registerTreeDataProvider('adoext.backlog', backlogProvider),
         vscode.window.registerTreeDataProvider('adoext.sprints', sprintProvider),
         vscode.window.registerTreeDataProvider('adoext.boards', boardProvider)
@@ -222,6 +237,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const diffContentProvider = new PrDiffContentProvider(client, diffCache);
     context.subscriptions.push(
         vscode.workspace.registerTextDocumentContentProvider(PR_DIFF_SCHEME, diffContentProvider)
+    );
+    context.subscriptions.push(
+        vscode.workspace.registerTextDocumentContentProvider(PIPELINE_LOG_SCHEME, pipelineLogContentProvider)
     );
 
     const prCommentController = new PrCommentController(client);
@@ -811,6 +829,132 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 await PrDetailsPanel.refreshAllOpenPanels();
             }
         )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adoext.refreshPipelines', async () => {
+            await ensureSignedIn();
+            pipelineLogContentProvider.clear();
+            pipelinesProvider.refresh();
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.viewPipelineRunDetails',
+            async (node?: PipelineRunNode) => {
+                if (!(await ensureSignedIn())) { return; }
+                await viewPipelineRunDetails(context, node, client, config);
+            }
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.openPipelineRun',
+            async (node?: PipelineRunNode) => {
+                if (!(await ensureSignedIn())) { return; }
+                await openPipelineRunInBrowser(node, client, config);
+            }
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.openPipelineRunLogs',
+            async (node?: PipelineRunNode) => {
+                if (!(await ensureSignedIn())) { return; }
+                await openPipelineRunLogsInBrowser(node, client, config);
+            }
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.openPipelineStepLog',
+            async (node?: PipelineStepLogNode) => {
+                if (!(await ensureSignedIn())) { return; }
+                if (!node) { return; }
+
+                const uri = pipelineLogContentProvider.createUri({
+                    organization: node.organization,
+                    project: node.project,
+                    buildId: node.buildId,
+                    logId: node.logId,
+                    stepName: node.stepName,
+                    runLabel: node.runLabel
+                });
+                const document = await vscode.workspace.openTextDocument(uri);
+                await vscode.window.showTextDocument(document, { preview: false });
+            }
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.rerunPipelineRun',
+            async (node?: PipelineRunNode) => {
+                if (!(await ensureSignedIn())) { return; }
+                const newId = await rerunPipelineRun(node, client, config);
+                if (typeof newId === 'number' && newId > 0) {
+                    await PipelineRunDetailsPanel.show(context, client, config, newId, {
+                        organization: node?.organization,
+                        project: node?.project
+                    });
+                }
+                pipelinesProvider.refresh();
+            }
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand(
+            'adoext.cancelPipelineRun',
+            async (node?: PipelineRunNode) => {
+                if (!(await ensureSignedIn())) { return; }
+                await cancelPipelineRun(node, client, config);
+                pipelinesProvider.refresh();
+            }
+        )
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adoext.setPipelineRunsFilter', async () => {
+            const current = config.pipelineRunsFilter;
+            const choice = await vscode.window.showQuickPick(
+                [
+                    { label: 'All runs', description: 'Recent pipeline runs', value: 'all', picked: current === 'all' },
+                    { label: 'Running', description: 'Queued or in-progress runs', value: 'running', picked: current === 'running' },
+                    { label: 'Failed', description: 'Failed or partially succeeded runs', value: 'failed', picked: current === 'failed' },
+                    { label: 'Mine', description: 'Runs requested by me', value: 'mine', picked: current === 'mine' }
+                ],
+                { placeHolder: 'Choose which pipeline runs to show' }
+            );
+            if (!choice || choice.value === current) {
+                return;
+            }
+            await config.setPipelineRunsFilter(choice.value as typeof current);
+            pipelinesProvider.refresh();
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adoext.setPipelineRunsGroupBy', async () => {
+            const current = config.pipelineRunsGroupBy;
+            const choice = await vscode.window.showQuickPick(
+                [
+                    { label: 'No grouping', value: 'none', picked: current === 'none' },
+                    { label: 'Group by repository', value: 'repository', picked: current === 'repository' },
+                    { label: 'Group by branch', value: 'branch', picked: current === 'branch' }
+                ],
+                { placeHolder: 'Choose grouping for pipeline runs' }
+            );
+            if (!choice || choice.value === current) {
+                return;
+            }
+            await config.setPipelineRunsGroupBy(choice.value as typeof current);
+            pipelinesProvider.refresh();
+        })
     );
 
     // Add new comment to PR

@@ -385,7 +385,7 @@ export async function checkoutPullRequest(
                 showInformationMessage(
                     `Checked out branch: ${branchName} (from ${remoteName})`
                 );
-            } catch (err) {
+            } catch {
                 // If local checkout fails, try with remote tracking branch
                 try {
                     const remotes = repo.state.remotes;
