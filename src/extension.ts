@@ -120,6 +120,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         );
     }
 
+    function updateWikiEnabledContext(): void {
+        void vscode.commands.executeCommand(
+            'setContext',
+            'adoext.wikiEnabled',
+            config.enableWikiView
+        );
+    }
+
     function refreshAllViews(): void {
         workItemProvider.refresh();
         pullRequestProvider.refresh();
@@ -403,6 +411,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
 
     updateWorkItemDoneHiddenContext();
+    updateWikiEnabledContext();
+    void vscode.commands.executeCommand('setContext', 'adoext.wikiHasSearch', false);
 
     context.subscriptions.push(
         vscode.commands.registerCommand('adoext.toggleHideDoneWorkItems', async () => {
@@ -1157,6 +1167,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 configDebounceTimer = undefined;
                 if (config.organization && auth.isSignedIn) {
                     client.connect(config.organization);
+                }
+                if (e.affectsConfiguration('adoext.enableWikiView')) {
+                    updateWikiEnabledContext();
                 }
                 if (e.affectsConfiguration('adoext.workItemHideStates')) {
                     updateWorkItemDoneHiddenContext();

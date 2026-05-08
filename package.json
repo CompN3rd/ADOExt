@@ -84,6 +84,13 @@
           "name": "Pipelines",
           "icon": "media/icons/ado.svg",
           "contextualTitle": "Azure DevOps Pipelines"
+        },
+        {
+          "id": "adoext.wiki",
+          "name": "Wiki",
+          "icon": "media/icons/ado.svg",
+          "contextualTitle": "Azure DevOps Wiki",
+          "when": "adoext.wikiEnabled"
         }
       ]
     },
@@ -165,6 +172,24 @@
         "title": "Open Board in Editor",
         "category": "ADOExt",
         "icon": "$(open-preview)"
+      },
+      {
+        "command": "adoext.refreshWiki",
+        "title": "Refresh Wiki",
+        "category": "ADOExt",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "adoext.searchWikiPages",
+        "title": "Search Wiki Pages",
+        "category": "ADOExt",
+        "icon": "$(search)"
+      },
+      {
+        "command": "adoext.clearWikiSearch",
+        "title": "Clear Wiki Search",
+        "category": "ADOExt",
+        "icon": "$(clear-all)"
       },
       {
         "command": "adoext.setPlanningAssignedFilter",
@@ -267,6 +292,18 @@
         "title": "Open Step Log",
         "category": "ADOExt",
         "icon": "$(output)"
+      },
+      {
+        "command": "adoext.openWikiPageInBrowser",
+        "title": "Open Wiki Page in Browser",
+        "category": "ADOExt",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "adoext.copyWikiPageLink",
+        "title": "Copy Wiki Page Link",
+        "category": "ADOExt",
+        "icon": "$(copy)"
       },
       {
         "command": "adoext.rerunPipelineRun",
@@ -574,17 +611,17 @@
         },
         {
           "command": "adoext.selectOrganization",
-          "when": "view == adoext.workItems || view == adoext.backlog || view == adoext.sprints || view == adoext.boards || view == adoext.pullRequests || view == adoext.pipelines",
+          "when": "view == adoext.workItems || view == adoext.backlog || view == adoext.sprints || view == adoext.boards || view == adoext.pullRequests || view == adoext.pipelines || view == adoext.wiki",
           "group": "navigation"
         },
         {
           "command": "adoext.detectRepoContext",
-          "when": "view == adoext.workItems || view == adoext.backlog || view == adoext.sprints || view == adoext.boards || view == adoext.pullRequests || view == adoext.pipelines",
+          "when": "view == adoext.workItems || view == adoext.backlog || view == adoext.sprints || view == adoext.boards || view == adoext.pullRequests || view == adoext.pipelines || view == adoext.wiki",
           "group": "navigation"
         },
         {
           "command": "adoext.signIn",
-          "when": "(view == adoext.workItems || view == adoext.backlog || view == adoext.sprints || view == adoext.boards || view == adoext.pullRequests || view == adoext.pipelines) && !adoext.isSignedIn",
+          "when": "(view == adoext.workItems || view == adoext.backlog || view == adoext.sprints || view == adoext.boards || view == adoext.pullRequests || view == adoext.pipelines || view == adoext.wiki) && !adoext.isSignedIn",
           "group": "navigation"
         },
         {
@@ -625,6 +662,21 @@
         {
           "command": "adoext.setPipelineRunsGroupBy",
           "when": "view == adoext.pipelines",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.refreshWiki",
+          "when": "view == adoext.wiki",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.searchWikiPages",
+          "when": "view == adoext.wiki",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.clearWikiSearch",
+          "when": "view == adoext.wiki && adoext.wikiHasSearch",
           "group": "navigation"
         }
       ],
@@ -753,6 +805,16 @@
           "command": "adoext.openPipelineStepLog",
           "when": "viewItem == pipelineStepLog",
           "group": "inline"
+        },
+        {
+          "command": "adoext.openWikiPageInBrowser",
+          "when": "viewItem == wikiPage",
+          "group": "navigation"
+        },
+        {
+          "command": "adoext.copyWikiPageLink",
+          "when": "viewItem == wikiPage",
+          "group": "navigation"
         }
       ],
       "comments/commentThread/context": [
@@ -1117,6 +1179,11 @@
           "default": 300,
           "minimum": 60,
           "description": "How often (in seconds) ADOExt polls tracked pull requests for notifications. Ignored when all notifications are disabled."
+        },
+        "adoext.enableWikiView": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable the optional Wiki view (read-only) for browsing Azure DevOps wiki pages."
         }
       }
     }
