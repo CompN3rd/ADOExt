@@ -472,7 +472,7 @@ export class PrDetailsPanel {
         organization: string | undefined,
         builds: Build[]
     ): Promise<PrTestResultsViewModel | undefined> {
-        const buildInfos = (builds ?? [])
+        const buildInfos = this._latestBuildsByDefinition(builds ?? [])
             .map(build => ({
                 id: build.id ?? 0,
                 label: build.buildNumber ?? (build.id ? `#${build.id}` : '')
@@ -512,6 +512,7 @@ export class PrDetailsPanel {
             const durationMs = run.startedDate && run.completedDate
                 ? new Date(run.completedDate).getTime() - new Date(run.startedDate).getTime()
                 : 0;
+            const status = this._testRunStatus(run, failedTests, totalTests);
 
             return {
                 runId: run.id,
@@ -519,6 +520,8 @@ export class PrDetailsPanel {
                 runUrl: organization ? this._testRunUrl(organization, project, run.id) : '',
                 buildId: buildInfo.id,
                 buildLabel: buildInfo.label,
+                statusLabel: status.label,
+                statusClass: status.className,
                 totalTests,
                 passedTests,
                 failedTests,
@@ -527,8 +530,11 @@ export class PrDetailsPanel {
             };
         });
 
-        const failingRuns = runsWithBuild
+        const allFailingRuns = runsWithBuild
             .filter(({ run }) => (run.unanalyzedTests ?? 0) > 0)
+            ;
+
+        const failingRuns = allFailingRuns
             .slice(0, 10);
 
         const failuresByRun = await mapWithConcurrencyLimit(failingRuns, 4, async ({ run, buildInfo }) => {
@@ -570,12 +576,96 @@ export class PrDetailsPanel {
             return duration > 0 ? acc + duration : acc;
         }, 0);
 
+        let failureDetailsNotice: string | undefined;
+        if (summary.failedTests > 0) {
+            if (failures.length === 0) {
+                failureDetailsNotice = 'Detailed failure records were unavailable for the detected failing tests.';
+            } else if (allFailingRuns.length > failingRuns.length || failures.length < summary.failedTests) {
+                failureDetailsNotice = `Showing ${failures.length} of ${summary.failedTests} failing tests from the newest runs.`;
+            }
+        }
+
         return {
             ...summary,
             durationLabel: this._formatDuration(totalDurationMs),
+            failureDetailsNotice,
             runs: runViewModels,
             failures
         };
+    }
+
+    private _testRunStatus(
+        run: { state?: string },
+        failedTests: number,
+        totalTests: number
+    ): { label: string; className: string } {
+        const state = (run.state ?? '').trim().toLowerCase();
+
+        if (state === 'inprogress' || state === 'notstarted' || state === 'waiting') {
+            return { label: this._humanizeRunState(run.state), className: 'check-pending' };
+        }
+
+        if (failedTests > 0) {
+            return { label: 'Failed', className: 'check-failure' };
+        }
+
+        if (totalTests > 0) {
+            return { label: 'Passed', className: 'check-success' };
+        }
+
+        if (state === 'aborted') {
+            return { label: 'Canceled', className: 'check-neutral' };
+        }
+
+        if (run.state?.trim()) {
+            return { label: this._humanizeRunState(run.state), className: 'check-neutral' };
+        }
+
+        return { label: 'Unknown', className: 'check-neutral' };
+    }
+
+    private _humanizeRunState(state: string | undefined): string {
+        const raw = (state ?? '').trim();
+        if (!raw) {
+            return 'Unknown';
+        }
+
+        return raw
+            .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+            .replace(/[_-]+/g, ' ')
+            .replace(/\s+/g, ' ')
+            .replace(/^./, value => value.toUpperCase());
+    }
+
+    private _latestBuildsByDefinition(builds: Build[]): Build[] {
+        const latestByDefinition = new Map<string, Build>();
+
+        for (const build of builds) {
+            const key = build.definition?.id !== undefined
+                ? `definition:${build.definition.id}`
+                : `build:${build.id ?? 0}`;
+            const existing = latestByDefinition.get(key);
+
+            if (!existing || this._buildTimestamp(build) > this._buildTimestamp(existing)) {
+                latestByDefinition.set(key, build);
+                continue;
+            }
+
+            if (
+                this._buildTimestamp(build) === this._buildTimestamp(existing) &&
+                (build.id ?? 0) > (existing.id ?? 0)
+            ) {
+                latestByDefinition.set(key, build);
+            }
+        }
+
+        return [...latestByDefinition.values()]
+            .sort((a, b) => this._buildTimestamp(b) - this._buildTimestamp(a));
+    }
+
+    private _buildTimestamp(build: Build): number {
+        const timestamp = build.finishTime ?? build.startTime ?? build.queueTime;
+        return timestamp ? new Date(timestamp).getTime() : 0;
     }
 
     private _buildCheckRows(

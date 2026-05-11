@@ -100,6 +100,8 @@ export interface PrTestRunViewModel {
     runUrl: string;
     buildId?: number;
     buildLabel?: string;
+    statusLabel: string;
+    statusClass: string;
     totalTests: number;
     passedTests: number;
     failedTests: number;
@@ -124,6 +126,7 @@ export interface PrTestResultsViewModel {
     failedTests: number;
     skippedTests: number;
     durationLabel: string;
+    failureDetailsNotice?: string;
     runs: PrTestRunViewModel[];
     failures: PrTestFailureViewModel[];
 }

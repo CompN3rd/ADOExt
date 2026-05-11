@@ -75,8 +75,10 @@ class AdoPrDetailsApp extends LitElement {
         .test-run-list, .test-failure-list { list-style: none; padding: 0; margin: 0; }
         .test-run { display: flex; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--vscode-panel-border); }
         .test-run:last-child { border-bottom: none; }
+        .test-run-status { min-width: 88px; }
         .test-run-name { flex: 1; min-width: 140px; }
         .test-counts { font-size: 0.85em; color: var(--vscode-descriptionForeground); white-space: nowrap; }
+        .test-note { color: var(--vscode-descriptionForeground); font-size: 0.85em; margin: 0 0 8px; }
         .test-failure { border: 1px solid var(--vscode-panel-border); border-radius: 4px; margin-bottom: 8px; }
         .test-failure > summary { cursor: pointer; padding: 6px 10px; background: var(--vscode-sideBarSectionHeader-background); border-radius: 4px; display: flex; gap: 10px; align-items: center; }
         .test-failure-name { flex: 1; font-weight: 600; }
@@ -137,6 +139,7 @@ class AdoPrDetailsApp extends LitElement {
 
         const failures = testResults.failures ?? [];
         const runs = testResults.runs ?? [];
+        const hasPendingRuns = runs.some(run => run.statusClass === 'check-pending');
 
         return html`
             <section class="section">
@@ -149,7 +152,7 @@ class AdoPrDetailsApp extends LitElement {
                     ${testResults.durationLabel ? html`<span>Duration: ${testResults.durationLabel}</span>` : nothing}
                 </div>
                 <div class="toolbar">
-                    ${failures.length > 0
+                    ${testResults.failedTests > 0
                         ? html`<button class="btn-secondary" @click=${() => this.copyFailureSummary(testResults)}>Copy Failure Summary</button>`
                         : nothing}
                 </div>
@@ -159,6 +162,7 @@ class AdoPrDetailsApp extends LitElement {
                         <ul class="test-run-list">
                             ${runs.map(run => html`
                                 <li class="test-run">
+                                    <span class="check-state ${run.statusClass} test-run-status">${run.statusLabel}</span>
                                     <span class="test-run-name">${run.runName}</span>
                                     <span class="test-counts">${run.passedTests}P / ${run.failedTests}F / ${run.skippedTests}S · ${run.totalTests} total${run.durationLabel ? html` · ${run.durationLabel}` : nothing}</span>
                                     <button class="btn-secondary" @click=${() => this.openTestRun(run.runId)}>Open Run</button>
@@ -167,8 +171,13 @@ class AdoPrDetailsApp extends LitElement {
                             `)}
                         </ul>
                     `}
-                ${failures.length === 0
-                    ? html`<p class="empty">No failing tests.</p>`
+                ${testResults.failureDetailsNotice
+                    ? html`<p class="test-note">${testResults.failureDetailsNotice}</p>`
+                    : nothing}
+                ${testResults.failedTests === 0
+                    ? html`<p class="empty">${hasPendingRuns ? 'No failing tests reported yet.' : 'No failing tests.'}</p>`
+                    : failures.length === 0
+                        ? html`<p class="empty">Failing tests were detected, but detailed failure records were unavailable.</p>`
                     : html`
                         <h3>Failed Tests</h3>
                         <div class="test-failure-list">
@@ -400,16 +409,23 @@ class AdoPrDetailsApp extends LitElement {
 
     private copyFailureSummary = (testResults: PrTestResultsViewModel): void => {
         const failures = testResults.failures ?? [];
-        if (failures.length === 0) { return; }
+        if (testResults.failedTests === 0) { return; }
 
-        const lines = [
-            `Test failures (${failures.length})`,
-            ...failures.map(failure => {
-                const location = [failure.buildLabel, failure.runName].filter(Boolean).join(' · ');
-                const msg = failure.errorMessageSnippet ? `\n  ${failure.errorMessageSnippet.split('\n')[0]}` : '';
-                return `- ${failure.testName}${location ? ` (${location})` : ''}${msg}`;
-            })
-        ];
+        const lines = failures.length > 0
+            ? [
+                `Test failures (${failures.length}${failures.length < testResults.failedTests ? ` of ${testResults.failedTests}` : ''})`,
+                ...failures.map(failure => {
+                    const location = [failure.buildLabel, failure.runName].filter(Boolean).join(' · ');
+                    const msg = failure.errorMessageSnippet ? `\n  ${failure.errorMessageSnippet.split('\n')[0]}` : '';
+                    return `- ${failure.testName}${location ? ` (${location})` : ''}${msg}`;
+                })
+            ]
+            : [
+                `Test failures (${testResults.failedTests})`,
+                ...testResults.runs
+                    .filter(run => run.failedTests > 0)
+                    .map(run => `- ${run.runName}: ${run.failedTests} failing test${run.failedTests === 1 ? '' : 's'}${run.buildLabel ? ` (${run.buildLabel})` : ''}`)
+            ];
 
         this.send({ type: 'copyText', text: lines.join('\n') });
     };

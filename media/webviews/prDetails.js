@@ -810,17 +810,20 @@
       };
       this.copyFailureSummary = (testResults) => {
         const failures = testResults.failures ?? [];
-        if (failures.length === 0) {
+        if (testResults.failedTests === 0) {
           return;
         }
-        const lines = [
-          `Test failures (${failures.length})`,
+        const lines = failures.length > 0 ? [
+          `Test failures (${failures.length}${failures.length < testResults.failedTests ? ` of ${testResults.failedTests}` : ""})`,
           ...failures.map((failure) => {
             const location = [failure.buildLabel, failure.runName].filter(Boolean).join(" \xB7 ");
             const msg = failure.errorMessageSnippet ? `
   ${failure.errorMessageSnippet.split("\n")[0]}` : "";
             return `- ${failure.testName}${location ? ` (${location})` : ""}${msg}`;
           })
+        ] : [
+          `Test failures (${testResults.failedTests})`,
+          ...testResults.runs.filter((run) => run.failedTests > 0).map((run) => `- ${run.runName}: ${run.failedTests} failing test${run.failedTests === 1 ? "" : "s"}${run.buildLabel ? ` (${run.buildLabel})` : ""}`)
         ];
         this.send({ type: "copyText", text: lines.join("\n") });
       };
@@ -854,6 +857,7 @@
       }
       const failures = testResults.failures ?? [];
       const runs = testResults.runs ?? [];
+      const hasPendingRuns = runs.some((run) => run.statusClass === "check-pending");
       return b2`
             <section class="section">
                 <h2>Test Results</h2>
@@ -865,12 +869,13 @@
                     ${testResults.durationLabel ? b2`<span>Duration: ${testResults.durationLabel}</span>` : A}
                 </div>
                 <div class="toolbar">
-                    ${failures.length > 0 ? b2`<button class="btn-secondary" @click=${() => this.copyFailureSummary(testResults)}>Copy Failure Summary</button>` : A}
+                    ${testResults.failedTests > 0 ? b2`<button class="btn-secondary" @click=${() => this.copyFailureSummary(testResults)}>Copy Failure Summary</button>` : A}
                 </div>
                 ${runs.length === 0 ? b2`<p class="empty">No test runs found.</p>` : b2`
                         <ul class="test-run-list">
                             ${runs.map((run) => b2`
                                 <li class="test-run">
+                                    <span class="check-state ${run.statusClass} test-run-status">${run.statusLabel}</span>
                                     <span class="test-run-name">${run.runName}</span>
                                     <span class="test-counts">${run.passedTests}P / ${run.failedTests}F / ${run.skippedTests}S · ${run.totalTests} total${run.durationLabel ? b2` · ${run.durationLabel}` : A}</span>
                                     <button class="btn-secondary" @click=${() => this.openTestRun(run.runId)}>Open Run</button>
@@ -879,7 +884,8 @@
                             `)}
                         </ul>
                     `}
-                ${failures.length === 0 ? b2`<p class="empty">No failing tests.</p>` : b2`
+                ${testResults.failureDetailsNotice ? b2`<p class="test-note">${testResults.failureDetailsNotice}</p>` : A}
+                ${testResults.failedTests === 0 ? b2`<p class="empty">${hasPendingRuns ? "No failing tests reported yet." : "No failing tests."}</p>` : failures.length === 0 ? b2`<p class="empty">Failing tests were detected, but detailed failure records were unavailable.</p>` : b2`
                         <h3>Failed Tests</h3>
                         <div class="test-failure-list">
                             ${failures.map((failure) => b2`
@@ -1092,8 +1098,10 @@
         .test-run-list, .test-failure-list { list-style: none; padding: 0; margin: 0; }
         .test-run { display: flex; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--vscode-panel-border); }
         .test-run:last-child { border-bottom: none; }
+        .test-run-status { min-width: 88px; }
         .test-run-name { flex: 1; min-width: 140px; }
         .test-counts { font-size: 0.85em; color: var(--vscode-descriptionForeground); white-space: nowrap; }
+        .test-note { color: var(--vscode-descriptionForeground); font-size: 0.85em; margin: 0 0 8px; }
         .test-failure { border: 1px solid var(--vscode-panel-border); border-radius: 4px; margin-bottom: 8px; }
         .test-failure > summary { cursor: pointer; padding: 6px 10px; background: var(--vscode-sideBarSectionHeader-background); border-radius: 4px; display: flex; gap: 10px; align-items: center; }
         .test-failure-name { flex: 1; font-weight: 600; }
