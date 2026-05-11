@@ -887,24 +887,26 @@
                 ${testResults.failureDetailsNotice ? b2`<p class="test-note">${testResults.failureDetailsNotice}</p>` : A}
                 ${testResults.failedTests === 0 ? b2`<p class="empty">${hasPendingRuns ? "No failing tests reported yet." : "No failing tests."}</p>` : failures.length === 0 ? b2`<p class="empty">Failing tests were detected, but detailed failure records were unavailable.</p>` : b2`
                         <h3>Failed Tests</h3>
-                        <div class="test-failure-list">
+                        <ul class="test-failure-list">
                             ${failures.map((failure) => b2`
-                                <details class="test-failure">
-                                    <summary>
-                                        <span class="test-failure-name">${failure.testName}</span>
-                                        <span class="test-failure-meta">${failure.buildLabel ? `${failure.buildLabel} \xB7 ` : ""}${failure.runName}</span>
-                                    </summary>
-                                    <div class="test-failure-body">
-                                        ${failure.errorMessageSnippet ? b2`<h3>Error</h3><pre>${failure.errorMessageSnippet}</pre>` : b2`<p class="empty">No error message provided.</p>`}
-                                        ${failure.stackTraceSnippet ? b2`<h3>Stack Trace</h3><pre>${failure.stackTraceSnippet}</pre>` : A}
-                                        <div class="toolbar">
-                                            <button class="btn-secondary" @click=${() => this.openTestRun(failure.runId)}>Open Run</button>
-                                            ${failure.buildId ? b2`<button class="btn-secondary" @click=${() => this.send({ type: "openBuild", buildId: failure.buildId })}>Open Build</button>` : A}
+                                <li>
+                                    <details class="test-failure">
+                                        <summary>
+                                            <span class="test-failure-name">${failure.testName}</span>
+                                            <span class="test-failure-meta">${failure.buildLabel ? `${failure.buildLabel} \xB7 ` : ""}${failure.runName}</span>
+                                        </summary>
+                                        <div class="test-failure-body">
+                                            ${failure.errorMessageSnippet ? b2`<h3>Error</h3><pre>${failure.errorMessageSnippet}</pre>` : b2`<p class="empty">No error message provided.</p>`}
+                                            ${failure.stackTraceSnippet ? b2`<h3>Stack Trace</h3><pre>${failure.stackTraceSnippet}</pre>` : A}
+                                            <div class="toolbar">
+                                                <button class="btn-secondary" @click=${() => this.openTestRun(failure.runId)}>Open Run</button>
+                                                ${failure.buildId ? b2`<button class="btn-secondary" @click=${() => this.send({ type: "openBuild", buildId: failure.buildId })}>Open Build</button>` : A}
+                                            </div>
                                         </div>
-                                    </div>
-                                </details>
+                                    </details>
+                                </li>
                             `)}
-                        </div>
+                        </ul>
                     `}
             </section>
         `;

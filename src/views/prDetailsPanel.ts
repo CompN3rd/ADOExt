@@ -19,6 +19,12 @@ interface PrPanelScope {
     project?: string;
 }
 
+const TEST_RUN_FETCH_CONCURRENCY = 4;
+const FAILED_RUN_DETAILS_LIMIT = 10;
+const FAILED_TEST_RESULTS_LIMIT = 25;
+const ERROR_SNIPPET_MAX_CHARS = 300;
+const STACK_TRACE_SNIPPET_MAX_CHARS = 600;
+
 /**
  * Renders a pull request's details (title, description, reviewers, comment
  * threads) in a VS Code webview panel.  The user can reply to threads and
@@ -483,7 +489,7 @@ export class PrDetailsPanel {
             return undefined;
         }
 
-        const runsByBuild = await mapWithConcurrencyLimit(buildInfos, 4, async (buildInfo) => {
+        const runsByBuild = await mapWithConcurrencyLimit(buildInfos, TEST_RUN_FETCH_CONCURRENCY, async (buildInfo) => {
             try {
                 const runs = await this._client.getTestRunsForBuild(project, buildInfo.id, organization);
                 return runs.map(run => ({ run, buildInfo }));
@@ -535,15 +541,15 @@ export class PrDetailsPanel {
             ;
 
         const failingRuns = allFailingRuns
-            .slice(0, 10);
+            .slice(0, FAILED_RUN_DETAILS_LIMIT);
 
-        const failuresByRun = await mapWithConcurrencyLimit(failingRuns, 4, async ({ run, buildInfo }) => {
+        const failuresByRun = await mapWithConcurrencyLimit(failingRuns, TEST_RUN_FETCH_CONCURRENCY, async ({ run, buildInfo }) => {
             try {
-                const results = await this._client.getFailedTestResultsForRun(project, run.id, organization, 25);
+                const results = await this._client.getFailedTestResultsForRun(project, run.id, organization, FAILED_TEST_RESULTS_LIMIT);
                 return results.map(result => ({
                     testName: result.automatedTestName ?? result.testCaseTitle ?? `Test #${result.id ?? 0}`,
-                    errorMessageSnippet: this._snippet(result.errorMessage, 300),
-                    stackTraceSnippet: this._snippet(result.stackTrace, 600),
+                    errorMessageSnippet: this._snippet(result.errorMessage, ERROR_SNIPPET_MAX_CHARS),
+                    stackTraceSnippet: this._snippet(result.stackTrace, STACK_TRACE_SNIPPET_MAX_CHARS),
                     runId: run.id,
                     runName: run.name,
                     runUrl: organization ? this._testRunUrl(organization, project, run.id) : '',
@@ -605,16 +611,16 @@ export class PrDetailsPanel {
             return { label: this._humanizeRunState(run.state), className: 'check-pending' };
         }
 
+        if (state === 'aborted') {
+            return { label: 'Canceled', className: 'check-neutral' };
+        }
+
         if (failedTests > 0) {
             return { label: 'Failed', className: 'check-failure' };
         }
 
         if (totalTests > 0) {
             return { label: 'Passed', className: 'check-success' };
-        }
-
-        if (state === 'aborted') {
-            return { label: 'Canceled', className: 'check-neutral' };
         }
 
         if (run.state?.trim()) {

@@ -180,24 +180,26 @@ class AdoPrDetailsApp extends LitElement {
                         ? html`<p class="empty">Failing tests were detected, but detailed failure records were unavailable.</p>`
                     : html`
                         <h3>Failed Tests</h3>
-                        <div class="test-failure-list">
+                        <ul class="test-failure-list">
                             ${failures.map(failure => html`
-                                <details class="test-failure">
-                                    <summary>
-                                        <span class="test-failure-name">${failure.testName}</span>
-                                        <span class="test-failure-meta">${failure.buildLabel ? `${failure.buildLabel} · ` : ''}${failure.runName}</span>
-                                    </summary>
-                                    <div class="test-failure-body">
-                                        ${failure.errorMessageSnippet ? html`<h3>Error</h3><pre>${failure.errorMessageSnippet}</pre>` : html`<p class="empty">No error message provided.</p>`}
-                                        ${failure.stackTraceSnippet ? html`<h3>Stack Trace</h3><pre>${failure.stackTraceSnippet}</pre>` : nothing}
-                                        <div class="toolbar">
-                                            <button class="btn-secondary" @click=${() => this.openTestRun(failure.runId)}>Open Run</button>
-                                            ${failure.buildId ? html`<button class="btn-secondary" @click=${() => this.send({ type: 'openBuild', buildId: failure.buildId! })}>Open Build</button>` : nothing}
+                                <li>
+                                    <details class="test-failure">
+                                        <summary>
+                                            <span class="test-failure-name">${failure.testName}</span>
+                                            <span class="test-failure-meta">${failure.buildLabel ? `${failure.buildLabel} · ` : ''}${failure.runName}</span>
+                                        </summary>
+                                        <div class="test-failure-body">
+                                            ${failure.errorMessageSnippet ? html`<h3>Error</h3><pre>${failure.errorMessageSnippet}</pre>` : html`<p class="empty">No error message provided.</p>`}
+                                            ${failure.stackTraceSnippet ? html`<h3>Stack Trace</h3><pre>${failure.stackTraceSnippet}</pre>` : nothing}
+                                            <div class="toolbar">
+                                                <button class="btn-secondary" @click=${() => this.openTestRun(failure.runId)}>Open Run</button>
+                                                ${failure.buildId ? html`<button class="btn-secondary" @click=${() => this.send({ type: 'openBuild', buildId: failure.buildId! })}>Open Build</button>` : nothing}
+                                            </div>
                                         </div>
-                                    </div>
-                                </details>
+                                    </details>
+                                </li>
                             `)}
-                        </div>
+                        </ul>
                     `}
             </section>
         `;
