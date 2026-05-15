@@ -1,10 +1,16 @@
 # Changelog
 
-## Unreleased
+## 1.7.0 — 2026-05-15
 
 ### Added
 
 - **Pipelines view**: Browse recent Azure Pipelines runs across selected organization/project scopes, filter by all/running/failed/mine, group by repository or branch, inspect timeline/artifacts, open step logs from tree nodes or details timeline links in read-only VS Code documents, and re-run or cancel runs with confirmation prompts.
+- **PR test result summaries**: Show test results directly in the PR details panel with run status badges, pass/fail/skip counts, failed test details, links to test runs/builds, and a copyable failure summary to support merge-readiness review inside VS Code.
+
+### Fixed
+
+- **PR test results accuracy**: Limit test summaries to the latest validation build per pipeline definition so stale reruns do not overcount failures.
+- **PR test results states**: Keep aborted runs from being labeled as passed, surface partial or unavailable failure details explicitly, and show a `No test results found.` empty state when a PR has no associated test runs.
 
 ## 1.6.1 — 2026-05-08
 
