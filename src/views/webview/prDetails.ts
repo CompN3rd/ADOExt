@@ -135,7 +135,14 @@ class AdoPrDetailsApp extends LitElement {
     }
 
     private renderTestResults(testResults: PrTestResultsViewModel | undefined) {
-        if (!testResults) { return nothing; }
+        if (!testResults) {
+            return html`
+                <section class="section">
+                    <h2>Test Results</h2>
+                    <p class="empty">No test results found.</p>
+                </section>
+            `;
+        }
 
         const failures = testResults.failures ?? [];
         const runs = testResults.runs ?? [];
