@@ -264,3 +264,48 @@ export type PipelineRunDetailsMessage =
     | { type: 'rerun' }
     | { type: 'cancel' }
     | { type: 'openArtifact'; url: string };
+
+export interface WorkItemSchemaInspectorProcessTemplateViewModel {
+    templateName?: string;
+    templateTypeId?: string;
+    templateVersion?: string;
+}
+
+export interface WorkItemSchemaInspectorStateViewModel {
+    name: string;
+    category?: string;
+    color?: string;
+}
+
+export interface WorkItemSchemaInspectorFieldViewModel {
+    name: string;
+    referenceName: string;
+    alwaysRequired: boolean;
+    helpText?: string;
+}
+
+export interface WorkItemSchemaInspectorTypeViewModel {
+    name: string;
+    referenceName?: string;
+    color?: string;
+    iconUrl?: string;
+    stateCount: number;
+    fieldCount: number;
+    states: WorkItemSchemaInspectorStateViewModel[];
+    fields: WorkItemSchemaInspectorFieldViewModel[];
+}
+
+export interface WorkItemSchemaInspectorViewModel {
+    organization: string;
+    project: string;
+    fetchedAt: string;
+    processTemplate?: WorkItemSchemaInspectorProcessTemplateViewModel;
+    warnings: string[];
+    types: WorkItemSchemaInspectorTypeViewModel[];
+}
+
+export type WorkItemSchemaInspectorMessage =
+    | { type: 'refresh' }
+    | { type: 'openProcessSettings' }
+    | { type: 'copyDiagnosticSummary' }
+    | { type: 'copyFieldReferenceName'; referenceName: string };

@@ -203,6 +203,12 @@
         "icon": "$(search)"
       },
       {
+        "command": "adoext.openWorkItemSchemaInspector",
+        "title": "Open Work Item Process Inspector",
+        "category": "ADOExt",
+        "icon": "$(beaker)"
+      },
+      {
         "command": "adoext.createWorkItem",
         "title": "Create Work Item",
         "category": "ADOExt",

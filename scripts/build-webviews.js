@@ -12,6 +12,7 @@ const buildOptions = {
         path.join(root, 'src', 'views', 'webview', 'pipelineRunDetails.ts'),
         path.join(root, 'src', 'views', 'webview', 'prDetails.ts'),
         path.join(root, 'src', 'views', 'webview', 'workItemDetails.ts'),
+        path.join(root, 'src', 'views', 'webview', 'workItemSchemaInspector.ts'),
         path.join(root, 'src', 'views', 'webview', 'planning.ts')
     ],
     outdir,

@@ -11,6 +11,7 @@ import { BuildReason, BuildResult, BuildStatus } from 'azure-devops-node-api/int
 import { ResultDetails, TestOutcome } from 'azure-devops-node-api/interfaces/TestInterfaces';
 import { Operation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
 import { normalizeWorkItemTypeName, workItemTypeScopeKey } from '../utils/workItemTypeIcons';
+import { mapWithConcurrencyLimit } from '../utils/async';
 import type {
     WorkItem,
     WorkItemType,
@@ -107,6 +108,40 @@ export const PullRequestReviewVotes = {
     approvedWithSuggestions: 5,
     approved: 10
 } as const satisfies Record<string, PullRequestReviewVote>;
+
+export interface WorkItemProcessTemplateInfo {
+    templateName?: string;
+    templateTypeId?: string;
+    templateVersion?: string;
+}
+
+export interface WorkItemSchemaStateInfo {
+    name: string;
+    category?: string;
+    color?: string;
+}
+
+export interface WorkItemSchemaFieldInfo {
+    name: string;
+    referenceName: string;
+    alwaysRequired: boolean;
+    helpText?: string;
+}
+
+export interface WorkItemTypeSchemaInfo {
+    name: string;
+    referenceName?: string;
+    color?: string;
+    iconUrl?: string;
+    states: WorkItemSchemaStateInfo[];
+    fields: WorkItemSchemaFieldInfo[];
+}
+
+export interface WorkItemProcessSchemaInfo {
+    processTemplate?: WorkItemProcessTemplateInfo;
+    types: WorkItemTypeSchemaInfo[];
+    warnings: string[];
+}
 
 const WORK_ITEM_QUERY_LIMIT = 200;
 const PLANNING_WORK_ITEM_QUERY_LIMIT = 500;
@@ -594,6 +629,95 @@ export class AdoClient {
             icons
         });
         return icons;
+    }
+
+    /**
+     * Fetch a read-only schema snapshot for work item types/states/fields in the project.
+     *
+     * This is intended for diagnostics and should not require admin permissions beyond
+     * reading work item metadata.
+     */
+    async getWorkItemProcessSchema(
+        project: string,
+        organization?: string
+    ): Promise<WorkItemProcessSchemaInfo> {
+        const warnings: string[] = [];
+        const coreApi: ICoreApi = await this.getConnectionFor(organization).getCoreApi();
+        const witApi: IWorkItemTrackingApi = await this.getConnectionFor(organization).getWorkItemTrackingApi();
+
+        let processTemplate: WorkItemProcessTemplateInfo | undefined;
+        try {
+            const projectInfo = await coreApi.getProject(project, true, false);
+            const template = projectInfo?.capabilities?.processTemplate;
+            if (template) {
+                processTemplate = {
+                    templateName: template.templateName,
+                    templateTypeId: template.templateTypeId,
+                    templateVersion: template.templateVersion
+                };
+            }
+        } catch (err) {
+            warnings.push(`Failed to fetch project process template: ${this.formatError(err)}`);
+        }
+
+        const typeRefs = await this.getWorkItemTypes(project, organization);
+        const types = await mapWithConcurrencyLimit<WorkItemType, WorkItemTypeSchemaInfo | undefined>(typeRefs, 4, async (typeRef) => {
+            const typeName = typeRef.name?.trim();
+            if (!typeName) {
+                return undefined;
+            }
+
+            try {
+                const full = await witApi.getWorkItemType(project, typeName);
+                const states = (full.states ?? [])
+                    .map(state => ({
+                        name: state.name?.trim() ?? '',
+                        category: state.category?.trim() || undefined,
+                        color: state.color?.trim() || undefined
+                    }))
+                    .filter(state => state.name.length > 0);
+
+                const fields = (full.fields ?? full.fieldInstances ?? [])
+                    .map(field => ({
+                        name: field.name?.trim() ?? '',
+                        referenceName: field.referenceName?.trim() ?? '',
+                        alwaysRequired: Boolean(field.alwaysRequired),
+                        helpText: field.helpText?.trim() || undefined
+                    }))
+                    .filter(field => field.referenceName.length > 0 && field.name.length > 0);
+
+                return {
+                    name: full.name?.trim() ?? typeName,
+                    referenceName: full.referenceName?.trim() || undefined,
+                    color: full.color?.trim() || undefined,
+                    iconUrl: full.icon?.url?.trim() || undefined,
+                    states,
+                    fields
+                } satisfies WorkItemTypeSchemaInfo;
+            } catch (err) {
+                warnings.push(`Failed to fetch work item type "${typeName}": ${this.formatError(err)}`);
+                return {
+                    name: typeName,
+                    referenceName: typeRef.referenceName?.trim() || undefined,
+                    color: typeRef.color?.trim() || undefined,
+                    iconUrl: typeRef.icon?.url?.trim() || undefined,
+                    states: [],
+                    fields: []
+                } satisfies WorkItemTypeSchemaInfo;
+            }
+        });
+
+        return {
+            processTemplate,
+            types: types
+                .filter((type): type is WorkItemTypeSchemaInfo => Boolean(type))
+                .sort((a, b) => a.name.localeCompare(b.name)),
+            warnings
+        };
+    }
+
+    private formatError(error: unknown): string {
+        return error instanceof Error ? error.message : String(error);
     }
 
     // -------------------------------------------------------------------------
