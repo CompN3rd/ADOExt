@@ -12,6 +12,10 @@
 - **PR test results accuracy**: Limit test summaries to the latest validation build per pipeline definition so stale reruns do not overcount failures.
 - **PR test results states**: Keep aborted runs from being labeled as passed, surface partial or unavailable failure details explicitly, and show a `No test results found.` empty state when a PR has no associated test runs.
 
+### Fixed
+
+- **Create work item from TODO**: Description field no longer shows line 1 of the file instead of the actual TODO line when triggered via the code action.
+
 ## 1.6.1 — 2026-05-08
 
 ### Fixed

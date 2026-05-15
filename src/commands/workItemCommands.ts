@@ -262,6 +262,11 @@ export async function createWorkItemFromTodo(
     todoText?: string,
     lineNumber?: number
 ): Promise<boolean> {
+    // Capture the active editor immediately before any async operations so that
+    // awaiting scope resolution or showing quick-picks cannot change which editor
+    // we associate with the TODO line.
+    const editor = vscode.window.activeTextEditor;
+
     const scopes = await resolveProjectScopes(client, config);
     if (scopes.length === 0) {
         showWarningMessage('Please configure your organization and project first.');
@@ -276,8 +281,6 @@ export async function createWorkItemFromTodo(
         scope = picked.scope;
     }
     const { project, organization } = scope;
-
-    const editor = vscode.window.activeTextEditor;
 
     let resolvedTitle = todoText;
     let resolvedLine = lineNumber ?? 0;
