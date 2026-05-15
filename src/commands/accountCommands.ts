@@ -179,6 +179,41 @@ export async function selectProject(
 }
 
 /**
+ * Open the Azure DevOps Extension Management page in the browser for a
+ * selected organization.  Prompts for org selection when more than one
+ * organization is configured.
+ */
+export async function openExtensionManagement(
+    config: ConfigManager
+): Promise<void> {
+    const organizations = config.selectedOrganizations;
+
+    if (organizations.length === 0) {
+        showWarningMessage('Please configure your organization first.');
+        return;
+    }
+
+    let organization: string;
+
+    if (organizations.length === 1) {
+        organization = organizations[0];
+    } else {
+        const picked = await vscode.window.showQuickPick(
+            organizations.map(org => ({ label: org })),
+            {
+                placeHolder: 'Select an organization to open Extension Management',
+                title: 'Open Extension Management'
+            }
+        );
+        if (!picked) { return; }
+        organization = picked.label;
+    }
+
+    const url = `https://dev.azure.com/${encodeURIComponent(organization)}/_settings/extensions`;
+    void vscode.env.openExternal(vscode.Uri.parse(url));
+}
+
+/**
  * Inspect the active workspace's Git remotes for Azure DevOps URLs and offer
  * to apply the detected org/project as the extension's configuration.
  *

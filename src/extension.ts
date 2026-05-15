@@ -25,7 +25,8 @@ import { PrStatusChangeHandler } from './notifications/handlers/prStatusChangeHa
 import {
     selectOrganization,
     selectProject,
-    detectAndSuggestRepoContext
+    detectAndSuggestRepoContext,
+    openExtensionManagement
 } from './commands/accountCommands';
 import {
     changeWorkItemState,
@@ -318,6 +319,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
                 refreshAllViews();
             }
+        })
+    );
+
+    // Open Extension Management in browser
+    context.subscriptions.push(
+        vscode.commands.registerCommand('adoext.openExtensionManagement', async () => {
+            await openExtensionManagement(config);
         })
     );
 
