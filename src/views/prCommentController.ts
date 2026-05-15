@@ -8,6 +8,7 @@ import type {
 } from '../api/adoClient';
 import { parsePrDiffUri, PR_DIFF_SCHEME, buildPrDiffUri } from './prContentProvider';
 import { showErrorMessage, showWarningMessage } from '../utils/notifications';
+import { isResolvedPullRequestThread } from '../utils/prThreadStatus';
 
 interface PrContext {
     organization: string;
@@ -52,8 +53,6 @@ interface ThreadMetadata {
     /** True for threads originating from a checked-out workspace file. */
     isOnWorkspaceFile: boolean;
 }
-
-const RESOLVED_STATUSES = new Set([2, 3, 4, 5]); // Fixed, WontFix, Closed, ByDesign
 
 export interface CommentReply {
     thread: vscode.CommentThread;
@@ -320,7 +319,7 @@ export class PrCommentController implements vscode.Disposable {
                 }
                 const line = reply.thread.range.start.line + 1;
                 const iterationId = meta.iterationId ?? meta.pr.iterationId ?? 1;
-                const baseIterationId = meta.baseIterationId ?? meta.pr.baseIterationId ?? 0;
+                const baseIterationId = meta.baseIterationId ?? meta.pr.baseIterationId ?? 1;
                 const newThread = await this._client.addPullRequestLineComment(
                     meta.pr.project,
                     meta.pr.repositoryId,
@@ -548,7 +547,7 @@ export class PrCommentController implements vscode.Disposable {
     }
 
     private applyState(thread: vscode.CommentThread, status: number | undefined): void {
-        const isResolved = status !== undefined && RESOLVED_STATUSES.has(status);
+        const isResolved = isResolvedPullRequestThread(status);
         thread.state = isResolved ? vscode.CommentThreadState.Resolved : vscode.CommentThreadState.Unresolved;
         thread.contextValue = isResolved ? 'prThreadResolved' : 'prThreadActive';
         thread.label = isResolved ? 'Resolved' : 'Active';

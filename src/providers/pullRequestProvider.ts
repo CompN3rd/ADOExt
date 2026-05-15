@@ -3,6 +3,7 @@ import type { AdoClient, GitPullRequest, GitPullRequestCommentThread, Comment, G
 import { GitStatusState, PolicyEvaluationStatus, PullRequestAsyncStatus, PullRequestMergeFailureType } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
 import { isToolIdentity, isSystemThread } from '../utils/prCommentIdentity';
+import { isResolvedPullRequestThread } from '../utils/prThreadStatus';
 import {
     resolveProjectScopes,
     scopeKey,
@@ -116,7 +117,7 @@ export class PullRequestThreadNode extends vscode.TreeItem {
         this.organization = scope?.organization;
         this.project = scope?.project;
 
-        const isResolved = thread.status === 2 /* Fixed */ || thread.status === 4; /* ByDesign */
+        const isResolved = isResolvedPullRequestThread(thread.status);
         const isToolThread = isToolIdentity(firstComment?.author);
         this.description = `${isResolved ? 'Resolved' : 'Active'}${isToolThread ? ' • Tool' : ''}`;
         this.contextValue = isResolved ? 'prCommentThreadResolved' : 'prCommentThreadActive';

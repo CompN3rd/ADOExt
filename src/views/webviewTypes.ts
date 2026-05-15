@@ -94,6 +94,43 @@ export interface PrWorkItemRefViewModel {
     title: string;
 }
 
+export interface PrTestRunViewModel {
+    runId: number;
+    runName: string;
+    runUrl: string;
+    buildId?: number;
+    buildLabel?: string;
+    statusLabel: string;
+    statusClass: string;
+    totalTests: number;
+    passedTests: number;
+    failedTests: number;
+    skippedTests: number;
+    durationLabel: string;
+}
+
+export interface PrTestFailureViewModel {
+    testName: string;
+    errorMessageSnippet: string;
+    stackTraceSnippet: string;
+    runId: number;
+    runName: string;
+    runUrl: string;
+    buildId?: number;
+    buildLabel?: string;
+}
+
+export interface PrTestResultsViewModel {
+    totalTests: number;
+    passedTests: number;
+    failedTests: number;
+    skippedTests: number;
+    durationLabel: string;
+    failureDetailsNotice?: string;
+    runs: PrTestRunViewModel[];
+    failures: PrTestFailureViewModel[];
+}
+
 export interface PrDetailsViewModel {
     prId: number;
     title: string;
@@ -114,6 +151,7 @@ export interface PrDetailsViewModel {
     reviewActions: PrReviewActionViewModel[];
     branchStatuses: NamedBadgeRowViewModel[];
     checks: NamedBadgeRowViewModel[];
+    testResults?: PrTestResultsViewModel;
     showResolvedThreads: boolean;
     threads: PrThreadViewModel[];
     builds: BuildSummaryViewModel[];
@@ -197,6 +235,8 @@ export type PrDetailsMessage =
     | { type: 'setStatus'; threadId: number; status: number }
     | { type: 'setShowResolvedThreads'; showResolved: boolean }
     | { type: 'openBuild'; buildId: number }
+    | { type: 'openTestRun'; runId: number }
+    | { type: 'copyText'; text: string }
     | { type: 'completePr'; mergeStrategy: number; deleteSourceBranch: boolean; transitionWorkItems: boolean; mergeCommitMessage: string }
     | { type: 'setAutoComplete'; mergeStrategy: number; deleteSourceBranch: boolean; transitionWorkItems: boolean; mergeCommitMessage: string }
     | { type: 'cancelAutoComplete' };
