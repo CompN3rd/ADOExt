@@ -586,6 +586,7 @@
       ].filter(Boolean);
       return b2`<main class="shell">
             <div class="toolbar">
+                <button class="btn-secondary" @click=${() => this.send({ type: "refresh" })}>Refresh</button>
                 <button class="btn-primary" @click=${() => this.send({ type: "openInBrowser" })}>Open in Browser</button>
                 <button class="btn-secondary" @click=${() => this.send({ type: "openLogs" })}>Open Logs</button>
                 <button class="btn-secondary" ?disabled=${!this.data.canRerun} @click=${() => this.send({ type: "rerun" })}>Re-run</button>
@@ -606,6 +607,8 @@
                 ${this.data.timeline.length === 0 ? b2`<p class="empty">No stage/job timeline available.</p>` : b2`${this.renderTimeline(this.data.timeline)}`}
             </section>
 
+            ${this.renderAgentDiagnostics()}
+
             <section class="section">
                 <h2>Artifacts</h2>
                 ${this.data.artifacts.length === 0 ? b2`<p class="empty">No artifacts found.</p>` : b2`<div class="artifacts">
@@ -616,6 +619,43 @@
                     </div>`}
             </section>
         </main>`;
+    }
+    renderAgentDiagnostics() {
+      const diagnostics = this.data.agentDiagnostics;
+      if (!this.data.agentDiagnosticsRequested) {
+        return A;
+      }
+      if (!diagnostics) {
+        return b2`<section class="section">
+                <h2>Agent Pool Diagnostics</h2>
+                <p class="empty">Agent pool details are not available for this run.</p>
+            </section>`;
+      }
+      const hint = diagnostics.hint ?? "";
+      const busy = diagnostics.busyAgentSummary ?? [];
+      return b2`<section class="section">
+            <h2>Agent Pool Diagnostics</h2>
+            <div class="toolbar">
+                <button class="btn-secondary" @click=${() => this.send({ type: "openAgentPool" })}>Open Pool</button>
+                <button class="btn-secondary" @click=${() => this.send({ type: "openAgentQueue" })}>Open Queue</button>
+                <button class="btn-secondary" @click=${() => this.send({ type: "copyAgentDiagnostics" })}>Copy Summary</button>
+            </div>
+            ${hint ? b2`<div class="meta">${hint}</div>` : A}
+            <div class="meta">
+                <div>Pool: <code>${diagnostics.poolName}</code> (ID: ${diagnostics.poolId})</div>
+                <div>Queue: <code>${diagnostics.queueName}</code> (ID: ${diagnostics.queueId})</div>
+                <div>Online: ${diagnostics.onlineAgents} · Offline: ${diagnostics.offlineAgents} · Busy: ${diagnostics.busyAgents} · Idle: ${diagnostics.idleAgents}</div>
+                <div>Pending requests: ${diagnostics.pendingRequestsLabel}</div>
+            </div>
+            ${busy.length === 0 ? b2`<p class="empty">No busy agents reported.</p>` : b2`<ul class="timeline">
+                    ${busy.map((agent) => b2`<li>
+                        <div class="node">
+                            <span>${agent.name}</span>
+                            ${agent.currentJobName ? b2`<span class="meta">· ${agent.currentJobName}</span>` : A}
+                        </div>
+                    </li>`)}
+                </ul>`}
+        </section>`;
     }
     renderTimeline(nodes) {
       return b2`<ul class="timeline">

@@ -30,6 +30,27 @@ export interface PipelineArtifactViewModel {
     downloadUrl: string;
 }
 
+export interface AgentPoolDiagnosticsAgentViewModel {
+    name: string;
+    currentJobName?: string;
+}
+
+export interface AgentPoolDiagnosticsViewModel {
+    poolName: string;
+    poolId: number;
+    queueName: string;
+    queueId: number;
+    onlineAgents: number;
+    offlineAgents: number;
+    busyAgents: number;
+    idleAgents: number;
+    pendingRequestsLabel: string;
+    busyAgentSummary: AgentPoolDiagnosticsAgentViewModel[];
+    poolUrl: string;
+    queueUrl: string;
+    hint?: string;
+}
+
 export interface PipelineRunDetailsViewModel {
     id: number;
     pipelineName: string;
@@ -51,6 +72,8 @@ export interface PipelineRunDetailsViewModel {
     logsUrl: string;
     artifacts: PipelineArtifactViewModel[];
     timeline: PipelineTimelineNodeViewModel[];
+    agentDiagnosticsRequested: boolean;
+    agentDiagnostics?: AgentPoolDiagnosticsViewModel;
 }
 
 export interface BadgeViewModel {
@@ -261,6 +284,10 @@ export type PipelineRunDetailsMessage =
     | { type: 'openInBrowser' }
     | { type: 'openLogs' }
     | { type: 'openStepLog'; logId: number; stepName: string }
+    | { type: 'refresh' }
     | { type: 'rerun' }
     | { type: 'cancel' }
-    | { type: 'openArtifact'; url: string };
+    | { type: 'openArtifact'; url: string }
+    | { type: 'openAgentPool' }
+    | { type: 'openAgentQueue' }
+    | { type: 'copyAgentDiagnostics' };
