@@ -282,11 +282,7 @@ function buildViewModel(
     const repository = build.repository?.name ?? '';
     const yamlFile = (build as unknown as { yamlFilename?: string }).yamlFilename ?? '';
 
-    const agentDiagnosticsViewModel = agentDiagnostics
-        ? toAgentDiagnosticsViewModel(agentDiagnostics, organization, project)
-        : build.status === BuildStatus.NotStarted
-            ? undefined
-            : undefined;
+    const agentDiagnosticsRequested = build.status === BuildStatus.NotStarted;
 
     return {
         id,
@@ -309,7 +305,10 @@ function buildViewModel(
         logsUrl: pipelineRunUrl(organization, project, id, 'logs'),
         artifacts: artifacts.map(artifactViewModel),
         timeline: buildTimelineViewModel(timeline),
-        agentDiagnostics: agentDiagnosticsViewModel
+        agentDiagnosticsRequested,
+        agentDiagnostics: agentDiagnostics
+            ? toAgentDiagnosticsViewModel(agentDiagnostics, organization, project)
+            : undefined
     };
 }
 
@@ -318,10 +317,12 @@ function toAgentDiagnosticsViewModel(
     organization: string,
     project: string
 ): AgentPoolDiagnosticsViewModel {
-    const onlineIdle = diagnostics.idleAgents;
-    const hint = onlineIdle === 0
-        ? 'No idle agents are currently online for this pool. Queued runs may be waiting for an agent.'
-        : undefined;
+    let hint: string | undefined;
+    if (diagnostics.onlineAgents === 0) {
+        hint = 'All agents in this pool are currently offline. The run will start once an agent comes back online.';
+    } else if (diagnostics.idleAgents === 0) {
+        hint = 'All online agents are busy. The run is waiting for one to become available.';
+    }
 
     return {
         poolName: diagnostics.poolName,

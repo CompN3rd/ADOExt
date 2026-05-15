@@ -72,6 +72,7 @@ export interface PipelineRunDetailsViewModel {
     logsUrl: string;
     artifacts: PipelineArtifactViewModel[];
     timeline: PipelineTimelineNodeViewModel[];
+    agentDiagnosticsRequested: boolean;
     agentDiagnostics?: AgentPoolDiagnosticsViewModel;
 }
 

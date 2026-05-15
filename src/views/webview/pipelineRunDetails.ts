@@ -97,8 +97,7 @@ class AdoPipelineRunDetailsApp extends LitElement {
 
     private renderAgentDiagnostics(): unknown {
         const diagnostics = this.data.agentDiagnostics;
-        const isQueued = this.data.statusLabel.toLowerCase().includes('queued');
-        if (!diagnostics && !isQueued) {
+        if (!this.data.agentDiagnosticsRequested) {
             return nothing;
         }
 

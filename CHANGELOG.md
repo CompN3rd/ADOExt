@@ -6,6 +6,7 @@
 
 - **Pipelines view**: Browse recent Azure Pipelines runs across selected organization/project scopes, filter by all/running/failed/mine, group by repository or branch, inspect timeline/artifacts, open step logs from tree nodes or details timeline links in read-only VS Code documents, and re-run or cancel runs with confirmation prompts.
 - **PR test result summaries**: Show test results directly in the PR details panel with run status badges, pass/fail/skip counts, failed test details, links to test runs/builds, and a copyable failure summary to support merge-readiness review inside VS Code.
+- **Agent pool diagnostics**: When a pipeline run is queued, the run details panel shows the pool name, online/offline/busy/idle agent counts, pending request count, and a list of busy agents. Includes a contextual hint when all agents are offline or busy, plus "Open Pool", "Open Queue", and "Copy Summary" actions.
 
 ### Fixed
 
