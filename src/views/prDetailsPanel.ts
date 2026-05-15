@@ -6,6 +6,7 @@ import type { AdoClient } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
 import { showErrorMessage, showInformationMessage, showWarningMessage } from '../utils/notifications';
 import { isToolIdentity, isSystemThread } from '../utils/prCommentIdentity';
+import { isResolvedPullRequestThread } from '../utils/prThreadStatus';
 import { buildSummaryData } from './buildSummaryHtml';
 import { buildWebviewDocument, webviewAssetRoots } from './webviewHtml';
 import { mapWithConcurrencyLimit } from '../utils/async';
@@ -423,7 +424,7 @@ export class PrDetailsPanel {
             testResults,
             showResolvedThreads: this._config.showResolvedPullRequestThreads,
             threads: visibleThreads.map(thread => {
-                const isResolved = thread.status === 2 || thread.status === 4;
+                const isResolved = isResolvedPullRequestThread(thread.status);
                 const firstComment = thread.comments?.[0];
                 return {
                     id: thread.id ?? 0,

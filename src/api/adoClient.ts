@@ -810,6 +810,8 @@ export class AdoClient {
         organization?: string
     ): Promise<GitPullRequestCommentThread> {
         const gitApi: IGitApi = await this.getConnectionFor(organization).getGitApi();
+        const effectiveIterationId = iterationId > 0 ? iterationId : 1;
+        const firstComparingIteration = baseIterationId > 0 ? baseIterationId : effectiveIterationId;
         const thread: GitPullRequestCommentThread = {
             comments: [{ content }],
             status: 1,
@@ -821,8 +823,8 @@ export class AdoClient {
             pullRequestThreadContext: {
                 changeTrackingId,
                 iterationContext: {
-                    firstComparingIteration: baseIterationId > 0 ? baseIterationId : 1,
-                    secondComparingIteration: iterationId
+                    firstComparingIteration,
+                    secondComparingIteration: effectiveIterationId
                 }
             }
         };
