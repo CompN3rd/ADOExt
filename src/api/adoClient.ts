@@ -821,7 +821,7 @@ export class AdoClient {
             pullRequestThreadContext: {
                 changeTrackingId,
                 iterationContext: {
-                    firstComparingIteration: baseIterationId,
+                    firstComparingIteration: baseIterationId > 0 ? baseIterationId : 1,
                     secondComparingIteration: iterationId
                 }
             }

@@ -320,7 +320,7 @@ export class PrCommentController implements vscode.Disposable {
                 }
                 const line = reply.thread.range.start.line + 1;
                 const iterationId = meta.iterationId ?? meta.pr.iterationId ?? 1;
-                const baseIterationId = meta.baseIterationId ?? meta.pr.baseIterationId ?? 0;
+                const baseIterationId = meta.baseIterationId ?? meta.pr.baseIterationId ?? 1;
                 const newThread = await this._client.addPullRequestLineComment(
                     meta.pr.project,
                     meta.pr.repositoryId,
