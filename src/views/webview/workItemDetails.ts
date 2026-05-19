@@ -16,13 +16,14 @@ class AdoWorkItemDetailsApp extends LitElement {
         .shell { font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); color: var(--vscode-foreground); background: var(--vscode-editor-background); padding: 16px; min-height: 100vh; }
         h1 { font-size: 1.3em; margin: 0 0 4px; line-height: 1.35; }
         h2 { font-size: 1em; border-bottom: 1px solid var(--vscode-panel-border); padding-bottom: 4px; margin-bottom: 8px; }
-        .toolbar, .state-edit { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+        .toolbar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+        .state-edit { display: flex; gap: 8px; align-items: center; }
         button { padding: 4px 12px; border-radius: 3px; border: 1px solid var(--vscode-button-border, transparent); cursor: pointer; font-family: inherit; font-size: 0.85em; }
         .btn-primary { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
         .btn-primary:hover { background: var(--vscode-button-hoverBackground); }
         .btn-secondary { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
         .btn-secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
-        select { background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground); border: 1px solid var(--vscode-dropdown-border); border-radius: 3px; padding: 3px 22px 3px 6px; }
+        select { background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground); border: 1px solid var(--vscode-dropdown-border); border-radius: 3px; padding: 3px 22px 3px 6px; font-family: inherit; font-size: 0.85em; }
         .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.8em; font-weight: 600; margin-right: 6px; }
         .type-icon { width: 16px; height: 16px; vertical-align: text-bottom; margin-right: 6px; object-fit: contain; }
         .badge-type { background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }

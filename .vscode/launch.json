@@ -2,6 +2,21 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "Run ADOExt (Mock Server)",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}"
+      ],
+      "env": {
+        "ADO_MOCK_URL": "http://localhost:3000"
+      },
+      "outFiles": [
+        "${workspaceFolder}/out/**/*.js"
+      ],
+      "preLaunchTask": "preLaunch: mock (compile + server)"
+    },
+    {
       "name": "Run ADOExt (First Run)",
       "type": "extensionHost",
       "request": "launch",
