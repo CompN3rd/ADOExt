@@ -1,0 +1,17 @@
+{
+  "servers": {
+    "github": {
+      "type": "stdio",
+      "command": "npx.cmd",
+      "args": ["-y", "@github/mcp-server"],
+      "env": {
+        "GITHUB_TOKEN": "${env:GITHUB_TOKEN}"
+      }
+    },
+    "playwright": {
+      "type": "stdio",
+      "command": "npx.cmd",
+      "args": ["-y", "@playwright/mcp@latest"]
+    }
+  }
+}
