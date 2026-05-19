@@ -228,7 +228,8 @@ export class AdoClient {
     }
 
     private createConnection(organization: string): azdev.WebApi {
-        const orgUrl = `https://dev.azure.com/${organization}`;
+        const baseUrl = process.env.ADO_MOCK_URL ?? 'https://dev.azure.com';
+        const orgUrl = `${baseUrl}/${organization}`;
         const authHandler = azdev.getBearerHandler(this._accessToken);
         return new azdev.WebApi(orgUrl, authHandler);
     }
@@ -242,6 +243,10 @@ export class AdoClient {
      * Uses the VSSPS accounts API.
      */
     async listOrganizations(): Promise<{ accountName: string; accountUri: string }[]> {
+        const mockUrl = process.env.ADO_MOCK_URL;
+        if (mockUrl) {
+            return [{ accountName: 'mockorg', accountUri: `${mockUrl}/mockorg` }];
+        }
         const handler = azdev.getBearerHandler(this._accessToken);
         const conn = new azdev.WebApi('https://app.vssps.visualstudio.com', handler);
         type AccountsResponse = { value: { accountName: string; accountUri: string }[] };
