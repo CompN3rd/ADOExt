@@ -1059,7 +1059,8 @@
         .draft { background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
         .section { margin-bottom: 20px; }
         .section h2 { font-size: 1em; border-bottom: 1px solid var(--vscode-panel-border); padding-bottom: 4px; margin-bottom: 8px; }
-        .toolbar, .review-actions { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+        .toolbar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+        .review-actions { display: flex; gap: 8px; align-items: center; }
         button { padding: 4px 10px; border-radius: 3px; border: 1px solid var(--vscode-button-border, transparent); cursor: pointer; font-family: inherit; font-size: 0.85em; }
         .btn-primary { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
         .btn-primary:hover { background: var(--vscode-button-hoverBackground); }
