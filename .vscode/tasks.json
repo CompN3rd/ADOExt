@@ -51,6 +51,34 @@
         "reveal": "never",
         "panel": "dedicated"
       }
+    },
+    {
+      "label": "mock-server: start",
+      "type": "npm",
+      "script": "start",
+      "path": "mock-server",
+      "isBackground": true,
+      "problemMatcher": {
+        "pattern": [{ "regexp": "." }],
+        "background": {
+          "activeOnStart": false,
+          "beginsPattern": "^Mock ADO server running",
+          "endsPattern": ""
+        }
+      },
+      "presentation": {
+        "reveal": "never",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "preLaunch: mock (compile + server)",
+      "dependsOrder": "parallel",
+      "dependsOn": ["npm: compile", "mock-server: start"],
+      "presentation": {
+        "reveal": "never",
+        "panel": "dedicated"
+      }
     }
   ]
 }
