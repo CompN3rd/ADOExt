@@ -124,4 +124,14 @@ Never import host-side modules from webview files or vice versa — the build wi
 
 The extension's own ADO MCP server is registered by `McpServerManager` and appears in VS Code automatically when the extension is running. It delegates to the official `@azure-devops/mcp` package.
 
-For agent tools available during development (not the extension's own feature), see `.claude/settings.json` (Claude Code) and `.vscode/mcp.json` (VS Code Copilot): GitHub MCP and Playwright MCP are configured there.
+For agent tools available during development (not the extension's own feature), see `.claude/settings.json` (Claude Code), `.vscode/mcp.json` (VS Code Copilot), and `opencode.json` (opencode): GitHub MCP and Playwright MCP are configured in all three.
+
+## Agent Tooling
+
+This repo supports three agent tools side-by-side. All three read **AGENTS.md** as the source of truth — tool-specific files are thin shims.
+
+- **Claude Code** — `.claude/settings.json` (MCP + permissions + rtk hook), `.claude/commands/`
+- **VS Code Copilot** — `.github/copilot-instructions.md`, `.vscode/mcp.json`, `.github/hooks/rtk-rewrite.json`
+- **opencode** — `opencode.json` (MCP + permissions), `.opencode/commands/`
+
+**rtk integration**: Claude and Copilot use per-repo hooks. opencode uses a **global** plugin installed once via `rtk init -g --opencode` at `~/.config/opencode/plugins/rtk.ts` — no per-repo opencode plugin needed (and committing one would duplicate the global hook).
