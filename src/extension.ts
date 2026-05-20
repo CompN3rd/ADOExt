@@ -73,8 +73,8 @@ import { adoErrorFingerprint, classifyAdoAuthError } from './utils/adoErrors';
 import type { AuthRecoveryResult } from './utils/authRecovery';
 import {
     loadPlanningPanel,
-    planningPanelLoaded,
-    prDetailsPanelLoaded,
+    loadedPlanningPanel,
+    loadedPrDetailsPanel,
     loadPipelineRunDetailsPanel
 } from './views/lazyPanels';
 
@@ -829,7 +829,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             async () => {
                 await toggleResolvedPullRequestThreads(config);
                 pullRequestProvider.refresh();
-                const prMod = prDetailsPanelLoaded();
+                const prMod = loadedPrDetailsPanel();
                 if (prMod) { await (await prMod).PrDetailsPanel.refreshAllOpenPanels(); }
             }
         )
@@ -1167,7 +1167,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
                 refreshAllViews();
                 if (e.affectsConfiguration('adoext.planningAssignedFilter')) {
-                    const planningMod = planningPanelLoaded();
+                    const planningMod = loadedPlanningPanel();
                     if (planningMod) { void planningMod.then(m => m.PlanningPanel.refreshOpenPanels()); }
                 }
                 if (
