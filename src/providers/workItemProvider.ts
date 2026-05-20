@@ -3,18 +3,15 @@ import type { WorkItem } from '../api/adoClient';
 import type { AdoClient } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
 import {
-    resolveProjectScopes,
     scopeKey,
     scopeLabel,
     type ProjectScope
 } from './projectScopes';
-import { mapWithConcurrencyLimit } from '../utils/async';
+import { forEachScope } from '../utils/async';
 import { bundledWorkItemTypeIconFile } from '../utils/workItemTypeIcons';
 import { WorkItemIconResolver } from './workItemIconResolver';
 import type { AuthRecoveryHandler } from '../utils/authRecovery';
 import { handleProviderError } from './providerErrors';
-
-const MAX_CONCURRENT_SCOPE_REQUESTS = 4;
 
 interface ScopedWorkItem {
     workItem: WorkItem;
@@ -178,13 +175,19 @@ export class WorkItemProvider implements vscode.TreeDataProvider<WorkItemTreeNod
                 return [setupNode];
             }
 
-            const scopes = await resolveProjectScopes(this.client, this.config);
+            const { scopes, items: scopedItems } = await forEachScope(this.client, this.config, async scope => {
+                const workItems = await this.client.getWorkItems(
+                    scope.project,
+                    this.config.activeWorkItemQuery.filter,
+                    scope.organization
+                );
+                return workItems.map(workItem => ({ workItem, scope }));
+            });
             if (scopes.length === 0) {
                 return [this.createConfigureNode()];
             }
 
             await this._iconResolver.loadForScopes(scopes);
-            const scopedItems = await this.loadWorkItems(scopes);
             if (scopedItems.length === 0) {
                 const node = new vscode.TreeItem('No work items found', vscode.TreeItemCollapsibleState.None);
                 node.iconPath = new vscode.ThemeIcon('info');
@@ -214,19 +217,6 @@ export class WorkItemProvider implements vscode.TreeDataProvider<WorkItemTreeNod
         } finally {
             this._loading = false;
         }
-    }
-
-    private async loadWorkItems(scopes: ProjectScope[]): Promise<ScopedWorkItem[]> {
-        const query = this.config.activeWorkItemQuery;
-        const results = await mapWithConcurrencyLimit(scopes, MAX_CONCURRENT_SCOPE_REQUESTS, async scope => {
-            const workItems = await this.client.getWorkItems(
-                scope.project,
-                query.filter,
-                scope.organization
-            );
-            return workItems.map(workItem => ({ workItem, scope }));
-        });
-        return results.flat();
     }
 
     private buildStateGroups(items: ScopedWorkItem[]): WorkItemStateGroup[] {

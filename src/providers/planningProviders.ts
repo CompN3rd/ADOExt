@@ -4,17 +4,14 @@ import type { AdoClient } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
 import { WorkItemNode, stateIcon } from './workItemProvider';
 import {
-    resolveProjectScopes,
     scopeKey,
     scopeLabel,
     type ProjectScope
 } from './projectScopes';
-import { mapWithConcurrencyLimit } from '../utils/async';
+import { forEachScope } from '../utils/async';
 import { WorkItemIconResolver } from './workItemIconResolver';
 import type { AuthRecoveryHandler } from '../utils/authRecovery';
 import { handleProviderError } from './providerErrors';
-
-const MAX_CONCURRENT_SCOPE_REQUESTS = 4;
 
 interface ScopedWorkItem {
     workItem: WorkItem;
@@ -350,13 +347,13 @@ async function loadPlanningItems(
     client: AdoClient,
     config: ConfigManager
 ): Promise<{ scopes: ProjectScope[]; items: ScopedWorkItem[] }> {
-    const scopes = await resolveProjectScopes(client, config);
     const assignedToMe = config.planningAssignedFilter === 'mine';
-    const results = await mapWithConcurrencyLimit(scopes, MAX_CONCURRENT_SCOPE_REQUESTS, async scope => {
+    const { scopes, items: rawItems } = await forEachScope(client, config, async scope => {
         const workItems = await client.getPlanningWorkItems(scope.project, scope.organization, assignedToMe);
         return workItems.map(workItem => ({ workItem, scope }));
     });
-    let items = results.flat();
+    let items = rawItems;
+
 
     const hideStates = new Set(config.workItemHideStates.map(s => s.toLowerCase()));
     if (hideStates.size > 0) {

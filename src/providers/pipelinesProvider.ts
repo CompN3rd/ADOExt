@@ -3,14 +3,11 @@ import type { AdoClient, Build, Timeline } from '../api/adoClient';
 import { BuildResult, BuildStatus } from '../api/adoClient';
 import type { ConfigManager, PipelineRunsGroupBy } from '../config/configManager';
 import {
-    resolveProjectScopes,
     scopeKey,
     scopeLabel,
     type ProjectScope
 } from './projectScopes';
-import { mapWithConcurrencyLimit } from '../utils/async';
-
-const MAX_CONCURRENT_SCOPE_REQUESTS = 4;
+import { forEachScope } from '../utils/async';
 
 interface ScopedPipelineRun {
     build: Build;
@@ -239,12 +236,17 @@ export class PipelinesProvider implements vscode.TreeDataProvider<PipelinesTreeN
                 return [setupNode];
             }
 
-            const scopes = await resolveProjectScopes(this.client, this.config);
+            const { scopes, items: scopedRuns } = await forEachScope(this.client, this.config, async scope => {
+                const builds = await this.client.listPipelineRuns(
+                    scope.project,
+                    scope.organization,
+                    { top: this.config.pipelineRunsTop, filter: this.config.pipelineRunsFilter }
+                );
+                return builds.map(build => ({ build, scope }));
+            });
             if (scopes.length === 0) {
                 return [this.createConfigureNode()];
             }
-
-            const scopedRuns = await this.loadRuns(scopes);
             if (scopedRuns.length === 0) {
                 const node = new vscode.TreeItem('No pipeline runs found', vscode.TreeItemCollapsibleState.None);
                 node.iconPath = new vscode.ThemeIcon('info');
@@ -278,16 +280,6 @@ export class PipelinesProvider implements vscode.TreeDataProvider<PipelinesTreeN
         } finally {
             this._loading = false;
         }
-    }
-
-    private async loadRuns(scopes: ProjectScope[]): Promise<ScopedPipelineRun[]> {
-        const filter = this.config.pipelineRunsFilter;
-        const top = this.config.pipelineRunsTop;
-        const results = await mapWithConcurrencyLimit(scopes, MAX_CONCURRENT_SCOPE_REQUESTS, async scope => {
-            const builds = await this.client.listPipelineRuns(scope.project, scope.organization, { top, filter });
-            return builds.map(build => ({ build, scope }));
-        });
-        return results.flat();
     }
 
     private async getTimelineChildren(node: PipelineRunNode): Promise<PipelinesTreeNode[]> {

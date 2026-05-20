@@ -5,16 +5,13 @@ import type { ConfigManager } from '../config/configManager';
 import { isToolIdentity, isSystemThread } from '../utils/prCommentIdentity';
 import { isResolvedPullRequestThread } from '../utils/prThreadStatus';
 import {
-    resolveProjectScopes,
     scopeKey,
     scopeLabel,
     type ProjectScope
 } from './projectScopes';
-import { mapWithConcurrencyLimit } from '../utils/async';
+import { forEachScope } from '../utils/async';
 import type { AuthRecoveryHandler } from '../utils/authRecovery';
 import { handleProviderError } from './providerErrors';
-
-const MAX_CONCURRENT_SCOPE_REQUESTS = 4;
 
 interface ScopedPullRequest {
     pr: GitPullRequest;
@@ -656,12 +653,20 @@ export class PullRequestProvider implements vscode.TreeDataProvider<PullRequestT
 
     private async doLoadBucketChildren(bucket: PullRequestBucketNode): Promise<PullRequestTreeNode[]> {
         try {
-            const scopes = await resolveProjectScopes(this.client, this.config);
+            const filter = bucket.filter;
+            const { scopes, items: prs } = await forEachScope(this.client, this.config, async scope => {
+                const pulls = await this.client.getPullRequests(
+                    scope.project,
+                    filter,
+                    undefined,
+                    scope.organization
+                );
+                return pulls.map(pr => ({ pr, scope }));
+            });
             if (scopes.length === 0) {
                 return [this.createConfigureNode()];
             }
 
-            const prs = await this.loadPullRequests(scopes, bucket.filter);
             this._prCache.set(bucket.bucketId, prs);
             const forceScopeGrouping = scopes.length > 1;
             this._bucketScopeGrouping.set(bucket.bucketId, forceScopeGrouping);
@@ -738,22 +743,6 @@ export class PullRequestProvider implements vscode.TreeDataProvider<PullRequestT
             const titleB = (b.pr.title ?? '').toLowerCase();
             return titleA.localeCompare(titleB);
         });
-    }
-
-    private async loadPullRequests(
-        scopes: ProjectScope[],
-        filter: 'mine' | 'created' | 'assigned' | 'all'
-    ): Promise<ScopedPullRequest[]> {
-        const results = await mapWithConcurrencyLimit(scopes, MAX_CONCURRENT_SCOPE_REQUESTS, async scope => {
-            const prs = await this.client.getPullRequests(
-                scope.project,
-                filter,
-                undefined,
-                scope.organization
-            );
-            return prs.map(pr => ({ pr, scope }));
-        });
-        return results.flat();
     }
 
     private async loadPrChildren(
