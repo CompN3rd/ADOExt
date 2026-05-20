@@ -9,7 +9,7 @@ import {
     scopeLabel,
     type ProjectScope
 } from './projectScopes';
-import { forEachScope } from '../utils/async';
+import { forEachScope } from './projectScopes';
 import type { AuthRecoveryHandler } from '../utils/authRecovery';
 import { handleProviderError } from './providerErrors';
 

@@ -7,7 +7,7 @@ import {
     scopeLabel,
     type ProjectScope
 } from './projectScopes';
-import { forEachScope } from '../utils/async';
+import { forEachScope } from './projectScopes';
 import { bundledWorkItemTypeIconFile } from '../utils/workItemTypeIcons';
 import { WorkItemIconResolver } from './workItemIconResolver';
 import type { AuthRecoveryHandler } from '../utils/authRecovery';
@@ -175,10 +175,11 @@ export class WorkItemProvider implements vscode.TreeDataProvider<WorkItemTreeNod
                 return [setupNode];
             }
 
+            const filter = this.config.activeWorkItemQuery.filter;
             const { scopes, items: scopedItems } = await forEachScope(this.client, this.config, async scope => {
                 const workItems = await this.client.getWorkItems(
                     scope.project,
-                    this.config.activeWorkItemQuery.filter,
+                    filter,
                     scope.organization
                 );
                 return workItems.map(workItem => ({ workItem, scope }));

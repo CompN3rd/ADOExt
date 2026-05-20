@@ -7,7 +7,7 @@ import {
     scopeLabel,
     type ProjectScope
 } from './projectScopes';
-import { forEachScope } from '../utils/async';
+import { forEachScope } from './projectScopes';
 
 interface ScopedPipelineRun {
     build: Build;
@@ -236,11 +236,13 @@ export class PipelinesProvider implements vscode.TreeDataProvider<PipelinesTreeN
                 return [setupNode];
             }
 
+            const top = this.config.pipelineRunsTop;
+            const filter = this.config.pipelineRunsFilter;
             const { scopes, items: scopedRuns } = await forEachScope(this.client, this.config, async scope => {
                 const builds = await this.client.listPipelineRuns(
                     scope.project,
                     scope.organization,
-                    { top: this.config.pipelineRunsTop, filter: this.config.pipelineRunsFilter }
+                    { top, filter }
                 );
                 return builds.map(build => ({ build, scope }));
             });

@@ -1,5 +1,6 @@
 import type { AdoClient } from '../api/adoClient';
 import { ALL_PROJECTS, type ConfigManager } from '../config/configManager';
+import { mapWithConcurrencyLimit } from '../utils/async';
 
 export interface ProjectScope {
     organization: string;
@@ -38,4 +39,17 @@ export async function resolveProjectScopes(
     }
 
     return scopes;
+}
+export async function forEachScope<T>(
+    client: AdoClient,
+    config: ConfigManager,
+    fetcher: (scope: ProjectScope) => Promise<T[]>,
+    concurrency = 4
+): Promise<{ scopes: ProjectScope[]; items: T[] }> {
+    const scopes = await resolveProjectScopes(client, config);
+    if (scopes.length === 0) {
+        return { scopes, items: [] };
+    }
+    const nested = await mapWithConcurrencyLimit(scopes, concurrency, fetcher);
+    return { scopes, items: nested.flat() };
 }

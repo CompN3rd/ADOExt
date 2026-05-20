@@ -28,7 +28,6 @@ export class TtlCache<T> {
     }
 
     has(key: string): boolean {
-        const entry = this._map.get(key);
-        return entry !== undefined && entry.expiresAt > Date.now();
+        return this.get(key) !== undefined;
     }
 }
