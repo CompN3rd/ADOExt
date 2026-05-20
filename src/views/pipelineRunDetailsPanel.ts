@@ -5,7 +5,8 @@ import type { ConfigManager } from '../config/configManager';
 import { showErrorMessage, showInformationMessage } from '../utils/notifications';
 import { agentPoolUrl, agentQueueUrl, pipelineRunUrl } from '../utils/pipelineUrls';
 import { createPipelineLogUri } from './pipelineLogContentProvider';
-import { buildMessageDocument, buildWebviewDocument, webviewAssetRoots } from './webviewHtml';
+import { buildMessageDocument, buildWebviewDocument } from './webviewHtml';
+import { PanelBase } from './panelBase';
 import type {
     AgentPoolDiagnosticsViewModel,
     PipelineArtifactViewModel,
@@ -33,17 +34,15 @@ interface TimelineRecordLike {
     log?: { id?: number; url?: string };
 }
 
-export class PipelineRunDetailsPanel {
+export class PipelineRunDetailsPanel extends PanelBase {
     private static _panels = new Map<string, PipelineRunDetailsPanel>();
 
-    private readonly _panel: vscode.WebviewPanel;
     private readonly _panelKey: string;
     private readonly _organization?: string;
     private readonly _project?: string;
     private _buildId: number;
     private _agentDiagnosticsSummary = '';
     private _agentDiagnosticsUrls: { poolUrl: string; queueUrl: string } | undefined;
-    private _disposables: vscode.Disposable[] = [];
 
     static async show(
         context: vscode.ExtensionContext,
@@ -67,37 +66,21 @@ export class PipelineRunDetailsPanel {
     }
 
     private constructor(
-        private readonly _context: vscode.ExtensionContext,
-        private readonly _client: AdoClient,
-        private readonly _config: ConfigManager,
+        context: vscode.ExtensionContext,
+        client: AdoClient,
+        config: ConfigManager,
         buildId: number,
         panelKey: string,
         scope: PipelinePanelScope
     ) {
+        super(context, client, config, 'adoext.pipelineRunDetails', `Pipeline Run #${buildId}`);
         this._buildId = buildId;
         this._panelKey = panelKey;
         this._organization = scope.organization;
         this._project = scope.project;
-        this._panel = vscode.window.createWebviewPanel(
-            'adoext.pipelineRunDetails',
-            `Pipeline Run #${buildId}`,
-            vscode.ViewColumn.One,
-            {
-                enableScripts: true,
-                retainContextWhenHidden: true,
-                localResourceRoots: webviewAssetRoots(_context)
-            }
-        );
-
-        this._panel.onDidDispose(() => this._dispose(), null, this._disposables);
-        this._panel.webview.onDidReceiveMessage(
-            async (msg) => this._handleMessage(msg),
-            null,
-            this._disposables
-        );
-
+        this.onMessage(msg => this._handleMessage(msg as PipelineRunDetailsMessage));
         PipelineRunDetailsPanel._panels.set(panelKey, this);
-        void this._refresh(_client, _config);
+        void this._refresh(client, config);
     }
 
     private async _refresh(client: AdoClient, config: ConfigManager): Promise<void> {
@@ -249,10 +232,9 @@ export class PipelineRunDetailsPanel {
         }
     }
 
-    private _dispose(): void {
+    override dispose(): void {
         PipelineRunDetailsPanel._panels.delete(this._panelKey);
-        this._disposables.forEach(d => d.dispose());
-        this._disposables = [];
+        super.dispose();
     }
 
     private static panelKey(buildId: number, organization?: string, project?: string): string {

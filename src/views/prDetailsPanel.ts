@@ -8,7 +8,8 @@ import { showErrorMessage, showInformationMessage, showWarningMessage } from '..
 import { isToolIdentity, isSystemThread } from '../utils/prCommentIdentity';
 import { isResolvedPullRequestThread } from '../utils/prThreadStatus';
 import { buildSummaryData } from './buildSummaryHtml';
-import { buildWebviewDocument, webviewAssetRoots } from './webviewHtml';
+import { buildWebviewDocument } from './webviewHtml';
+import { PanelBase } from './panelBase';
 import { mapWithConcurrencyLimit } from '../utils/async';
 import type { NamedBadgeRowViewModel, PrDetailsMessage, PrDetailsViewModel, PrTestResultsViewModel, PrWorkItemRefViewModel } from './webviewTypes';
 // Note: the diff is now opened via VS Code's native diff editor, dispatched
@@ -31,14 +32,12 @@ const STACK_TRACE_SNIPPET_MAX_CHARS = 600;
  * threads) in a VS Code webview panel.  The user can reply to threads and
  * resolve/reopen them without leaving VS Code.
  */
-export class PrDetailsPanel {
+export class PrDetailsPanel extends PanelBase {
     private static _panels = new Map<string, PrDetailsPanel>();
 
-    private readonly _panel: vscode.WebviewPanel;
     private readonly _panelKey: string;
     private readonly _organization?: string;
     private readonly _project?: string;
-    private _disposables: vscode.Disposable[] = [];
 
     static async show(
         context: vscode.ExtensionContext,
@@ -71,38 +70,21 @@ export class PrDetailsPanel {
     }
 
     private constructor(
-        private readonly _context: vscode.ExtensionContext,
-        private readonly _client: AdoClient,
-        private readonly _config: ConfigManager,
+        context: vscode.ExtensionContext,
+        client: AdoClient,
+        config: ConfigManager,
         private _pr: GitPullRequest,
         panelKey: string,
         scope: PrPanelScope
     ) {
+        const prId = _pr.pullRequestId!;
+        super(context, client, config, 'adoext.prDetails', `PR #${prId}: ${_pr.title ?? ''}`);
         this._panelKey = panelKey;
         this._organization = scope.organization;
         this._project = scope.project;
-        const prId = _pr.pullRequestId!;
-        this._panel = vscode.window.createWebviewPanel(
-            'adoext.prDetails',
-            `PR #${prId}: ${_pr.title ?? ''}`,
-            vscode.ViewColumn.One,
-            {
-                enableScripts: true,
-                retainContextWhenHidden: true,
-                localResourceRoots: webviewAssetRoots(_context)
-            }
-        );
-
-        this._panel.onDidDispose(() => this._dispose(), null, this._disposables);
-
-        this._panel.webview.onDidReceiveMessage(
-            async (msg) => this._handleMessage(msg),
-            null,
-            this._disposables
-        );
-
+        this.onMessage(msg => this._handleMessage(msg as PrDetailsMessage));
         PrDetailsPanel._panels.set(panelKey, this);
-        void this._refresh(_client, _config, _pr);
+        void this._refresh(client, config, _pr);
     }
 
     private async _refresh(
@@ -842,12 +824,9 @@ export class PrDetailsPanel {
             vote === PullRequestReviewVotes.rejected;
     }
 
-    private _dispose(): void {
+    override dispose(): void {
         PrDetailsPanel._panels.delete(this._panelKey);
-        for (const d of this._disposables) {
-            d.dispose();
-        }
-        this._disposables = [];
+        super.dispose();
     }
 
     private static panelKey(prId: number, organization?: string, project?: string): string {

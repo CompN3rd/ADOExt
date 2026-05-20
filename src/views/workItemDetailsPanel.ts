@@ -5,7 +5,8 @@ import type { ConfigManager } from '../config/configManager';
 import { showErrorMessage, showInformationMessage, showWarningMessage } from '../utils/notifications';
 import { bundledWorkItemTypeIconFile, normalizeWorkItemTypeName } from '../utils/workItemTypeIcons';
 import { buildSummaryData } from './buildSummaryHtml';
-import { buildWebviewDocument, webviewAssetRoots } from './webviewHtml';
+import { buildWebviewDocument } from './webviewHtml';
+import { PanelBase } from './panelBase';
 import type { WorkItemDetailsMessage, WorkItemDetailsViewModel } from './webviewTypes';
 
 export interface WorkItemPanelScope {
@@ -36,15 +37,13 @@ interface LinkedItem {
  * discussion) in a VS Code webview panel.  The user can add comments
  * without leaving VS Code.
  */
-export class WorkItemDetailsPanel {
+export class WorkItemDetailsPanel extends PanelBase {
     private static _panels = new Map<string, WorkItemDetailsPanel>();
 
-    private readonly _panel: vscode.WebviewPanel;
     private readonly _workItemId: number;
     private readonly _panelKey: string;
     private readonly _organization?: string;
     private readonly _project?: string;
-    private _disposables: vscode.Disposable[] = [];
     private _allowedStates: string[] = [];
     private _linkedItems: LinkedItem[] = [];
     private _workItemTypeIconUrl: string | undefined;
@@ -79,43 +78,25 @@ export class WorkItemDetailsPanel {
     }
 
     private constructor(
-        private readonly _context: vscode.ExtensionContext,
-        private readonly _client: AdoClient,
-        private readonly _config: ConfigManager,
+        context: vscode.ExtensionContext,
+        client: AdoClient,
+        config: ConfigManager,
         private _workItem: WorkItem,
         workItemId: number,
         panelKey: string,
         scope: WorkItemPanelScope
     ) {
+        const id = workItemId;
+        const title = (_workItem.fields?.['System.Title'] as string | undefined) ?? '';
+        const wiType = (_workItem.fields?.['System.WorkItemType'] as string | undefined) ?? 'Work Item';
+        super(context, client, config, 'adoext.workItemDetails', `${wiType} #${id}: ${title}`);
         this._workItemId = workItemId;
         this._panelKey = panelKey;
         this._organization = scope.organization;
         this._project = scope.project;
-        const id = this._workItemId;
-        const title = (_workItem.fields?.['System.Title'] as string | undefined) ?? '';
-        const wiType = (_workItem.fields?.['System.WorkItemType'] as string | undefined) ?? 'Work Item';
-
-        this._panel = vscode.window.createWebviewPanel(
-            'adoext.workItemDetails',
-            `${wiType} #${id}: ${title}`,
-            vscode.ViewColumn.One,
-            {
-                enableScripts: true,
-                retainContextWhenHidden: true,
-                localResourceRoots: webviewAssetRoots(_context)
-            }
-        );
-
-        this._panel.onDidDispose(() => this._dispose(), null, this._disposables);
-
-        this._panel.webview.onDidReceiveMessage(
-            async (msg) => this._handleMessage(msg),
-            null,
-            this._disposables
-        );
-
+        this.onMessage(msg => this._handleMessage(msg as WorkItemDetailsMessage));
         WorkItemDetailsPanel._panels.set(panelKey, this);
-        void this._refresh(this._client, this._config, this._workItem);
+        void this._refresh(client, config, this._workItem);
     }
 
     private async _refresh(
@@ -505,12 +486,9 @@ export class WorkItemDetailsPanel {
         return items;
     }
 
-    private _dispose(): void {
+    override dispose(): void {
         WorkItemDetailsPanel._panels.delete(this._panelKey);
-        for (const d of this._disposables) {
-            d.dispose();
-        }
-        this._disposables = [];
+        super.dispose();
     }
 
     private static panelKey(id: number, organization?: string, project?: string): string {
