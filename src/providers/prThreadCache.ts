@@ -32,13 +32,11 @@ function keyOf(k: PrThreadKey): Key {
 /**
  * Shared cache + concurrency dedup for PR comment threads.
  *
- * Consumers (tree provider, notification poll, details panel, diff controller)
- * all hit the same instance via `getOrFetch`. Within the TTL window, repeat
- * calls return cached data; concurrent calls for the same PR share a single
- * in-flight promise so we never issue duplicate ADO requests.
- *
- * The notification poller and the tree provider both feed this cache, so a
- * tree expand shortly after a poll tick is served from memory.
+ * Consumers (tree provider, notification poll) hit the same instance via
+ * `getOrFetch`. Within the TTL window, repeat calls return cached data;
+ * concurrent calls for the same PR share a single in-flight promise so we
+ * never issue duplicate ADO requests. A tree expand shortly after a poll
+ * tick is served from memory.
  */
 export class PrThreadCache {
     private readonly entries = new Map<Key, Entry>();
@@ -60,7 +58,17 @@ export class PrThreadCache {
     }
 
     set(k: PrThreadKey, threads: GitPullRequestCommentThread[]): void {
+        this.sweepExpired();
         this.entries.set(keyOf(k), { threads, expires: Date.now() + this.ttlMs });
+    }
+
+    private sweepExpired(): void {
+        const now = Date.now();
+        for (const [id, entry] of this.entries) {
+            if (entry.expires <= now) {
+                this.entries.delete(id);
+            }
+        }
     }
 
     async getOrFetch(
@@ -93,5 +101,6 @@ export class PrThreadCache {
 
     clear(): void {
         this.entries.clear();
+        this.inflight.clear();
     }
 }
