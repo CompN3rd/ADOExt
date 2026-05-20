@@ -12,6 +12,7 @@ import { BuildReason, BuildResult, BuildStatus } from 'azure-devops-node-api/int
 import { ResultDetails, TestOutcome } from 'azure-devops-node-api/interfaces/TestInterfaces';
 import { Operation } from 'azure-devops-node-api/interfaces/common/VSSInterfaces';
 import { normalizeWorkItemTypeName, workItemTypeScopeKey } from '../utils/workItemTypeIcons';
+import { TtlCache } from '../utils/ttlCache';
 import { formatAdoError } from '../utils/adoErrors';
 import type {
     WorkItem,
@@ -154,6 +155,7 @@ export class AdoClient {
     private _currentUserIds = new Map<string, string>();
     private _workItemStatesByType = new Map<string, string[]>();
     private _workItemTypeIconsByScope = new Map<string, { expiresAt: number; icons: Map<string, string> }>();
+    private _workItemTypesCache = new TtlCache<WorkItemType[]>(300_000);
 
     constructor(private _accessToken: string) {}
 
@@ -166,6 +168,7 @@ export class AdoClient {
         this._connectionsByOrganization.clear();
         this._workItemStatesByType.clear();
         this._workItemTypeIconsByScope.clear();
+        this._workItemTypesCache.clear();
 
         if (!token.trim()) {
             this.disconnect();
@@ -200,6 +203,7 @@ export class AdoClient {
         this._currentUserIds.clear();
         this._workItemStatesByType.clear();
         this._workItemTypeIconsByScope.clear();
+        this._workItemTypesCache.clear();
     }
 
     private get connection(): azdev.WebApi {
@@ -573,9 +577,16 @@ export class AdoClient {
         project: string,
         organization?: string
     ): Promise<WorkItemType[]> {
+        const cacheKey = JSON.stringify([organization ?? this._organization ?? null, project]);
+        const cached = this._workItemTypesCache.get(cacheKey);
+        if (cached) {
+            return cached;
+        }
         const witApi: IWorkItemTrackingApi = await this.getConnectionFor(organization).getWorkItemTrackingApi();
         const types = await witApi.getWorkItemTypes(project);
-        return (types ?? []).filter((type): type is WorkItemType => type !== null && !type.isDisabled);
+        const filtered = (types ?? []).filter((type): type is WorkItemType => type !== null && !type.isDisabled);
+        this._workItemTypesCache.set(cacheKey, filtered);
+        return filtered;
     }
 
     async getWorkItemTypeStates(
