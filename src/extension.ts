@@ -322,9 +322,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     registry.addRefreshing('adoext.selectProject', () => selectProject(client, config), refreshAllViews);
 
     // Refresh work items
-    registry.addGuarded('adoext.refreshWorkItems', () => {
-        workItemProvider.refresh();
-    });
+    registry.addRefresh('adoext.refreshWorkItems', () => workItemProvider.refresh());
 
     // Switch / persist work item query preset
     registry.add('adoext.selectWorkItemQuery', async () => {
@@ -396,17 +394,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         boardProvider.refresh();
     });
 
-    registry.addGuarded('adoext.refreshBacklog', () => {
-        backlogProvider.refresh();
-    });
+    registry.addRefresh('adoext.refreshBacklog', () => backlogProvider.refresh());
 
-    registry.addGuarded('adoext.refreshSprints', () => {
-        sprintProvider.refresh();
-    });
+    registry.addRefresh('adoext.refreshSprints', () => sprintProvider.refresh());
 
-    registry.addGuarded('adoext.refreshBoards', () => {
-        boardProvider.refresh();
-    });
+    registry.addRefresh('adoext.refreshBoards', () => boardProvider.refresh());
 
     registry.add('adoext.setPlanningAssignedFilter', async () => {
         const current = config.planningAssignedFilter;
@@ -499,9 +491,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
 
     // Refresh pull requests
-    registry.addGuarded('adoext.refreshPullRequests', () => {
-        pullRequestProvider.refresh();
-    });
+    registry.addRefresh('adoext.refreshPullRequests', () => pullRequestProvider.refresh());
 
     // Set pull request filter regex
     registry.add('adoext.setPullRequestFilter', async () => {
@@ -647,7 +637,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (prMod) { await (await prMod).PrDetailsPanel.refreshAllOpenPanels(); }
     });
 
-    registry.addGuarded('adoext.refreshPipelines', () => {
+    registry.addRefresh('adoext.refreshPipelines', () => {
         pipelineLogContentProvider.clear();
         pipelinesProvider.refresh();
     });
