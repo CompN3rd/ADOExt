@@ -178,12 +178,35 @@ type PipelinesTreeNode =
     | PipelineStepLogNode
     | vscode.TreeItem;
 
+class TimelineCache {
+    private readonly _map = new Map<string, PipelineTimelineRecord[]>();
+    constructor(private readonly _maxSize: number) {}
+
+    get(key: string): PipelineTimelineRecord[] | undefined {
+        return this._map.get(key);
+    }
+
+    set(key: string, value: PipelineTimelineRecord[]): void {
+        if (this._map.size >= this._maxSize && !this._map.has(key)) {
+            const oldest = this._map.keys().next().value;
+            if (oldest !== undefined) {
+                this._map.delete(oldest);
+            }
+        }
+        this._map.set(key, value);
+    }
+
+    clear(): void {
+        this._map.clear();
+    }
+}
+
 export class PipelinesProvider implements vscode.TreeDataProvider<PipelinesTreeNode> {
     private _onDidChangeTreeData = new vscode.EventEmitter<PipelinesTreeNode | undefined | null | void>();
     readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
     private _loading = false;
-    private readonly timelineCache = new Map<string, PipelineTimelineRecord[]>();
+    private readonly timelineCache = new TimelineCache(200);
 
     constructor(
         private readonly client: AdoClient,

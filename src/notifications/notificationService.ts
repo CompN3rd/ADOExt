@@ -86,6 +86,7 @@ export class NotificationService implements vscode.Disposable {
     private async pollOnce(): Promise<void> {
         if (this._disposed || this._polling) { return; }
         if (!this._client.isConnected) { return; }
+        if (!vscode.window.state.focused) { return; }
         this._polling = true;
         try {
             let scopes;

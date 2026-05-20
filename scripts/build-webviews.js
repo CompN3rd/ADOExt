@@ -21,6 +21,7 @@ const buildOptions = {
     format: 'iife',
     target: 'es2020',
     sourcemap: false,
+    minify: !watch,
     legalComments: 'none',
     logLevel: 'info'
 };
