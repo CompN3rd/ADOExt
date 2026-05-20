@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import type { AdoClient } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
 import type { PipelineRunNode } from '../providers/pipelinesProvider';
-import { PipelineRunDetailsPanel } from '../views/pipelineRunDetailsPanel';
+import { loadPipelineRunDetailsPanel } from '../views/lazyPanels';
 import { showErrorMessage, showInformationMessage } from '../utils/notifications';
 import { pipelineRunUrl } from '../utils/pipelineUrls';
 
@@ -17,6 +17,7 @@ export async function viewPipelineRunDetails(
         return;
     }
 
+    const { PipelineRunDetailsPanel } = await loadPipelineRunDetailsPanel();
     await PipelineRunDetailsPanel.show(context, client, config, node.build.id, {
         organization: node.organization,
         project: node.project

@@ -13,10 +13,8 @@ import {
 import { PipelinesProvider, type PipelineRunNode, type PipelineStepLogNode } from './providers/pipelinesProvider';
 import { BacklogProvider, SprintProvider, BoardProvider } from './providers/planningProviders';
 import { WorkItemIconResolver } from './providers/workItemIconResolver';
-import { PlanningPanel } from './views/planningPanel';
 import { PrCommentController, type CommentReply } from './views/prCommentController';
 import { PrDiffCache, PrDiffContentProvider, PR_DIFF_SCHEME } from './views/prContentProvider';
-import { PrDetailsPanel } from './views/prDetailsPanel';
 import { PipelineLogContentProvider, PIPELINE_LOG_SCHEME } from './views/pipelineLogContentProvider';
 import { NotificationService } from './notifications/notificationService';
 import { PrCommentHandler } from './notifications/handlers/prCommentHandler';
@@ -68,12 +66,17 @@ import {
 } from './commands/pipelineCommands';
 import { McpServerManager } from './mcp/mcpServerManager';
 import { TodoCodeActionProvider } from './views/todoCodeActionProvider';
-import { PipelineRunDetailsPanel } from './views/pipelineRunDetailsPanel';
 import { AdoCompletionProvider } from './providers/completionProvider';
 import { installNotificationMirroring, showErrorMessage, showInformationMessage, showOutputChannel, showWarningMessage } from './utils/notifications';
 import { WorkItemHoverProvider, PullRequestHoverProvider } from './providers/hoverProvider';
 import { adoErrorFingerprint, classifyAdoAuthError } from './utils/adoErrors';
 import type { AuthRecoveryResult } from './utils/authRecovery';
+import {
+    loadPlanningPanel,
+    planningPanelLoaded,
+    prDetailsPanelLoaded,
+    loadPipelineRunDetailsPanel
+} from './views/lazyPanels';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
     installNotificationMirroring();
@@ -465,21 +468,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(
         vscode.commands.registerCommand('adoext.openBacklogView', async () => {
             if (!(await ensureSignedIn())) { return; }
-            await PlanningPanel.show(context, 'backlog', client, config, refreshAllViews);
+            await (await loadPlanningPanel()).PlanningPanel.show(context, 'backlog', client, config, refreshAllViews);
         })
     );
 
     context.subscriptions.push(
         vscode.commands.registerCommand('adoext.openBoardView', async () => {
             if (!(await ensureSignedIn())) { return; }
-            await PlanningPanel.show(context, 'board', client, config, refreshAllViews);
+            await (await loadPlanningPanel()).PlanningPanel.show(context, 'board', client, config, refreshAllViews);
         })
     );
 
     context.subscriptions.push(
         vscode.commands.registerCommand('adoext.openSprintView', async () => {
             if (!(await ensureSignedIn())) { return; }
-            await PlanningPanel.show(context, 'sprint', client, config, refreshAllViews);
+            await (await loadPlanningPanel()).PlanningPanel.show(context, 'sprint', client, config, refreshAllViews);
         })
     );
 
@@ -826,7 +829,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             async () => {
                 await toggleResolvedPullRequestThreads(config);
                 pullRequestProvider.refresh();
-                await PrDetailsPanel.refreshAllOpenPanels();
+                const prMod = prDetailsPanelLoaded();
+                if (prMod) { await (await prMod).PrDetailsPanel.refreshAllOpenPanels(); }
             }
         )
     );
@@ -897,7 +901,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (!(await ensureSignedIn())) { return; }
                 const newId = await rerunPipelineRun(node, client, config);
                 if (typeof newId === 'number' && newId > 0) {
-                    await PipelineRunDetailsPanel.show(context, client, config, newId, {
+                    await (await loadPipelineRunDetailsPanel()).PipelineRunDetailsPanel.show(context, client, config, newId, {
                         organization: node?.organization,
                         project: node?.project
                     });
@@ -1163,7 +1167,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
                 refreshAllViews();
                 if (e.affectsConfiguration('adoext.planningAssignedFilter')) {
-                    void PlanningPanel.refreshOpenPanels();
+                    const planningMod = planningPanelLoaded();
+                    if (planningMod) { void planningMod.then(m => m.PlanningPanel.refreshOpenPanels()); }
                 }
                 if (
                     e.affectsConfiguration('adoext.notifyOnNewPullRequestComments') ||

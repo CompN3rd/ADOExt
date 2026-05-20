@@ -7,9 +7,9 @@ import type {
 import type { AdoClient, GitPullRequest, PullRequestReviewVote } from '../api/adoClient';
 import { PullRequestReviewVotes } from '../api/adoClient';
 import type { ConfigManager } from '../config/configManager';
-import { PrDetailsPanel } from '../views/prDetailsPanel';
 import type { PrCommentController } from '../views/prCommentController';
 import type { PrDiffCache } from '../views/prContentProvider';
+import { loadPrDetailsPanel } from '../views/lazyPanels';
 import { parseAdoRemoteUrl } from '../utils/repoContext';
 import { showErrorMessage, showInformationMessage, showWarningMessage } from '../utils/notifications';
 
@@ -102,6 +102,7 @@ export async function viewPullRequestDetails(
     client: AdoClient,
     config: ConfigManager
 ): Promise<void> {
+    const { PrDetailsPanel } = await loadPrDetailsPanel();
     await PrDetailsPanel.show(context, client, config, node.pr, {
         organization: node.organization,
         project: node.project
