@@ -10,6 +10,7 @@ import {
     PullRequestCommentNode,
     PullRequestThreadNode
 } from './providers/pullRequestProvider';
+import { PrThreadCache } from './providers/prThreadCache';
 import { PipelinesProvider, type PipelineRunNode, type PipelineStepLogNode } from './providers/pipelinesProvider';
 import { BacklogProvider, SprintProvider, BoardProvider } from './providers/planningProviders';
 import { WorkItemIconResolver } from './providers/workItemIconResolver';
@@ -214,7 +215,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // -------------------------------------------------------------------------
     const workItemIconResolver = new WorkItemIconResolver(client, config);
     const workItemProvider = new WorkItemProvider(client, config, workItemIconResolver, recoverAuthAfterAdoError);
-    const pullRequestProvider = new PullRequestProvider(client, config, recoverAuthAfterAdoError);
+    const prThreadCache = new PrThreadCache();
+    const pullRequestProvider = new PullRequestProvider(client, config, recoverAuthAfterAdoError, prThreadCache);
     const pipelinesProvider = new PipelinesProvider(client, config);
     const pipelineLogContentProvider = new PipelineLogContentProvider(client);
     const backlogProvider = new BacklogProvider(client, config, workItemIconResolver, recoverAuthAfterAdoError);
@@ -249,7 +251,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // requests, and vote/status changes.  New event types can be added by
     // registering additional INotificationHandler implementations below.
     const notificationService = new NotificationService(client, config, [
-        new PrCommentHandler(client, config, context.globalState),
+        new PrCommentHandler(client, config, context.globalState, prThreadCache),
         new PrReviewRequestHandler(client, config, context.globalState),
         new PrStatusChangeHandler(client, config, context.globalState)
     ], recoverAuthAfterAdoError);

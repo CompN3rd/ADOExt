@@ -13,6 +13,7 @@ import {
 import { mapWithConcurrencyLimit } from '../utils/async';
 import type { AuthRecoveryHandler } from '../utils/authRecovery';
 import { handleProviderError } from './providerErrors';
+import type { PrThreadCache } from './prThreadCache';
 
 const MAX_CONCURRENT_SCOPE_REQUESTS = 4;
 
@@ -555,7 +556,8 @@ export class PullRequestProvider implements vscode.TreeDataProvider<PullRequestT
     constructor(
         private readonly client: AdoClient,
         private readonly config: ConfigManager,
-        private readonly onAuthError?: AuthRecoveryHandler
+        private readonly onAuthError?: AuthRecoveryHandler,
+        private readonly threadCache?: PrThreadCache
     ) {}
 
     refresh(): void {
@@ -563,6 +565,7 @@ export class PullRequestProvider implements vscode.TreeDataProvider<PullRequestT
         this._bucketScopeGrouping.clear();
         this._loadingPromises.clear();
         this._buckets = [];
+        this.threadCache?.clear();
         this._onDidChangeTreeData.fire();
     }
 
@@ -570,6 +573,7 @@ export class PullRequestProvider implements vscode.TreeDataProvider<PullRequestT
         this._prCache.delete(bucket.bucketId);
         this._bucketScopeGrouping.delete(bucket.bucketId);
         this._loadingPromises.delete(bucket.bucketId);
+        this.threadCache?.clear();
         this._onDidChangeTreeData.fire(bucket);
     }
 
@@ -806,7 +810,11 @@ export class PullRequestProvider implements vscode.TreeDataProvider<PullRequestT
             const prId = pr.pullRequestId ?? 0;
             const project = scope?.project ?? this.config.project;
             const organization = scope?.organization ?? this.config.organization;
-            const threads = await this.client.getPullRequestThreads(project, repoId, prId, organization);
+            const key = { organization, project, repositoryId: repoId, pullRequestId: prId };
+            const threads = this.threadCache
+                ? await this.threadCache.getOrFetch(key, (p, r, id, org) =>
+                    this.client.getPullRequestThreads(p, r, id, org))
+                : await this.client.getPullRequestThreads(project, repoId, prId, organization);
             const meaningful = (threads ?? []).filter(
                 thread => (thread.comments ?? []).some(comment => !!comment.content) && !thread.isDeleted
             );

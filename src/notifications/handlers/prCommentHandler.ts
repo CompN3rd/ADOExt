@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import type { AdoClient, GitPullRequestCommentThread } from '../../api/adoClient';
 import type { ConfigManager } from '../../config/configManager';
+import type { PrThreadCache } from '../../providers/prThreadCache';
 import { mapWithConcurrencyLimit } from '../../utils/async';
 import { showErrorMessage, showInformationMessage, showWarningMessage } from '../../utils/notifications';
 import type { INotificationHandler, PrWithScope } from '../iNotificationHandler';
@@ -34,7 +35,8 @@ export class PrCommentHandler implements INotificationHandler {
     constructor(
         private readonly _client: AdoClient,
         private readonly _config: ConfigManager,
-        private readonly _state: vscode.Memento
+        private readonly _state: vscode.Memento,
+        private readonly _threadCache?: PrThreadCache
     ) {
         this._lastSeen = { ..._state.get<Record<string, number>>(STATE_KEY, {}) };
     }
@@ -82,12 +84,14 @@ export class PrCommentHandler implements INotificationHandler {
 
             let threads: GitPullRequestCommentThread[];
             try {
-                threads = await this._client.getPullRequestThreads(
-                    scope.project,
-                    repositoryId,
-                    pullRequestId,
-                    scope.organization
-                );
+                const fetcher = (p: string, r: string, id: number, org: string) =>
+                    this._client.getPullRequestThreads(p, r, id, org);
+                threads = this._threadCache
+                    ? await this._threadCache.getOrFetch(
+                        { organization: scope.organization, project: scope.project, repositoryId, pullRequestId },
+                        fetcher
+                    )
+                    : await fetcher(scope.project, repositoryId, pullRequestId, scope.organization);
             } catch {
                 return;
             }
