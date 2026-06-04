@@ -48,7 +48,7 @@ function prStatusLabel(status: number | undefined): string {
 
 function commandUri(command: string, args: unknown): vscode.Uri {
     return vscode.Uri.parse(
-        `command:${command}?${encodeURIComponent(JSON.stringify(args))}`
+        `command:${command}?${encodeURIComponent(JSON.stringify([args]))}`
     );
 }
 
